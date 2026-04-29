@@ -22,7 +22,7 @@ namespace ValheimFloorPlan
     {
         // ── inner pad ─────────────────────────────────────────────────────────
         private const float LEVEL_RADIUS  = 3.0f;
-        private const float SAMPLE_STEP   = 2.0f;
+        private const float SAMPLE_STEP   = 1.0f;  // match Valheim's ~1m terrain vertex spacing
         private const int   INNER_PAD     = 2;      // cells of buffer around plan bounding box
 
         // ── moat ──────────────────────────────────────────────────────────────
@@ -34,6 +34,12 @@ namespace ValheimFloorPlan
 
         private const float WARN_RAISE   = 6f;   // warn in log above this height range
         private const int   OPS_PER_FRAME = 10;
+
+        // Set by LevelForPlan after sampling the footprint.
+        // FloorPlanBuilder uses this as the Y coordinate for all piece placement,
+        // bypassing Physics.Raycast against the terrain collider (which may not have
+        // rebuilt its physics mesh yet for large height changes).
+        public static float TargetLevelY { get; private set; } = 0f;
 
         // Set by LevelForPlan after it knows how many chunks were touched.
         // FloorPlanBuilder reads this to decide how long to wait before placing pieces.
@@ -54,19 +60,28 @@ namespace ValheimFloorPlan
                 out float innerMinZ, out float innerMaxZ);
 
             // Pre-sample: find min and max terrain heights across the footprint.
+            // Use count-based loops so the last step always lands exactly on the boundary,
+            // regardless of whether (max - min) is an integer multiple of SAMPLE_STEP.
             float maxY = float.MinValue;
             float minY = float.MaxValue;
-            for (float x = innerMinX; x <= innerMaxX + 0.01f; x += SAMPLE_STEP)
-                for (float z = innerMinZ; z <= innerMaxZ + 0.01f; z += SAMPLE_STEP)
+            int preStepsX = Mathf.CeilToInt((innerMaxX - innerMinX) / SAMPLE_STEP);
+            int preStepsZ = Mathf.CeilToInt((innerMaxZ - innerMinZ) / SAMPLE_STEP);
+            for (int ix = 0; ix <= preStepsX; ix++)
+            {
+                float x = (ix == preStepsX) ? innerMaxX : innerMinX + ix * SAMPLE_STEP;
+                for (int iz = 0; iz <= preStepsZ; iz++)
                 {
+                    float z = (iz == preStepsZ) ? innerMaxZ : innerMinZ + iz * SAMPLE_STEP;
                     float h = SampleHeight(x, z, origin.y);
                     if (h > maxY) maxY = h;
                     if (h < minY) minY = h;
                 }
+            }
             if (maxY == float.MinValue) { maxY = origin.y; minY = origin.y; }
 
             float range   = maxY - minY;
             float targetY = maxY;
+            TargetLevelY  = targetY;
 
             if (range > WARN_RAISE)
                 ValheimFloorPlanPlugin.Log.LogWarning(
@@ -74,41 +89,52 @@ namespace ValheimFloorPlan
                     " cliff-edge tears may appear on the downhill side.");
 
             ValheimFloorPlanPlugin.Log.LogInfo(
-                $"[TerrainLeveler] Raising pad to Y={targetY:F2} (range={range:F1}m)" +
+                $"[TerrainLeveler] Raising pad to Y={targetY:F2}  minY={minY:F2}  range={range:F1}m" +
                 $"  [{innerMinX:F1}..{innerMaxX:F1}] x [{innerMinZ:F1}..{innerMaxZ:F1}]");
+
+            // Scale pass count with height range.
+            // The disc falloff means terrain-chunk boundary vertices converge at ~67% of
+            // the remaining delta per pass (linear falloff: t = 1 − dist/radius; worst
+            // case dist ≈ 1m from nearest disc centre in a 3m-radius disc).
+            // Residual gap after N passes ≈ 0.33^N × range.  Choose N so the gap stays
+            // below ~0.05m:  range ≥ 10m needs 5 passes (0.33^5 × 10 = 0.04m).
+            int totalPasses = range >= 10f ? 5 : range >= 6f ? 4 : range >= 3f ? 3 : 2;
 
             int ops = 0;
             var modified = new HashSet<TerrainComp>();
 
-            // Pass 1.
-            for (float x = innerMinX; x <= innerMaxX + 0.01f; x += SAMPLE_STEP)
-                for (float z = innerMinZ; z <= innerMaxZ + 0.01f; z += SAMPLE_STEP)
+            ValheimFloorPlanPlugin.Log.LogInfo(
+                $"[TerrainLeveler] Running {totalPasses} leveling passes (range={range:F1}m).");
+
+            // Count-based loops guarantee the last iteration always lands on innerMaxX /
+            // innerMaxZ exactly, so the full boundary is covered regardless of SAMPLE_STEP.
+            int stepsX = Mathf.CeilToInt((innerMaxX - innerMinX) / SAMPLE_STEP);
+            int stepsZ = Mathf.CeilToInt((innerMaxZ - innerMinZ) / SAMPLE_STEP);
+
+            for (int pass = 1; pass <= totalPasses; pass++)
+            {
+                for (int ix = 0; ix <= stepsX; ix++)
                 {
-                    ApplyLevel(x, targetY, z, LEVEL_RADIUS, modified);
-                    if (++ops % OPS_PER_FRAME == 0) yield return null;
+                    float x = (ix == stepsX) ? innerMaxX : innerMinX + ix * SAMPLE_STEP;
+                    for (int iz = 0; iz <= stepsZ; iz++)
+                    {
+                        float z = (iz == stepsZ) ? innerMaxZ : innerMinZ + iz * SAMPLE_STEP;
+                        ApplyLevel(x, targetY, z, LEVEL_RADIUS, modified);
+                        if (++ops % OPS_PER_FRAME == 0) yield return null;
+                    }
                 }
 
-            // Scale settle time by the number of chunks touched: each Valheim terrain
-            // chunk is 64×64m and rebuilds its heightmap mesh independently.  Allow
-            // ~0.75s per chunk, min 1s, so large builds don't get a gap in the middle.
-            float settleTime = Mathf.Max(1.0f, modified.Count * 0.75f);
-            ValheimFloorPlanPlugin.Log.LogInfo(
-                $"[TerrainLeveler] Pass 1 done ({modified.Count} chunks). Settling {settleTime:F1}s before pass 2.");
-            yield return new WaitForSeconds(settleTime);
+                if (pass < totalPasses)
+                    yield return new WaitForSeconds(0.1f);
+            }
 
-            // Pass 2 — re-levels any points that didn't fully reach targetY in pass 1.
-            for (float x = innerMinX; x <= innerMaxX + 0.01f; x += SAMPLE_STEP)
-                for (float z = innerMinZ; z <= innerMaxZ + 0.01f; z += SAMPLE_STEP)
-                {
-                    ApplyLevel(x, targetY, z, LEVEL_RADIUS, modified);
-                    if (++ops % OPS_PER_FRAME == 0) yield return null;
-                }
-
-            // Recommended wait before placing pieces: same scale, min 2s.
-            RecommendedPlacementWait = Mathf.Max(2.0f, modified.Count * 0.75f);
+            // Placement wait: allow the terrain physics collider to rebuild so that
+            // PlacePieces raycasts hit the correct height.  Terrain data is near-instant;
+            // 2s is ample for the collision mesh.
+            RecommendedPlacementWait = Mathf.Max(2.0f, modified.Count * 0.5f);
             ValheimFloorPlanPlugin.Log.LogInfo(
-                $"[TerrainLeveler] Pad raised: {ops} ops across {modified.Count} chunks." +
-                $" Placement wait: {RecommendedPlacementWait:F1}s.");
+                $"[TerrainLeveler] Leveling done: {totalPasses} passes, {ops} ops, " +
+                $"{modified.Count} chunks.  Placement wait: {RecommendedPlacementWait:F1}s.");
         }
 
         // ── DigMoat ───────────────────────────────────────────────────────────
@@ -163,6 +189,16 @@ namespace ValheimFloorPlan
         // ── helpers ──────────────────────────────────────────────────────────
 
         /// <summary>
+        /// Returns the inner pad bounding rectangle (the area actually leveled).
+        /// Used by FloorPlanBuilder to poll terrain physics readiness.
+        /// </summary>
+        public static void GetPadBounds(FloorPlan plan, Vector3 origin,
+            out float minX, out float maxX, out float minZ, out float maxZ)
+        {
+            GetBounds(plan, origin, INNER_PAD, out minX, out maxX, out minZ, out maxZ);
+        }
+
+        /// <summary>
         /// Returns the world-space bounding rectangle that LevelForPlan will modify.
         /// Used by FloorPlanBuilder to capture a terrain snapshot before leveling.
         /// </summary>
@@ -202,8 +238,37 @@ namespace ValheimFloorPlan
             op.m_settings.m_level       = true;
             op.m_settings.m_levelRadius = radius;
             op.m_settings.m_smooth      = false;
-            var tc = TerrainComp.FindTerrainCompiler(go.transform.position);
-            if (tc != null) { tc.ApplyOperation(op); modified.Add(tc); }
+
+            // FindTerrainCompiler returns only the chunk containing a single point.
+            // A disc of radius r can straddle up to 4 terrain chunks simultaneously
+            // when its centre is near a chunk-boundary corner.  Probing only the 4
+            // cardinal axis-aligned extremes (N/S/E/W) misses the diagonal chunk that
+            // sits in the NE/NW/SE/SW quadrant beyond both boundaries at once.
+            // Probing all 8 bounding-box corners + the centre guarantees every chunk
+            // the disc physically overlaps is found and receives the operation.
+            var probes = new Vector3[]
+            {
+                new Vector3(x,          y, z         ),   // centre
+                new Vector3(x - radius, y, z - radius),   // SW corner
+                new Vector3(x + radius, y, z - radius),   // SE corner
+                new Vector3(x - radius, y, z + radius),   // NW corner
+                new Vector3(x + radius, y, z + radius),   // NE corner
+                new Vector3(x - radius, y, z         ),   // W  edge mid
+                new Vector3(x + radius, y, z         ),   // E  edge mid
+                new Vector3(x,          y, z - radius),   // S  edge mid
+                new Vector3(x,          y, z + radius),   // N  edge mid
+            };
+            var chunks = new HashSet<TerrainComp>();
+            foreach (var p in probes)
+            {
+                var tc = TerrainComp.FindTerrainCompiler(p);
+                if (tc != null) chunks.Add(tc);
+            }
+            foreach (var tc in chunks)
+            {
+                tc.ApplyOperation(op);
+                modified.Add(tc);
+            }
             UnityEngine.Object.Destroy(go);
         }
 

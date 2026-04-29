@@ -40,13 +40,13 @@ namespace ValheimFloorPlan
 
         private static readonly Dictionary<string, PieceDef> Map = new()
         {
-            //              vfp type      prefab            W  H  Yoff
-            { "Floor2x2", new PieceDef("wood_floor",       2, 2, 0f) },
-            { "Floor1x1", new PieceDef("wood_floor_1x1",   1, 1, 0f) },
-            { "Wall",     new PieceDef("woodwall",          2, 1, 1f) }, // 2 m tall → centre +1 m
-            { "Doorway",  new PieceDef("wood_door",         2, 1, 1f) },
-            { "Pillar",   new PieceDef("wood_pole2",        1, 1, 1f) }, // 2 m pole  → centre +1 m
-            { "Hearth",   new PieceDef("hearth",            3, 2, 0f) },
+            //              vfp type      prefab                  W  H  Yoff
+            { "Floor2x2", new PieceDef("wood_floor",             2, 2, 0f) },
+            { "Floor1x1", new PieceDef("wood_floor_1x1",         1, 1, 0f) },
+            { "Wall",     new PieceDef("stone_wall_2x1",         2, 1, 0.5f) }, // 1 m tall → centre +0.5 m
+            { "Doorway",  new PieceDef("wood_door",               2, 1, 1f) },
+            { "Pillar",   new PieceDef("stone_pillar",            1, 1, 1f) }, // 2 m tall → centre +1 m
+            { "Hearth",   new PieceDef("hearth",                  3, 2, 0f) },
         };
 
         public static PieceDef? GetDef(string vfpType) =>
