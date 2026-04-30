@@ -52,7 +52,7 @@ namespace ValheimFloorPlan
                         "ValheimFloorPlan: No .vfp file set in config!");
                     return;
                 }
-                FloorPlanBuilder.Instance.BuildFromFile(path);
+                FloorPlanBuilder.Instance.StartPreview(path);
             }
 
             if (_undoHotkey.Value.IsDown())

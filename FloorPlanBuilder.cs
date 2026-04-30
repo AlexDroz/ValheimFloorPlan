@@ -34,9 +34,162 @@ namespace ValheimFloorPlan
         // Whether an undo snapshot is available.
         public bool CanUndo => _lastPlaced.Count > 0 || TerrainSnapshot.HasSnapshot;
 
+        // ── placement-preview state ───────────────────────────────────────────
+        private bool          _previewActive   = false;
+        private FloorPlan?    _previewPlan     = null;
+        private GameObject?   _previewGo       = null;
+        private LineRenderer? _previewLinePad  = null;  // white — leveled pad
+        private LineRenderer? _previewLineMoat = null;  // green — moat outer edge
+
         private void Awake()
         {
             Instance = this;
+        }
+
+        // ── preview mode ──────────────────────────────────────────────────────
+
+        /// <summary>
+        /// Loads the floor plan and enters preview mode: a green rectangle follows
+        /// the player showing the exact build footprint.
+        /// Left-click confirms the build at the current player position.
+        /// Right-click or Escape cancels.
+        /// </summary>
+        public void StartPreview(string path)
+        {
+            if (_previewActive)
+                CancelPreview();
+
+            FloorPlan plan;
+            try
+            {
+                plan = FloorPlan.Load(path);
+            }
+            catch (System.Exception ex)
+            {
+                ValheimFloorPlanPlugin.Log.LogError($"Failed to load floor plan: {ex.Message}");
+                return;
+            }
+
+            _previewPlan   = plan;
+            _previewActive = true;
+
+            // Two nested rectangles: white = leveled pad, green = moat outer edge.
+            _previewGo = new GameObject("VFP_Preview");
+            _previewLinePad  = MakeLine(_previewGo, new Color(1f,  1f,  1f,  0.9f), 0.12f);
+            _previewLineMoat = MakeLine(_previewGo, new Color(0.2f, 1f, 0.2f, 0.9f), 0.15f);
+
+            ValheimFloorPlanPlugin.Log.LogInfo(
+                $"[FloorPlanBuilder] Preview active ({plan.Pieces.Count} pieces, " +
+                $"{plan.Cols}×{plan.Rows} cells). Left-click to build, RMB/ESC to cancel.");
+            Player.m_localPlayer?.Message(MessageHud.MessageType.Center,
+                "ValheimFloorPlan: Left-click to place, Right-click/ESC to cancel.");
+        }
+
+        private static LineRenderer MakeLine(GameObject parent, Color color, float width)
+        {
+            var child = new GameObject("VFP_Line");
+            child.transform.SetParent(parent.transform, false);
+            var lr = child.AddComponent<LineRenderer>();
+            lr.useWorldSpace     = true;
+            lr.loop              = false;
+            lr.positionCount     = 5;
+            lr.widthMultiplier   = width;
+            lr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            lr.receiveShadows    = false;
+            lr.sharedMaterial    = new Material(Shader.Find("Sprites/Default"));
+            lr.startColor        = color;
+            lr.endColor          = color;
+            return lr;
+        }
+
+        private void CancelPreview()
+        {
+            _previewActive   = false;
+            _previewPlan     = null;
+            _previewLinePad  = null;
+            _previewLineMoat = null;
+            if (_previewGo != null) { Destroy(_previewGo); _previewGo = null; }
+        }
+
+        /// <summary>
+        /// Called every frame by Unity.  While in preview mode: updates the rectangle
+        /// position and handles confirmation (LMB) and cancellation (RMB / Escape).
+        /// </summary>
+        private void Update()
+        {
+            if (!_previewActive || _previewPlan == null) return;
+
+            var player = Player.m_localPlayer;
+            if (player == null) { CancelPreview(); return; }
+
+            // Keep the rectangle centred on the player each frame.
+            UpdatePreviewPosition(player.transform.position);
+
+            // Cancel on right-click or Escape.
+            if (UnityEngine.Input.GetMouseButtonDown(1) || UnityEngine.Input.GetKeyDown(KeyCode.Escape))
+            {
+                CancelPreview();
+                player.Message(MessageHud.MessageType.Center, "ValheimFloorPlan: Build cancelled.");
+                return;
+            }
+
+            // Confirm on left-click (skip while any Valheim UI panel has focus).
+            bool uiOpen = Chat.instance != null && Chat.instance.HasFocus();
+            if (UnityEngine.Input.GetMouseButtonDown(0) && !uiOpen)
+            {
+                var plan = _previewPlan;
+                CancelPreview();
+                ValheimFloorPlanPlugin.Log.LogInfo("[FloorPlanBuilder] Build confirmed by left-click.");
+                StartCoroutine(LevelThenPlace(plan));
+            }
+        }
+
+        /// <summary>
+        /// Repositions both preview rectangles each frame so they track the player.
+        /// White = leveled pad boundary.  Green = moat outer edge.
+        /// Each corner is Y-sampled via Physics.Raycast so the lines hug the terrain.
+        /// </summary>
+        private void UpdatePreviewPosition(Vector3 origin)
+        {
+            if (_previewPlan == null) return;
+
+            TerrainLeveler.GetPadBounds(_previewPlan, origin,
+                out float padMinX, out float padMaxX, out float padMinZ, out float padMaxZ);
+            TerrainLeveler.GetLeveledAreaBounds(_previewPlan, origin,
+                out float lvlMinX, out float lvlMaxX, out float lvlMinZ, out float lvlMaxZ);
+
+            SetRectangle(_previewLinePad,  origin.y, padMinX, padMaxX, padMinZ, padMaxZ);
+            SetRectangle(_previewLineMoat, origin.y, lvlMinX, lvlMaxX, lvlMinZ, lvlMaxZ);
+        }
+
+        private static void SetRectangle(LineRenderer? lr,
+            float referenceY, float minX, float maxX, float minZ, float maxZ)
+        {
+            if (lr == null) return;
+
+            float rayY = referenceY + 300f;
+            const int   terrainLayer = 1 << 11;
+            const float yLift        = 0.15f;
+
+            var corners = new Vector2[]
+            {
+                new Vector2(minX, minZ),  // SW
+                new Vector2(maxX, minZ),  // SE
+                new Vector2(maxX, maxZ),  // NE
+                new Vector2(minX, maxZ),  // NW
+            };
+
+            var pts = new Vector3[5];
+            for (int i = 0; i < 4; i++)
+            {
+                float y = referenceY;
+                if (Physics.Raycast(new Vector3(corners[i].x, rayY, corners[i].y),
+                        Vector3.down, out var hit, 600f, terrainLayer))
+                    y = hit.point.y;
+                pts[i] = new Vector3(corners[i].x, y + yLift, corners[i].y);
+            }
+            pts[4] = pts[0];
+            lr.SetPositions(pts);
         }
 
         /// <summary>

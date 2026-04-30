@@ -199,6 +199,22 @@ namespace ValheimFloorPlan
         }
 
         /// <summary>
+        /// Returns the actual outer edge of terrain modification: the leveled pad
+        /// boundary (plan + INNER_PAD) expanded by LEVEL_RADIUS (the disc falloff).
+        /// Used by FloorPlanBuilder to draw the outer preview rectangle so it matches
+        /// the visible terrain change, not the dormant moat extent.
+        /// </summary>
+        public static void GetLeveledAreaBounds(FloorPlan plan, Vector3 origin,
+            out float minX, out float maxX, out float minZ, out float maxZ)
+        {
+            GetBounds(plan, origin, INNER_PAD, out minX, out maxX, out minZ, out maxZ);
+            minX -= LEVEL_RADIUS;
+            maxX += LEVEL_RADIUS;
+            minZ -= LEVEL_RADIUS;
+            maxZ += LEVEL_RADIUS;
+        }
+
+        /// <summary>
         /// Returns the world-space bounding rectangle that LevelForPlan will modify.
         /// Used by FloorPlanBuilder to capture a terrain snapshot before leveling.
         /// </summary>
@@ -274,6 +290,15 @@ namespace ValheimFloorPlan
 
         private static float SampleHeight(float x, float z, float referenceY = 0f)
         {
+            // Use the terrain heightmap directly so that rocks, cliffs and other
+            // GameObjects sitting on top of the terrain are ignored.  Physics.Raycast
+            // on layer 11 hits the top surface of MineRock / cliff meshes, which would
+            // push targetY up to boulder-top height and raise all surrounding terrain
+            // to that level — creating an artificial rocky outcrop.
+            if (ZoneSystem.instance != null &&
+                ZoneSystem.instance.GetGroundHeight(new Vector3(x, referenceY, z), out float h))
+                return h;
+            // Fallback (ZoneSystem not ready): raycast terrain layer only.
             if (Physics.Raycast(new Vector3(x, referenceY + 200f, z),
                     Vector3.down, out var hit, 500f, 1 << 11))
                 return hit.point.y;
