@@ -17,6 +17,18 @@ namespace ValheimFloorPlan
         internal static int TerrainLevelPasses { get; private set; } = 2;
         internal static int TerrainSpikeCleanupPasses { get; private set; } = 2;
         internal static float BuildOriginForwardOffset { get; private set; } = 12f;
+        internal static float PreviewMoveStep { get; private set; } = 2f;
+        internal static float PreviewFineMoveStep { get; private set; } = 0.5f;
+        internal static float PreviewRotateStepDeg { get; private set; } = 15f;
+        internal static float PreviewFineRotateStepDeg { get; private set; } = 5f;
+        internal static KeyCode PreviewMoveForwardKey { get; private set; } = KeyCode.UpArrow;
+        internal static KeyCode PreviewMoveBackwardKey { get; private set; } = KeyCode.DownArrow;
+        internal static KeyCode PreviewMoveLeftKey { get; private set; } = KeyCode.LeftArrow;
+        internal static KeyCode PreviewMoveRightKey { get; private set; } = KeyCode.RightArrow;
+        internal static KeyCode PreviewRotateLeftKey { get; private set; } = KeyCode.Q;
+        internal static KeyCode PreviewRotateRightKey { get; private set; } = KeyCode.E;
+        internal static KeyCode PreviewCancelKey { get; private set; } = KeyCode.Escape;
+        internal static KeyCode PreviewFineAdjustKey { get; private set; } = KeyCode.LeftShift;
 
         private ConfigEntry<string> _vfpFilePath = null!;
         private ConfigEntry<KeyboardShortcut> _buildHotkey = null!;
@@ -25,6 +37,18 @@ namespace ValheimFloorPlan
         private ConfigEntry<int> _terrainLevelPasses = null!;
         private ConfigEntry<int> _terrainSpikeCleanupPasses = null!;
         private ConfigEntry<float> _buildOriginForwardOffset = null!;
+        private ConfigEntry<float> _previewMoveStep = null!;
+        private ConfigEntry<float> _previewFineMoveStep = null!;
+        private ConfigEntry<float> _previewRotateStepDeg = null!;
+        private ConfigEntry<float> _previewFineRotateStepDeg = null!;
+        private ConfigEntry<KeyCode> _previewMoveForwardKey = null!;
+        private ConfigEntry<KeyCode> _previewMoveBackwardKey = null!;
+        private ConfigEntry<KeyCode> _previewMoveLeftKey = null!;
+        private ConfigEntry<KeyCode> _previewMoveRightKey = null!;
+        private ConfigEntry<KeyCode> _previewRotateLeftKey = null!;
+        private ConfigEntry<KeyCode> _previewRotateRightKey = null!;
+        private ConfigEntry<KeyCode> _previewCancelKey = null!;
+        private ConfigEntry<KeyCode> _previewFineAdjustKey = null!;
 
         private void Awake()
         {
@@ -76,10 +100,89 @@ namespace ValheimFloorPlan
                 BuildOriginForwardOffset = Mathf.Clamp(_buildOriginForwardOffset.Value, 10f, 20f);
             BuildOriginForwardOffset = Mathf.Clamp(_buildOriginForwardOffset.Value, 10f, 20f);
 
+            _previewMoveStep = Config.Bind(
+                "Preview", "MoveStep", 2f,
+                new ConfigDescription(
+                    "How far the preview origin moves per nudge key press, in meters.",
+                    new AcceptableValueRange<float>(0.25f, 10f)));
+            _previewMoveStep.SettingChanged += (_, _) =>
+                PreviewMoveStep = Mathf.Clamp(_previewMoveStep.Value, 0.25f, 10f);
+            PreviewMoveStep = Mathf.Clamp(_previewMoveStep.Value, 0.25f, 10f);
+
+            _previewFineMoveStep = Config.Bind(
+                "Preview", "FineMoveStep", 0.5f,
+                new ConfigDescription(
+                    "How far the preview origin moves per nudge key press while the fine-adjust key is held, in meters.",
+                    new AcceptableValueRange<float>(0.05f, 5f)));
+            _previewFineMoveStep.SettingChanged += (_, _) =>
+                PreviewFineMoveStep = Mathf.Clamp(_previewFineMoveStep.Value, 0.05f, 5f);
+            PreviewFineMoveStep = Mathf.Clamp(_previewFineMoveStep.Value, 0.05f, 5f);
+
+            _previewRotateStepDeg = Config.Bind(
+                "Preview", "RotateStepDegrees", 15f,
+                new ConfigDescription(
+                    "How far the preview rotates per rotate key press, in degrees.",
+                    new AcceptableValueRange<float>(1f, 90f)));
+            _previewRotateStepDeg.SettingChanged += (_, _) =>
+                PreviewRotateStepDeg = Mathf.Clamp(_previewRotateStepDeg.Value, 1f, 90f);
+            PreviewRotateStepDeg = Mathf.Clamp(_previewRotateStepDeg.Value, 1f, 90f);
+
+            _previewFineRotateStepDeg = Config.Bind(
+                "Preview", "FineRotateStepDegrees", 5f,
+                new ConfigDescription(
+                    "How far the preview rotates per key press while the fine-adjust key is held, in degrees.",
+                    new AcceptableValueRange<float>(1f, 45f)));
+            _previewFineRotateStepDeg.SettingChanged += (_, _) =>
+                PreviewFineRotateStepDeg = Mathf.Clamp(_previewFineRotateStepDeg.Value, 1f, 45f);
+            PreviewFineRotateStepDeg = Mathf.Clamp(_previewFineRotateStepDeg.Value, 1f, 45f);
+
+            _previewMoveForwardKey = Config.Bind(
+                "Preview", "MoveForwardKey", KeyCode.UpArrow,
+                "Preview nudge key for moving the origin forward relative to the camera.");
+            _previewMoveBackwardKey = Config.Bind(
+                "Preview", "MoveBackwardKey", KeyCode.DownArrow,
+                "Preview nudge key for moving the origin backward relative to the camera.");
+            _previewMoveLeftKey = Config.Bind(
+                "Preview", "MoveLeftKey", KeyCode.LeftArrow,
+                "Preview nudge key for moving the origin left relative to the camera.");
+            _previewMoveRightKey = Config.Bind(
+                "Preview", "MoveRightKey", KeyCode.RightArrow,
+                "Preview nudge key for moving the origin right relative to the camera.");
+            _previewRotateLeftKey = Config.Bind(
+                "Preview", "RotateLeftKey", KeyCode.Q,
+                "Preview rotation key for rotating counter-clockwise.");
+            _previewRotateRightKey = Config.Bind(
+                "Preview", "RotateRightKey", KeyCode.E,
+                "Preview rotation key for rotating clockwise.");
+            _previewCancelKey = Config.Bind(
+                "Preview", "CancelKey", KeyCode.Escape,
+                "Preview keyboard cancel key. Right-click always cancels too.");
+            _previewFineAdjustKey = Config.Bind(
+                "Preview", "FineAdjustKey", KeyCode.LeftShift,
+                "Hold this key for fine movement and fine rotation while previewing.");
+
+            _previewMoveForwardKey.SettingChanged += (_, _) => PreviewMoveForwardKey = _previewMoveForwardKey.Value;
+            _previewMoveBackwardKey.SettingChanged += (_, _) => PreviewMoveBackwardKey = _previewMoveBackwardKey.Value;
+            _previewMoveLeftKey.SettingChanged += (_, _) => PreviewMoveLeftKey = _previewMoveLeftKey.Value;
+            _previewMoveRightKey.SettingChanged += (_, _) => PreviewMoveRightKey = _previewMoveRightKey.Value;
+            _previewRotateLeftKey.SettingChanged += (_, _) => PreviewRotateLeftKey = _previewRotateLeftKey.Value;
+            _previewRotateRightKey.SettingChanged += (_, _) => PreviewRotateRightKey = _previewRotateRightKey.Value;
+            _previewCancelKey.SettingChanged += (_, _) => PreviewCancelKey = _previewCancelKey.Value;
+            _previewFineAdjustKey.SettingChanged += (_, _) => PreviewFineAdjustKey = _previewFineAdjustKey.Value;
+
+            PreviewMoveForwardKey = _previewMoveForwardKey.Value;
+            PreviewMoveBackwardKey = _previewMoveBackwardKey.Value;
+            PreviewMoveLeftKey = _previewMoveLeftKey.Value;
+            PreviewMoveRightKey = _previewMoveRightKey.Value;
+            PreviewRotateLeftKey = _previewRotateLeftKey.Value;
+            PreviewRotateRightKey = _previewRotateRightKey.Value;
+            PreviewCancelKey = _previewCancelKey.Value;
+            PreviewFineAdjustKey = _previewFineAdjustKey.Value;
+
             gameObject.AddComponent<FloorPlanBuilder>();
 
             Log.LogInfo($"{PluginName} v{PluginVersion} loaded! " +
-                $"Build: {_buildHotkey.Value}  Undo: {_undoHotkey.Value}  Progress HUD: {ProgressMessageType}  Terrain passes: {TerrainLevelPasses}  Spike cleanup passes: {TerrainSpikeCleanupPasses}  Origin offset: {BuildOriginForwardOffset:F1}m");
+                $"Build: {_buildHotkey.Value}  Undo: {_undoHotkey.Value}  Progress HUD: {ProgressMessageType}  Terrain passes: {TerrainLevelPasses}  Spike cleanup passes: {TerrainSpikeCleanupPasses}  Origin offset: {BuildOriginForwardOffset:F1}m  Preview move: {PreviewMoveStep:F2}/{PreviewFineMoveStep:F2}m  Preview rotate: {PreviewRotateStepDeg:F0}/{PreviewFineRotateStepDeg:F0}°");
         }
 
         private void Update()

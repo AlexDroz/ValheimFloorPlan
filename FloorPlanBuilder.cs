@@ -18,7 +18,8 @@ namespace ValheimFloorPlan
     public class FloorPlanBuilder : MonoBehaviour
     {
         private const float PLACE_DELAY = 0.05f; // seconds between spawns to avoid lag spikes
-        private const float PREVIEW_MOVE_STEP = 2f; // metres per arrow-key press (1 cell)
+        private const float ORIGIN_MARKER_RADIUS = 0.75f;
+        private const float ORIGIN_MARKER_LIFT = 0.2f;
 
         // ZDO key written on every piece we place.  Used by Undo() to find VFP pieces
         // across sessions — any ZNetView with this key set to "1" was placed by this mod.
@@ -41,6 +42,7 @@ namespace ValheimFloorPlan
         private GameObject?   _previewGo       = null;
         private LineRenderer? _previewLinePad  = null;  // white — leveled pad
         private LineRenderer? _previewLineMoat = null;  // green — moat outer edge
+        private LineRenderer? _previewOriginMarker = null; // yellow — exact preview origin
         private float         _previewRotationDeg = 0f; // clockwise yaw, degrees
         private Vector3       _previewOrigin   = Vector3.zero; // locked at preview start, not updated per-frame
 
@@ -88,22 +90,23 @@ namespace ValheimFloorPlan
             _previewGo = new GameObject("VFP_Preview");
             _previewLinePad  = MakeLine(_previewGo, new Color(1f,  1f,  1f,  0.9f), 0.12f);
             _previewLineMoat = MakeLine(_previewGo, new Color(0.2f, 1f, 0.2f, 0.9f), 0.15f);
+            _previewOriginMarker = MakeLine(_previewGo, new Color(1f, 0.85f, 0.1f, 0.95f), 0.10f, 7);
 
             ValheimFloorPlanPlugin.Log.LogInfo(
                 $"[FloorPlanBuilder] Preview active ({plan.Pieces.Count} pieces, " +
                 $"{plan.Cols}×{plan.Rows} cells). Left-click to build, RMB/ESC to cancel.");
             Player.m_localPlayer?.Message(MessageHud.MessageType.Center,
-                "ValheimFloorPlan: ←/→/↑/↓ move | Q/E rotate | Left-click to place | RMB/ESC cancel");
+                $"ValheimFloorPlan: {ValheimFloorPlanPlugin.PreviewMoveLeftKey}/{ValheimFloorPlanPlugin.PreviewMoveRightKey}/{ValheimFloorPlanPlugin.PreviewMoveForwardKey}/{ValheimFloorPlanPlugin.PreviewMoveBackwardKey} move | {ValheimFloorPlanPlugin.PreviewRotateLeftKey}/{ValheimFloorPlanPlugin.PreviewRotateRightKey} rotate | {ValheimFloorPlanPlugin.PreviewFineAdjustKey} fine | Left-click to place | RMB/{ValheimFloorPlanPlugin.PreviewCancelKey} cancel");
         }
 
-        private static LineRenderer MakeLine(GameObject parent, Color color, float width)
+        private static LineRenderer MakeLine(GameObject parent, Color color, float width, int positionCount = 5)
         {
             var child = new GameObject("VFP_Line");
             child.transform.SetParent(parent.transform, false);
             var lr = child.AddComponent<LineRenderer>();
             lr.useWorldSpace     = true;
             lr.loop              = false;
-            lr.positionCount     = 5;
+            lr.positionCount     = positionCount;
             lr.widthMultiplier   = width;
             lr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
             lr.receiveShadows    = false;
@@ -119,6 +122,7 @@ namespace ValheimFloorPlan
             _previewPlan        = null;
             _previewLinePad     = null;
             _previewLineMoat    = null;
+            _previewOriginMarker = null;
             _previewRotationDeg = 0f;
             _previewOrigin      = Vector3.zero;
             if (_previewGo != null) { Destroy(_previewGo); _previewGo = null; }
@@ -138,16 +142,24 @@ namespace ValheimFloorPlan
             // Keep the rectangle on the locked origin (fixed when preview started).
             UpdatePreviewPosition(_previewOrigin);
 
-            // Q/E rotate the plan (15° steps; E = clockwise from above).
-            if (UnityEngine.Input.GetKeyDown(KeyCode.Q))
+            bool fineAdjust = IsFineAdjustHeld();
+            float rotateStep = fineAdjust
+                ? ValheimFloorPlanPlugin.PreviewFineRotateStepDeg
+                : ValheimFloorPlanPlugin.PreviewRotateStepDeg;
+            float moveStep = fineAdjust
+                ? ValheimFloorPlanPlugin.PreviewFineMoveStep
+                : ValheimFloorPlanPlugin.PreviewMoveStep;
+
+            // Configurable rotation controls. Fine-adjust reduces the step size.
+            if (IsPreviewKeyDown(ValheimFloorPlanPlugin.PreviewRotateLeftKey))
             {
-                _previewRotationDeg = (_previewRotationDeg - 15f + 360f) % 360f;
+                _previewRotationDeg = (_previewRotationDeg - rotateStep + 360f) % 360f;
                 player.Message(ValheimFloorPlanPlugin.ProgressMessageType,
                     $"ValheimFloorPlan: Rotation {_previewRotationDeg:F0}\u00b0");
             }
-            else if (UnityEngine.Input.GetKeyDown(KeyCode.E))
+            else if (IsPreviewKeyDown(ValheimFloorPlanPlugin.PreviewRotateRightKey))
             {
-                _previewRotationDeg = (_previewRotationDeg + 15f) % 360f;
+                _previewRotationDeg = (_previewRotationDeg + rotateStep) % 360f;
                 player.Message(ValheimFloorPlanPlugin.ProgressMessageType,
                     $"ValheimFloorPlan: Rotation {_previewRotationDeg:F0}\u00b0");
             }
@@ -174,20 +186,20 @@ namespace ValheimFloorPlan
             }
 
             Vector3 nudge = Vector3.zero;
-            if (UnityEngine.Input.GetKeyDown(KeyCode.UpArrow))         nudge =  moveForward * PREVIEW_MOVE_STEP;
-            else if (UnityEngine.Input.GetKeyDown(KeyCode.DownArrow))  nudge = -moveForward * PREVIEW_MOVE_STEP;
-            else if (UnityEngine.Input.GetKeyDown(KeyCode.RightArrow)) nudge =  moveRight   * PREVIEW_MOVE_STEP;
-            else if (UnityEngine.Input.GetKeyDown(KeyCode.LeftArrow))  nudge = -moveRight   * PREVIEW_MOVE_STEP;
+            if (IsPreviewKeyDown(ValheimFloorPlanPlugin.PreviewMoveForwardKey))         nudge =  moveForward * moveStep;
+            else if (IsPreviewKeyDown(ValheimFloorPlanPlugin.PreviewMoveBackwardKey))   nudge = -moveForward * moveStep;
+            else if (IsPreviewKeyDown(ValheimFloorPlanPlugin.PreviewMoveRightKey))      nudge =  moveRight   * moveStep;
+            else if (IsPreviewKeyDown(ValheimFloorPlanPlugin.PreviewMoveLeftKey))       nudge = -moveRight   * moveStep;
 
             if (nudge != Vector3.zero)
             {
                 _previewOrigin += nudge;
                 player.Message(ValheimFloorPlanPlugin.ProgressMessageType,
-                    $"ValheimFloorPlan: Origin ({_previewOrigin.x:F0}, {_previewOrigin.z:F0})");
+                    $"ValheimFloorPlan: Origin ({_previewOrigin.x:F1}, {_previewOrigin.z:F1})");
             }
 
             // Cancel on right-click or Escape.
-            if (UnityEngine.Input.GetMouseButtonDown(1) || UnityEngine.Input.GetKeyDown(KeyCode.Escape))
+            if (UnityEngine.Input.GetMouseButtonDown(1) || IsPreviewKeyDown(ValheimFloorPlanPlugin.PreviewCancelKey))
             {
                 CancelPreview();
                 player.Message(MessageHud.MessageType.Center, "ValheimFloorPlan: Build cancelled.");
@@ -223,6 +235,20 @@ namespace ValheimFloorPlan
             return origin + forward * forwardOffset;
         }
 
+        private static bool IsPreviewKeyDown(KeyCode key)
+        {
+            return key != KeyCode.None && UnityEngine.Input.GetKeyDown(key);
+        }
+
+        private static bool IsFineAdjustHeld()
+        {
+            KeyCode key = ValheimFloorPlanPlugin.PreviewFineAdjustKey;
+            if (key == KeyCode.LeftShift || key == KeyCode.RightShift)
+                return UnityEngine.Input.GetKey(KeyCode.LeftShift) || UnityEngine.Input.GetKey(KeyCode.RightShift);
+
+            return key != KeyCode.None && UnityEngine.Input.GetKey(key);
+        }
+
         /// <summary>
         /// Repositions both preview rectangles each frame so they track the player.
         /// White = leveled pad boundary.  Green = moat outer edge.
@@ -243,6 +269,7 @@ namespace ValheimFloorPlan
                 RotateBoundsCorners(origin, padMinX, padMaxX, padMinZ, padMaxZ, _previewRotationDeg));
             SetRectangle(_previewLineMoat, origin.y,
                 RotateBoundsCorners(origin, lvlMinX, lvlMaxX, lvlMinZ, lvlMaxZ, _previewRotationDeg));
+            SetOriginMarker(_previewOriginMarker, origin.y, origin);
         }
 
         /// <summary>
@@ -294,6 +321,29 @@ namespace ValheimFloorPlan
                 pts[i] = new Vector3(corners[i].x, y + yLift, corners[i].y);
             }
             pts[4] = pts[0];
+            lr.SetPositions(pts);
+        }
+
+        private static void SetOriginMarker(LineRenderer? lr, float referenceY, Vector3 origin)
+        {
+            if (lr == null) return;
+
+            float y = referenceY;
+            float rayY = referenceY + 300f;
+            const int terrainLayer = 1 << 11;
+            if (Physics.Raycast(new Vector3(origin.x, rayY, origin.z),
+                    Vector3.down, out var hit, 600f, terrainLayer))
+                y = hit.point.y;
+
+            var pts = new Vector3[7];
+            Vector3 center = new Vector3(origin.x, y + ORIGIN_MARKER_LIFT, origin.z);
+            pts[0] = center + new Vector3(-ORIGIN_MARKER_RADIUS, 0f, 0f);
+            pts[1] = center;
+            pts[2] = center + new Vector3(ORIGIN_MARKER_RADIUS, 0f, 0f);
+            pts[3] = center;
+            pts[4] = center + new Vector3(0f, 0f, ORIGIN_MARKER_RADIUS);
+            pts[5] = center;
+            pts[6] = center + new Vector3(0f, 0f, -ORIGIN_MARKER_RADIUS);
             lr.SetPositions(pts);
         }
 
