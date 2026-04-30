@@ -13,10 +13,12 @@ namespace ValheimFloorPlan
         public const string PluginVersion = "0.1.0";
 
         internal static ManualLogSource Log = null!;
+        internal static MessageHud.MessageType ProgressMessageType { get; private set; } = MessageHud.MessageType.Center;
 
         private ConfigEntry<string> _vfpFilePath = null!;
         private ConfigEntry<KeyboardShortcut> _buildHotkey = null!;
         private ConfigEntry<KeyboardShortcut> _undoHotkey = null!;
+        private ConfigEntry<string> _progressMessagePosition = null!;
 
         private void Awake()
         {
@@ -34,10 +36,17 @@ namespace ValheimFloorPlan
                 "General", "UndoHotkey", new KeyboardShortcut(KeyCode.F9),
                 "Hotkey to undo the last floor plan build (removes pieces and restores terrain).");
 
+            _progressMessagePosition = Config.Bind(
+                "General", "ProgressMessagePosition", "CenterLeft",
+                "HUD slot for build-progress messages. Uses Valheim MessageHud positions. Examples: Center, TopLeft, TopRight. 'CenterLeft' is accepted as an alias and maps to Center.");
+            _progressMessagePosition.SettingChanged += (_, _) =>
+                ProgressMessageType = ParseProgressMessageType(_progressMessagePosition.Value);
+            ProgressMessageType = ParseProgressMessageType(_progressMessagePosition.Value);
+
             gameObject.AddComponent<FloorPlanBuilder>();
 
             Log.LogInfo($"{PluginName} v{PluginVersion} loaded! " +
-                $"Build: {_buildHotkey.Value}  Undo: {_undoHotkey.Value}");
+                $"Build: {_buildHotkey.Value}  Undo: {_undoHotkey.Value}  Progress HUD: {ProgressMessageType}");
         }
 
         private void Update()
@@ -57,6 +66,26 @@ namespace ValheimFloorPlan
 
             if (_undoHotkey.Value.IsDown())
                 FloorPlanBuilder.Instance.Undo();
+        }
+
+        internal static void ShowProgressMessage(string message)
+        {
+            Player.m_localPlayer?.Message(ProgressMessageType, $"ValheimFloorPlan: {message}");
+        }
+
+        private static MessageHud.MessageType ParseProgressMessageType(string value)
+        {
+            string normalized = (value ?? string.Empty).Trim();
+            if (string.Equals(normalized, "CenterLeft", System.StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(normalized, "MiddleLeft", System.StringComparison.OrdinalIgnoreCase))
+                return MessageHud.MessageType.Center;
+
+            if (System.Enum.TryParse(normalized, true, out MessageHud.MessageType parsed))
+                return parsed;
+
+            Log?.LogWarning(
+                $"Unknown ProgressMessagePosition '{value}'. Falling back to Center.");
+            return MessageHud.MessageType.Center;
         }
     }
 }

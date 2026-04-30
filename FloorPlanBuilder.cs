@@ -271,6 +271,9 @@ namespace ValheimFloorPlan
                 out float sMinX, out float sMaxX, out float sMinZ, out float sMaxZ);
             TerrainSnapshot.Capture(sMinX, sMaxX, sMinZ, sMaxZ, origin.y);
 
+            player.Message(MessageHud.MessageType.Center, "Clearing rocks...");
+            ClearRocksInPad(plan, origin);
+
             player.Message(MessageHud.MessageType.Center, "Leveling terrain...");
             yield return StartCoroutine(TerrainLeveler.LevelForPlan(plan, origin));
 
@@ -280,13 +283,341 @@ namespace ValheimFloorPlan
             // system uses the physics mesh to decide if pieces are supported — pieces
             // placed while the mesh is stale appear floating and get destroyed.
             player.Message(MessageHud.MessageType.Center, "Waiting for terrain physics...");
+            ShowBuildProgress("Waiting for terrain physics...");
             TerrainLeveler.GetPadBounds(plan, origin,
                 out float padMinX, out float padMaxX, out float padMinZ, out float padMaxZ);
             yield return StartCoroutine(WaitForTerrainPhysics(
                 padMinX, padMaxX, padMinZ, padMaxZ, TerrainLeveler.TargetLevelY));
 
             player.Message(MessageHud.MessageType.Center, "Placing floor plan pieces...");
+            ShowBuildProgress($"Placing pieces... 0/{plan.Pieces.Count}");
             yield return StartCoroutine(PlacePieces(plan, origin));
+
+            // Some spike meshes appear a short time AFTER leveling/placement finalizes.
+            // Run a brief post-build guard to detect/remove tall non-build blockers.
+            ShowBuildProgress("Final checks...");
+            yield return StartCoroutine(PostBuildSpikeGuard(plan, origin));
+        }
+
+        /// <summary>
+        /// Destroys MineRock and MineRock5 GameObjects that intersect the leveled area.
+        /// We scan colliders (not just object pivots) so rocks whose pivot sits outside
+        /// the rectangle but whose mesh protrudes into the pad are still removed.
+        /// </summary>
+        private void ClearRocksInPad(FloorPlan plan, Vector3 origin)
+        {
+            TerrainLeveler.GetLeveledAreaBounds(plan, origin,
+                out float minX, out float maxX, out float minZ, out float maxZ);
+
+            int cleared = 0;
+
+            var removed = new HashSet<GameObject>();
+
+            // Probe the full leveled rectangle in physics-space so we catch intersecting rocks
+            // even when their transform pivot lies outside the target bounds.
+            var center = new Vector3((minX + maxX) * 0.5f, origin.y, (minZ + maxZ) * 0.5f);
+            var halfExtents = new Vector3((maxX - minX) * 0.5f, 100f, (maxZ - minZ) * 0.5f);
+            var areaBounds = new Bounds(center, new Vector3(maxX - minX, 400f, maxZ - minZ));
+            foreach (var hit in Physics.OverlapBox(center, halfExtents, Quaternion.identity,
+                         Physics.AllLayers, QueryTriggerInteraction.Collide))
+            {
+                if (hit == null) continue;
+
+                var mr5 = hit.GetComponentInParent<MineRock5>();
+                if (mr5 != null && removed.Add(mr5.gameObject))
+                {
+                    ValheimFloorPlanPlugin.Log.LogInfo(
+                        $"[FloorPlanBuilder] Removing MineRock5 '{mr5.name}' at {mr5.transform.position}");
+                    ZNetScene.instance.Destroy(mr5.gameObject);
+                    cleared++;
+                    continue;
+                }
+
+                var mr = hit.GetComponentInParent<MineRock>();
+                if (mr != null && removed.Add(mr.gameObject))
+                {
+                    ValheimFloorPlanPlugin.Log.LogInfo(
+                        $"[FloorPlanBuilder] Removing MineRock '{mr.name}' at {mr.transform.position}");
+                    ZNetScene.instance.Destroy(mr.gameObject);
+                    cleared++;
+                    continue;
+                }
+
+                var des = hit.GetComponentInParent<Destructible>();
+                if (des != null && removed.Add(des.gameObject))
+                {
+                    if (IsRockLikeName(des.name) && des.GetComponent<Piece>() == null)
+                    {
+                        ValheimFloorPlanPlugin.Log.LogInfo(
+                            $"[FloorPlanBuilder] Removing rock-like Destructible '{des.name}' at {des.transform.position}");
+                        ZNetScene.instance.Destroy(des.gameObject);
+                        cleared++;
+                    }
+                }
+            }
+
+            // Some world spike meshes are renderer-only (or have non-query colliders),
+            // so collider overlap alone can miss them. Sweep render bounds as fallback.
+            foreach (var r in Object.FindObjectsByType<Renderer>(FindObjectsSortMode.None))
+            {
+                if (r == null || !r.enabled) continue;
+                if (!r.bounds.Intersects(areaBounds)) continue;
+
+                var root = r.transform.root != null ? r.transform.root.gameObject : r.gameObject;
+                if (!removed.Add(root)) continue;
+                if (root.GetComponentInChildren<Piece>() != null) continue;
+
+                string lower = root.name.ToLowerInvariant();
+                bool hasKnownType = HasAnyComponentNamed(root,
+                    "MineRock", "MineRock5", "Destructible", "StaticPhysics", "TerrainModifier", "LocationProxy");
+                bool rockLike = lower.Contains("rock") || lower.Contains("stone") || lower.Contains("cliff") ||
+                                lower.Contains("spike") || lower.Contains("obelisk") || lower.Contains("monolith");
+                bool looksPickable = lower.Contains("pickable") || lower.Contains("flint") ||
+                                     lower.Contains("branch") || lower.Contains("mushroom") ||
+                                     lower.Contains("thistle") || lower.Contains("berry");
+                float h = r.bounds.size.y;
+                float xz = Mathf.Max(r.bounds.size.x, r.bounds.size.z);
+                bool tallBlockingMesh = h >= 2.0f && xz >= 0.8f;
+
+                if ((rockLike || (hasKnownType && tallBlockingMesh)) && !looksPickable)
+                {
+                    ValheimFloorPlanPlugin.Log.LogInfo(
+                        $"[FloorPlanBuilder] Removing renderer blocker '{root.name}' at {root.transform.position}");
+                    ZNetScene.instance.Destroy(root);
+                    cleared++;
+                }
+            }
+
+            foreach (var mr in Object.FindObjectsByType<MineRock5>(FindObjectsSortMode.None))
+            {
+                if (mr == null) continue;
+                if (!removed.Add(mr.gameObject)) continue;
+                var p = mr.transform.position;
+                if (p.x >= minX && p.x <= maxX && p.z >= minZ && p.z <= maxZ)
+                {
+                    ValheimFloorPlanPlugin.Log.LogInfo(
+                        $"[FloorPlanBuilder] Removing MineRock5 '{mr.name}' at {p}");
+                    ZNetScene.instance.Destroy(mr.gameObject);
+                    cleared++;
+                }
+            }
+
+            foreach (var mr in Object.FindObjectsByType<MineRock>(FindObjectsSortMode.None))
+            {
+                if (mr == null) continue;
+                if (!removed.Add(mr.gameObject)) continue;
+                var p = mr.transform.position;
+                if (p.x >= minX && p.x <= maxX && p.z >= minZ && p.z <= maxZ)
+                {
+                    ValheimFloorPlanPlugin.Log.LogInfo(
+                        $"[FloorPlanBuilder] Removing MineRock '{mr.name}' at {p}");
+                    ZNetScene.instance.Destroy(mr.gameObject);
+                    cleared++;
+                }
+            }
+
+            ValheimFloorPlanPlugin.Log.LogInfo(
+                $"[FloorPlanBuilder] ClearRocksInPad: {cleared} rock(s) removed.");
+
+            if (cleared == 0)
+                LogAreaBlockers(center, halfExtents);
+        }
+
+        private IEnumerator PostBuildSpikeGuard(FloorPlan plan, Vector3 origin)
+        {
+            TerrainLeveler.GetLeveledAreaBounds(plan, origin,
+                out float minX, out float maxX, out float minZ, out float maxZ);
+
+            const int scans = 4;
+            const float scanDelay = 0.75f;
+            int totalRemoved = 0;
+
+            for (int i = 0; i < scans; i++)
+            {
+                totalRemoved += RemoveTallBlockersAboveTerrain(minX, maxX, minZ, maxZ, TerrainLeveler.TargetLevelY);
+                if (i < scans - 1)
+                    yield return new WaitForSeconds(scanDelay);
+            }
+
+            if (totalRemoved > 0)
+                ValheimFloorPlanPlugin.Log.LogInfo(
+                    $"[FloorPlanBuilder] PostBuildSpikeGuard removed {totalRemoved} blocker(s).");
+            else
+                ValheimFloorPlanPlugin.Log.LogInfo("[FloorPlanBuilder] PostBuildSpikeGuard found no blockers.");
+        }
+
+        private int RemoveTallBlockersAboveTerrain(
+            float minX, float maxX, float minZ, float maxZ, float referenceY)
+        {
+            const float step = 0.5f;
+            const float minProtrusion = 0.8f;
+
+            int removed = 0;
+            var toDestroy = new HashSet<GameObject>();
+
+            int stepsX = Mathf.CeilToInt((maxX - minX) / step);
+            int stepsZ = Mathf.CeilToInt((maxZ - minZ) / step);
+            float rayY = referenceY + 300f;
+
+            for (int ix = 0; ix <= stepsX; ix++)
+            {
+                float x = (ix == stepsX) ? maxX : minX + ix * step;
+                for (int iz = 0; iz <= stepsZ; iz++)
+                {
+                    float z = (iz == stepsZ) ? maxZ : minZ + iz * step;
+
+                    if (!Physics.Raycast(new Vector3(x, rayY, z), Vector3.down,
+                            out var terrainHit, 600f, 1 << 11))
+                        continue;
+
+                    var allHits = Physics.RaycastAll(new Vector3(x, rayY, z), Vector3.down, 600f);
+                    if (allHits == null || allHits.Length == 0) continue;
+
+                    System.Array.Sort(allHits, (a, b) => b.point.y.CompareTo(a.point.y));
+                    foreach (var h in allHits)
+                    {
+                        if (h.collider == null) continue;
+                        var root = h.collider.transform.root != null
+                            ? h.collider.transform.root.gameObject
+                            : h.collider.gameObject;
+                        if (root == null) continue;
+                        if (root.GetComponentInChildren<Piece>() != null) continue;
+
+                        float protrusion = h.point.y - terrainHit.point.y;
+                        if (protrusion < minProtrusion) break;
+
+                        string n = root.name.ToLowerInvariant();
+                        bool looksPickable = n.Contains("pickable") || n.Contains("flint") ||
+                                             n.Contains("branch") || n.Contains("mushroom") ||
+                                             n.Contains("thistle") || n.Contains("berry");
+                        bool rockLike = n.Contains("rock") || n.Contains("stone") || n.Contains("cliff") ||
+                                        n.Contains("spike") || n.Contains("obelisk") || n.Contains("monolith");
+                        bool hasKnownType = HasAnyComponentNamed(root,
+                            "MineRock", "MineRock5", "Destructible", "StaticPhysics", "TerrainModifier", "LocationProxy");
+
+                        if ((rockLike || hasKnownType) && !looksPickable && toDestroy.Add(root))
+                        {
+                            ValheimFloorPlanPlugin.Log.LogWarning(
+                                $"[FloorPlanBuilder] PostBuildSpikeGuard removing '{root.name}' protrusion={protrusion:F2}m at {root.transform.position}");
+                        }
+
+                        break;
+                    }
+                }
+            }
+
+            foreach (var go in toDestroy)
+            {
+                ZNetScene.instance.Destroy(go);
+                removed++;
+            }
+
+            return removed;
+        }
+
+        private static bool IsRockLikeName(string name)
+        {
+            if (string.IsNullOrEmpty(name)) return false;
+            string n = name.ToLowerInvariant();
+            return n.Contains("rock") || n.Contains("stone") || n.Contains("boulder") || n.Contains("cliff");
+        }
+
+        private static bool HasAnyComponentNamed(GameObject root, params string[] names)
+        {
+            var set = new HashSet<string>(names);
+            foreach (var c in root.GetComponentsInChildren<Component>(true))
+            {
+                if (c == null) continue;
+                if (set.Contains(c.GetType().Name)) return true;
+            }
+            return false;
+        }
+
+        private static void LogAreaBlockers(Vector3 center, Vector3 halfExtents)
+        {
+            var roots = new HashSet<GameObject>();
+            var interesting = new List<string>();
+            var areaBounds = new Bounds(center, new Vector3(halfExtents.x * 2f, halfExtents.y * 2f, halfExtents.z * 2f));
+
+            foreach (var hit in Physics.OverlapBox(center, halfExtents, Quaternion.identity,
+                         Physics.AllLayers, QueryTriggerInteraction.Collide))
+            {
+                if (hit == null) continue;
+                var root = hit.transform.root != null ? hit.transform.root.gameObject : hit.gameObject;
+                if (!roots.Add(root)) continue;
+
+                bool keep = false;
+                string rootName = root.name;
+                string lowerName = rootName.ToLowerInvariant();
+
+                if (lowerName.Contains("rock") || lowerName.Contains("stone") ||
+                    lowerName.Contains("cliff") || lowerName.Contains("location"))
+                    keep = true;
+
+                var comps = root.GetComponentsInChildren<Component>(true);
+                var tags = new HashSet<string>();
+                foreach (var c in comps)
+                {
+                    if (c == null) continue;
+                    string t = c.GetType().Name;
+                    if (t == "MineRock" || t == "MineRock5" || t == "Destructible" ||
+                        t == "StaticPhysics" || t == "TerrainModifier" || t == "LocationProxy")
+                    {
+                        tags.Add(t);
+                        keep = true;
+                    }
+                }
+
+                if (!keep) continue;
+                string tagText = tags.Count > 0 ? string.Join(",", tags) : "none";
+                interesting.Add($"{rootName} @ {root.transform.position} layer={root.layer} tags={tagText}");
+            }
+
+            // Include renderer-only candidates that may have no collider.
+            foreach (var r in Object.FindObjectsByType<Renderer>(FindObjectsSortMode.None))
+            {
+                if (r == null || !r.enabled) continue;
+                if (!r.bounds.Intersects(areaBounds)) continue;
+
+                var root = r.transform.root != null ? r.transform.root.gameObject : r.gameObject;
+                if (!roots.Add(root)) continue;
+
+                string lowerName = root.name.ToLowerInvariant();
+                bool keep = lowerName.Contains("rock") || lowerName.Contains("stone") ||
+                            lowerName.Contains("cliff") || lowerName.Contains("spike") ||
+                            lowerName.Contains("obelisk") || lowerName.Contains("monolith");
+
+                var comps = root.GetComponentsInChildren<Component>(true);
+                var tags = new HashSet<string>();
+                foreach (var c in comps)
+                {
+                    if (c == null) continue;
+                    string t = c.GetType().Name;
+                    if (t == "MineRock" || t == "MineRock5" || t == "Destructible" ||
+                        t == "StaticPhysics" || t == "TerrainModifier" || t == "LocationProxy")
+                    {
+                        tags.Add(t);
+                        keep = true;
+                    }
+                }
+
+                if (!keep) continue;
+                string tagText = tags.Count > 0 ? string.Join(",", tags) : "none";
+                interesting.Add($"{root.name} @ {root.transform.position} layer={root.layer} tags={tagText} (renderer)");
+            }
+
+            if (interesting.Count == 0)
+            {
+                ValheimFloorPlanPlugin.Log.LogInfo(
+                    "[FloorPlanBuilder] ClearRocksInPad diagnostics: no rock/location-like roots found in leveled area.");
+                return;
+            }
+
+            int limit = Mathf.Min(15, interesting.Count);
+            ValheimFloorPlanPlugin.Log.LogWarning(
+                $"[FloorPlanBuilder] ClearRocksInPad diagnostics: {interesting.Count} candidate blocker root(s) in leveled area. Showing {limit}:");
+            for (int i = 0; i < limit; i++)
+                ValheimFloorPlanPlugin.Log.LogWarning($"[FloorPlanBuilder]   {interesting[i]}");
         }
 
         /// <summary>
@@ -317,6 +648,7 @@ namespace ValheimFloorPlan
 
             float elapsed = 0f;
             bool firstLog = true;
+            float nextProgressAt = 2f;
 
             while (elapsed < MAX_WAIT)
             {
@@ -351,7 +683,14 @@ namespace ValheimFloorPlan
                 {
                     ValheimFloorPlanPlugin.Log.LogInfo(
                         $"[FloorPlanBuilder] Physics collider ready after {elapsed:F1}s (worst delta {worstDelta:F2}m).");
+                    ShowBuildProgress("Waiting for terrain physics... done");
                     yield break;
+                }
+
+                if (elapsed >= nextProgressAt)
+                {
+                    ShowBuildProgress($"Waiting for terrain physics... {elapsed:F0}s");
+                    nextProgressAt += 2f;
                 }
 
                 yield return new WaitForSeconds(POLL_STEP);
@@ -360,6 +699,7 @@ namespace ValheimFloorPlan
 
             ValheimFloorPlanPlugin.Log.LogWarning(
                 $"[FloorPlanBuilder] Physics collider did not settle within {MAX_WAIT:F0}s — placing anyway.");
+            ShowBuildProgress("Waiting for terrain physics... timeout, placing anyway");
         }
 
         private IEnumerator PlacePieces(FloorPlan plan, Vector3 origin)
@@ -374,6 +714,8 @@ namespace ValheimFloorPlan
             int placed = 0;
             int skipped = 0;
             Vector3 firstPos = Vector3.zero;
+            int totalPieces = plan.Pieces.Count;
+            int nextProgressPct = 10;
 
             foreach (var piece in plan.Pieces)
             {
@@ -451,6 +793,16 @@ namespace ValheimFloorPlan
 
                 placed++;
 
+                if (totalPieces > 0)
+                {
+                    int pct = Mathf.FloorToInt((placed * 100f) / totalPieces);
+                    if (pct >= nextProgressPct)
+                    {
+                        ShowBuildProgress($"Placing pieces... {placed}/{totalPieces}");
+                        nextProgressPct += 10;
+                    }
+                }
+
                 // Brief yield every piece to avoid freezing
                 if (placed % 10 == 0)
                     yield return new WaitForSeconds(PLACE_DELAY);
@@ -458,8 +810,14 @@ namespace ValheimFloorPlan
 
             ValheimFloorPlanPlugin.Log.LogInfo($"Floor plan complete: {placed} placed, {skipped} skipped.");
             ValheimFloorPlanPlugin.Log.LogInfo($"First piece was at: {firstPos}  — player was at: {origin}");
+            ShowBuildProgress($"Placing pieces... done ({placed}/{totalPieces})");
             player.Message(MessageHud.MessageType.Center,
                 $"Floor plan built: {placed} pieces placed, {skipped} skipped. Check log for position info.");
+        }
+
+        private static void ShowBuildProgress(string message)
+        {
+            ValheimFloorPlanPlugin.ShowProgressMessage(message);
         }
     }
 }

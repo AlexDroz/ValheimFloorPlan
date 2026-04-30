@@ -21,8 +21,13 @@ namespace ValheimFloorPlan
     public static class TerrainLeveler
     {
         // ── inner pad ─────────────────────────────────────────────────────────
-        private const float LEVEL_RADIUS  = 3.0f;
-        private const float SAMPLE_STEP   = 1.0f;  // match Valheim's ~1m terrain vertex spacing
+        private const float LEVEL_RADIUS      = 3.0f;
+        private const float PRE_SAMPLE_STEP   = 0.5f;  // denser scan catches narrow local highs
+        private const float LEVEL_SAMPLE_STEP = 0.5f;  // denser ops reduce edge misses on slopes
+        private const float SPIKE_SCAN_STEP   = 0.5f;
+        private const float SPIKE_LEVEL_RADIUS = 1.5f;
+        private const float SPIKE_TOLERANCE   = 0.2f;
+        private const int   SPIKE_PASSES      = 2;
         private const int   INNER_PAD     = 2;      // cells of buffer around plan bounding box
 
         // ── moat ──────────────────────────────────────────────────────────────
@@ -59,19 +64,28 @@ namespace ValheimFloorPlan
                 out float innerMinX, out float innerMaxX,
                 out float innerMinZ, out float innerMaxZ);
 
-            // Pre-sample: find min and max terrain heights across the footprint.
+            // Pre-sample: find min and max terrain heights across the full area that can be
+            // affected by leveling ops (inner pad + disc falloff radius). If we sample only
+            // the inner pad, uphill terrain just outside the pad can be higher than targetY;
+            // boundary discs then cut that ring down, which appears as an unintended trench.
+            float sampleMinX = innerMinX - LEVEL_RADIUS;
+            float sampleMaxX = innerMaxX + LEVEL_RADIUS;
+            float sampleMinZ = innerMinZ - LEVEL_RADIUS;
+            float sampleMaxZ = innerMaxZ + LEVEL_RADIUS;
+
+            // Pre-sample: find min and max terrain heights across the affected area.
             // Use count-based loops so the last step always lands exactly on the boundary,
             // regardless of whether (max - min) is an integer multiple of SAMPLE_STEP.
             float maxY = float.MinValue;
             float minY = float.MaxValue;
-            int preStepsX = Mathf.CeilToInt((innerMaxX - innerMinX) / SAMPLE_STEP);
-            int preStepsZ = Mathf.CeilToInt((innerMaxZ - innerMinZ) / SAMPLE_STEP);
+            int preStepsX = Mathf.CeilToInt((sampleMaxX - sampleMinX) / PRE_SAMPLE_STEP);
+            int preStepsZ = Mathf.CeilToInt((sampleMaxZ - sampleMinZ) / PRE_SAMPLE_STEP);
             for (int ix = 0; ix <= preStepsX; ix++)
             {
-                float x = (ix == preStepsX) ? innerMaxX : innerMinX + ix * SAMPLE_STEP;
+                float x = (ix == preStepsX) ? sampleMaxX : sampleMinX + ix * PRE_SAMPLE_STEP;
                 for (int iz = 0; iz <= preStepsZ; iz++)
                 {
-                    float z = (iz == preStepsZ) ? innerMaxZ : innerMinZ + iz * SAMPLE_STEP;
+                    float z = (iz == preStepsZ) ? sampleMaxZ : sampleMinZ + iz * PRE_SAMPLE_STEP;
                     float h = SampleHeight(x, z, origin.y);
                     if (h > maxY) maxY = h;
                     if (h < minY) minY = h;
@@ -90,7 +104,8 @@ namespace ValheimFloorPlan
 
             ValheimFloorPlanPlugin.Log.LogInfo(
                 $"[TerrainLeveler] Raising pad to Y={targetY:F2}  minY={minY:F2}  range={range:F1}m" +
-                $"  [{innerMinX:F1}..{innerMaxX:F1}] x [{innerMinZ:F1}..{innerMaxZ:F1}]");
+                $"  [{innerMinX:F1}..{innerMaxX:F1}] x [{innerMinZ:F1}..{innerMaxZ:F1}]" +
+                $"  sampled=[{sampleMinX:F1}..{sampleMaxX:F1}] x [{sampleMinZ:F1}..{sampleMaxZ:F1}]");
 
             // Scale pass count with height range.
             // The disc falloff means terrain-chunk boundary vertices converge at ~67% of
@@ -98,35 +113,85 @@ namespace ValheimFloorPlan
             // case dist ≈ 1m from nearest disc centre in a 3m-radius disc).
             // Residual gap after N passes ≈ 0.33^N × range.  Choose N so the gap stays
             // below ~0.05m:  range ≥ 10m needs 5 passes (0.33^5 × 10 = 0.04m).
-            int totalPasses = range >= 10f ? 5 : range >= 6f ? 4 : range >= 3f ? 3 : 2;
-
-            int ops = 0;
-            var modified = new HashSet<TerrainComp>();
-
-            ValheimFloorPlanPlugin.Log.LogInfo(
-                $"[TerrainLeveler] Running {totalPasses} leveling passes (range={range:F1}m).");
+            int totalPasses = range >= 10f ? 5 : range >= 6f ? 4 : 3;
 
             // Count-based loops guarantee the last iteration always lands on innerMaxX /
             // innerMaxZ exactly, so the full boundary is covered regardless of SAMPLE_STEP.
-            int stepsX = Mathf.CeilToInt((innerMaxX - innerMinX) / SAMPLE_STEP);
-            int stepsZ = Mathf.CeilToInt((innerMaxZ - innerMinZ) / SAMPLE_STEP);
+            int stepsX = Mathf.CeilToInt((innerMaxX - innerMinX) / LEVEL_SAMPLE_STEP);
+            int stepsZ = Mathf.CeilToInt((innerMaxZ - innerMinZ) / LEVEL_SAMPLE_STEP);
+
+            int ops = 0;
+            var modified = new HashSet<TerrainComp>();
+            int totalLevelOps = totalPasses * (stepsX + 1) * (stepsZ + 1);
+            int nextLevelPct = 10;
+
+            ValheimFloorPlanPlugin.Log.LogInfo(
+                $"[TerrainLeveler] Running {totalPasses} leveling passes (range={range:F1}m).");
+            ShowProgress($"Leveling terrain... 0% ({totalPasses} pass(es))");
 
             for (int pass = 1; pass <= totalPasses; pass++)
             {
                 for (int ix = 0; ix <= stepsX; ix++)
                 {
-                    float x = (ix == stepsX) ? innerMaxX : innerMinX + ix * SAMPLE_STEP;
+                    float x = (ix == stepsX) ? innerMaxX : innerMinX + ix * LEVEL_SAMPLE_STEP;
                     for (int iz = 0; iz <= stepsZ; iz++)
                     {
-                        float z = (iz == stepsZ) ? innerMaxZ : innerMinZ + iz * SAMPLE_STEP;
+                        float z = (iz == stepsZ) ? innerMaxZ : innerMinZ + iz * LEVEL_SAMPLE_STEP;
                         ApplyLevel(x, targetY, z, LEVEL_RADIUS, modified);
-                        if (++ops % OPS_PER_FRAME == 0) yield return null;
+                        ops++;
+                        if (totalLevelOps > 0)
+                        {
+                            int pct = Mathf.FloorToInt((ops * 100f) / totalLevelOps);
+                            if (pct >= nextLevelPct)
+                            {
+                                ShowProgress($"Leveling terrain... {nextLevelPct}%");
+                                nextLevelPct += 10;
+                            }
+                        }
+                        if (ops % OPS_PER_FRAME == 0) yield return null;
                     }
                 }
 
                 if (pass < totalPasses)
                     yield return new WaitForSeconds(0.1f);
             }
+
+            // Spike suppression: explicitly cut any residual points above target in the
+            // full affected area (inner pad + falloff radius). This handles narrow
+            // needle outcrops that can survive regular grid-aligned passes.
+            int spikeOps = 0;
+            int spikeStepsX = Mathf.CeilToInt((sampleMaxX - sampleMinX) / SPIKE_SCAN_STEP);
+            int spikeStepsZ = Mathf.CeilToInt((sampleMaxZ - sampleMinZ) / SPIKE_SCAN_STEP);
+            for (int pass = 1; pass <= SPIKE_PASSES; pass++)
+            {
+                for (int ix = 0; ix <= spikeStepsX; ix++)
+                {
+                    float x = (ix == spikeStepsX) ? sampleMaxX : sampleMinX + ix * SPIKE_SCAN_STEP;
+                    for (int iz = 0; iz <= spikeStepsZ; iz++)
+                    {
+                        float z = (iz == spikeStepsZ) ? sampleMaxZ : sampleMinZ + iz * SPIKE_SCAN_STEP;
+                        float h = SampleHeight(x, z, targetY);
+                        if (h > targetY + SPIKE_TOLERANCE)
+                        {
+                            ApplyLevel(x, targetY, z, SPIKE_LEVEL_RADIUS, modified);
+                            spikeOps++;
+                            if (spikeOps % OPS_PER_FRAME == 0) yield return null;
+                        }
+                    }
+                }
+
+                if (pass < SPIKE_PASSES)
+                    yield return new WaitForSeconds(0.05f);
+            }
+
+            if (spikeOps > 0)
+            {
+                ValheimFloorPlanPlugin.Log.LogInfo(
+                    $"[TerrainLeveler] Spike suppression applied: {spikeOps} ops across {SPIKE_PASSES} pass(es).");
+                ShowProgress("Leveling terrain... final cleanup");
+            }
+            else
+                ValheimFloorPlanPlugin.Log.LogInfo("[TerrainLeveler] Spike suppression: no residual peaks detected.");
 
             // Placement wait: allow the terrain physics collider to rebuild so that
             // PlacePieces raycasts hit the correct height.  Terrain data is near-instant;
@@ -135,6 +200,7 @@ namespace ValheimFloorPlan
             ValheimFloorPlanPlugin.Log.LogInfo(
                 $"[TerrainLeveler] Leveling done: {totalPasses} passes, {ops} ops, " +
                 $"{modified.Count} chunks.  Placement wait: {RecommendedPlacementWait:F1}s.");
+            ShowProgress("Leveling terrain... done");
         }
 
         // ── DigMoat ───────────────────────────────────────────────────────────
@@ -246,14 +312,14 @@ namespace ValheimFloorPlan
         }
 
         private static void ApplyLevel(float x, float y, float z, float radius,
-                                        HashSet<TerrainComp> modified)
+                                        HashSet<TerrainComp> modified, bool smooth = false)
         {
             var go = new GameObject("VFP_LevelOp");
             go.transform.position = new Vector3(x, y, z);
             var op = go.AddComponent<TerrainOp>();
             op.m_settings.m_level       = true;
             op.m_settings.m_levelRadius = radius;
-            op.m_settings.m_smooth      = false;
+            op.m_settings.m_smooth      = smooth;
 
             // FindTerrainCompiler returns only the chunk containing a single point.
             // A disc of radius r can straddle up to 4 terrain chunks simultaneously
@@ -303,6 +369,11 @@ namespace ValheimFloorPlan
                     Vector3.down, out var hit, 500f, 1 << 11))
                 return hit.point.y;
             return referenceY;
+        }
+
+        private static void ShowProgress(string message)
+        {
+            ValheimFloorPlanPlugin.ShowProgressMessage(message);
         }
     }
 }
