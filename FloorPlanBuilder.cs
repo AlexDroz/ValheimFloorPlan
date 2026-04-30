@@ -40,6 +40,7 @@ namespace ValheimFloorPlan
         private GameObject?   _previewGo       = null;
         private LineRenderer? _previewLinePad  = null;  // white — leveled pad
         private LineRenderer? _previewLineMoat = null;  // green — moat outer edge
+        private float         _previewRotationDeg = 0f; // clockwise yaw, degrees
 
         private void Awake()
         {
@@ -82,7 +83,7 @@ namespace ValheimFloorPlan
                 $"[FloorPlanBuilder] Preview active ({plan.Pieces.Count} pieces, " +
                 $"{plan.Cols}×{plan.Rows} cells). Left-click to build, RMB/ESC to cancel.");
             Player.m_localPlayer?.Message(MessageHud.MessageType.Center,
-                "ValheimFloorPlan: Left-click to place, Right-click/ESC to cancel.");
+                "ValheimFloorPlan: ←/→ rotate | Left-click to place | RMB/ESC cancel");
         }
 
         private static LineRenderer MakeLine(GameObject parent, Color color, float width)
@@ -104,10 +105,11 @@ namespace ValheimFloorPlan
 
         private void CancelPreview()
         {
-            _previewActive   = false;
-            _previewPlan     = null;
-            _previewLinePad  = null;
-            _previewLineMoat = null;
+            _previewActive      = false;
+            _previewPlan        = null;
+            _previewLinePad     = null;
+            _previewLineMoat    = null;
+            _previewRotationDeg = 0f;
             if (_previewGo != null) { Destroy(_previewGo); _previewGo = null; }
         }
 
@@ -125,6 +127,20 @@ namespace ValheimFloorPlan
             // Keep the rectangle centred on the player each frame.
             UpdatePreviewPosition(player.transform.position);
 
+            // Rotate with left/right arrow keys (15° steps; right = clockwise from above).
+            if (UnityEngine.Input.GetKeyDown(KeyCode.LeftArrow))
+            {
+                _previewRotationDeg = (_previewRotationDeg - 15f + 360f) % 360f;
+                player.Message(ValheimFloorPlanPlugin.ProgressMessageType,
+                    $"ValheimFloorPlan: Rotation {_previewRotationDeg:F0}\u00b0");
+            }
+            else if (UnityEngine.Input.GetKeyDown(KeyCode.RightArrow))
+            {
+                _previewRotationDeg = (_previewRotationDeg + 15f) % 360f;
+                player.Message(ValheimFloorPlanPlugin.ProgressMessageType,
+                    $"ValheimFloorPlan: Rotation {_previewRotationDeg:F0}\u00b0");
+            }
+
             // Cancel on right-click or Escape.
             if (UnityEngine.Input.GetMouseButtonDown(1) || UnityEngine.Input.GetKeyDown(KeyCode.Escape))
             {
@@ -137,10 +153,12 @@ namespace ValheimFloorPlan
             bool uiOpen = Chat.instance != null && Chat.instance.HasFocus();
             if (UnityEngine.Input.GetMouseButtonDown(0) && !uiOpen)
             {
-                var plan = _previewPlan;
+                var plan     = _previewPlan;
+                float rotation = _previewRotationDeg;
                 CancelPreview();
-                ValheimFloorPlanPlugin.Log.LogInfo("[FloorPlanBuilder] Build confirmed by left-click.");
-                StartCoroutine(LevelThenPlace(plan));
+                ValheimFloorPlanPlugin.Log.LogInfo(
+                    $"[FloorPlanBuilder] Build confirmed by left-click. Rotation={rotation:F0}\u00b0");
+                StartCoroutine(LevelThenPlace(plan, rotation));
             }
         }
 
@@ -153,24 +171,26 @@ namespace ValheimFloorPlan
         {
             if (_previewPlan == null) return;
 
+            // Get axis-aligned (unrotated) bounds, then rotate the 4 corners around the
+            // player origin so the LineRenderers show the actual rotated footprint.
             TerrainLeveler.GetPadBounds(_previewPlan, origin,
                 out float padMinX, out float padMaxX, out float padMinZ, out float padMaxZ);
             TerrainLeveler.GetLeveledAreaBounds(_previewPlan, origin,
                 out float lvlMinX, out float lvlMaxX, out float lvlMinZ, out float lvlMaxZ);
 
-            SetRectangle(_previewLinePad,  origin.y, padMinX, padMaxX, padMinZ, padMaxZ);
-            SetRectangle(_previewLineMoat, origin.y, lvlMinX, lvlMaxX, lvlMinZ, lvlMaxZ);
+            SetRectangle(_previewLinePad,  origin.y,
+                RotateBoundsCorners(origin, padMinX, padMaxX, padMinZ, padMaxZ, _previewRotationDeg));
+            SetRectangle(_previewLineMoat, origin.y,
+                RotateBoundsCorners(origin, lvlMinX, lvlMaxX, lvlMinZ, lvlMaxZ, _previewRotationDeg));
         }
 
-        private static void SetRectangle(LineRenderer? lr,
-            float referenceY, float minX, float maxX, float minZ, float maxZ)
+        /// <summary>
+        /// Returns the 4 world-space XZ corners of an axis-aligned rectangle, each rotated
+        /// clockwise around <paramref name="origin"/> by <paramref name="rotDeg"/> degrees.
+        /// </summary>
+        private static Vector2[] RotateBoundsCorners(Vector3 origin,
+            float minX, float maxX, float minZ, float maxZ, float rotDeg)
         {
-            if (lr == null) return;
-
-            float rayY = referenceY + 300f;
-            const int   terrainLayer = 1 << 11;
-            const float yLift        = 0.15f;
-
             var corners = new Vector2[]
             {
                 new Vector2(minX, minZ),  // SW
@@ -178,6 +198,30 @@ namespace ValheimFloorPlan
                 new Vector2(maxX, maxZ),  // NE
                 new Vector2(minX, maxZ),  // NW
             };
+            if (Mathf.Approximately(rotDeg % 360f, 0f)) return corners;
+
+            float rad = rotDeg * Mathf.Deg2Rad;
+            float cos = Mathf.Cos(rad), sin = Mathf.Sin(rad);
+            float ox = origin.x, oz = origin.z;
+            for (int i = 0; i < 4; i++)
+            {
+                float dx = corners[i].x - ox;
+                float dz = corners[i].y - oz;
+                // Unity clockwise Y-rotation: x' = dx*cos + dz*sin, z' = -dx*sin + dz*cos
+                corners[i] = new Vector2(ox + dx * cos + dz * sin,
+                                         oz - dx * sin + dz * cos);
+            }
+            return corners;
+        }
+
+        private static void SetRectangle(LineRenderer? lr,
+            float referenceY, Vector2[] corners)
+        {
+            if (lr == null) return;
+
+            float rayY = referenceY + 300f;
+            const int   terrainLayer = 1 << 11;
+            const float yLift        = 0.15f;
 
             var pts = new Vector3[5];
             for (int i = 0; i < 4; i++)
@@ -251,7 +295,7 @@ namespace ValheimFloorPlan
             StartCoroutine(LevelThenPlace(plan));
         }
 
-        private IEnumerator LevelThenPlace(FloorPlan plan)
+        private IEnumerator LevelThenPlace(FloorPlan plan, float rotationDeg = 0f)
         {
             var player = Player.m_localPlayer;
             if (player == null)
@@ -261,21 +305,22 @@ namespace ValheimFloorPlan
             }
 
             Vector3 origin = player.transform.position;
-            ValheimFloorPlanPlugin.Log.LogInfo($"Build origin: {origin}");
+            ValheimFloorPlanPlugin.Log.LogInfo($"Build origin: {origin}  rotation={rotationDeg:F0}\u00b0");
 
             // Clear any previous undo state.
             _lastPlaced.Clear();
 
             // Snapshot terrain BEFORE any leveling so Undo() can restore it.
             TerrainLeveler.GetSnapshotBounds(plan, origin,
-                out float sMinX, out float sMaxX, out float sMinZ, out float sMaxZ);
+                out float sMinX, out float sMaxX, out float sMinZ, out float sMaxZ,
+                rotationDeg);
             TerrainSnapshot.Capture(sMinX, sMaxX, sMinZ, sMaxZ, origin.y);
 
             player.Message(MessageHud.MessageType.Center, "Clearing rocks...");
-            ClearRocksInPad(plan, origin);
+            ClearRocksInPad(plan, origin, rotationDeg);
 
             player.Message(MessageHud.MessageType.Center, "Leveling terrain...");
-            yield return StartCoroutine(TerrainLeveler.LevelForPlan(plan, origin));
+            yield return StartCoroutine(TerrainLeveler.LevelForPlan(plan, origin, rotationDeg));
 
             // Poll until the terrain PHYSICS COLLISION MESH has rebuilt to reflect the
             // leveled height.  ApplyOperation() writes m_levelDelta instantly, but the
@@ -285,18 +330,19 @@ namespace ValheimFloorPlan
             player.Message(MessageHud.MessageType.Center, "Waiting for terrain physics...");
             ShowBuildProgress("Waiting for terrain physics...");
             TerrainLeveler.GetPadBounds(plan, origin,
-                out float padMinX, out float padMaxX, out float padMinZ, out float padMaxZ);
+                out float padMinX, out float padMaxX, out float padMinZ, out float padMaxZ,
+                rotationDeg);
             yield return StartCoroutine(WaitForTerrainPhysics(
                 padMinX, padMaxX, padMinZ, padMaxZ, TerrainLeveler.TargetLevelY));
 
             player.Message(MessageHud.MessageType.Center, "Placing floor plan pieces...");
             ShowBuildProgress($"Placing pieces... 0/{plan.Pieces.Count}");
-            yield return StartCoroutine(PlacePieces(plan, origin));
+            yield return StartCoroutine(PlacePieces(plan, origin, rotationDeg));
 
             // Some spike meshes appear a short time AFTER leveling/placement finalizes.
             // Run a brief post-build guard to detect/remove tall non-build blockers.
             ShowBuildProgress("Final checks...");
-            yield return StartCoroutine(PostBuildSpikeGuard(plan, origin));
+            yield return StartCoroutine(PostBuildSpikeGuard(plan, origin, rotationDeg));
         }
 
         /// <summary>
@@ -304,10 +350,11 @@ namespace ValheimFloorPlan
         /// We scan colliders (not just object pivots) so rocks whose pivot sits outside
         /// the rectangle but whose mesh protrudes into the pad are still removed.
         /// </summary>
-        private void ClearRocksInPad(FloorPlan plan, Vector3 origin)
+        private void ClearRocksInPad(FloorPlan plan, Vector3 origin, float rotationDeg = 0f)
         {
             TerrainLeveler.GetLeveledAreaBounds(plan, origin,
-                out float minX, out float maxX, out float minZ, out float maxZ);
+                out float minX, out float maxX, out float minZ, out float maxZ,
+                rotationDeg);
 
             int cleared = 0;
 
@@ -423,10 +470,11 @@ namespace ValheimFloorPlan
                 LogAreaBlockers(center, halfExtents);
         }
 
-        private IEnumerator PostBuildSpikeGuard(FloorPlan plan, Vector3 origin)
+        private IEnumerator PostBuildSpikeGuard(FloorPlan plan, Vector3 origin, float rotationDeg = 0f)
         {
             TerrainLeveler.GetLeveledAreaBounds(plan, origin,
-                out float minX, out float maxX, out float minZ, out float maxZ);
+                out float minX, out float maxX, out float minZ, out float maxZ,
+                rotationDeg);
 
             const int scans = 4;
             const float scanDelay = 0.75f;
@@ -702,7 +750,7 @@ namespace ValheimFloorPlan
             ShowBuildProgress("Waiting for terrain physics... timeout, placing anyway");
         }
 
-        private IEnumerator PlacePieces(FloorPlan plan, Vector3 origin)
+        private IEnumerator PlacePieces(FloorPlan plan, Vector3 origin, float rotationDeg = 0f)
         {
             var player = Player.m_localPlayer;
             if (player == null)
@@ -716,6 +764,9 @@ namespace ValheimFloorPlan
             Vector3 firstPos = Vector3.zero;
             int totalPieces = plan.Pieces.Count;
             int nextProgressPct = 10;
+
+            float cosR = Mathf.Cos(rotationDeg * Mathf.Deg2Rad);
+            float sinR = Mathf.Sin(rotationDeg * Mathf.Deg2Rad);
 
             foreach (var piece in plan.Pieces)
             {
@@ -740,10 +791,13 @@ namespace ValheimFloorPlan
                 int effW = def.EffW(piece.Rotation);
                 int effH = def.EffH(piece.Rotation);
 
-                // Convert from top-left grid corner (B4J storage) to world centre.
-                // col/row + half the effective cell footprint = centre cell position.
-                float x = origin.x + (piece.Col + effW * 0.5f) * PieceMap.CELL_SIZE;
-                float z = origin.z + (piece.Row + effH * 0.5f) * PieceMap.CELL_SIZE;
+                // Convert from top-left grid corner (B4J storage) to world centre,
+                // then rotate the offset around the player origin by the plan rotation.
+                // Unity clockwise Y-rotation: x' = dx*cos + dz*sin, z' = -dx*sin + dz*cos.
+                float dx = (piece.Col + effW * 0.5f) * PieceMap.CELL_SIZE;
+                float dz = (piece.Row + effH * 0.5f) * PieceMap.CELL_SIZE;
+                float x  = origin.x + dx * cosR + dz * sinR;
+                float z  = origin.z - dx * sinR + dz * cosR;
 
                 // Sample the actual physics terrain height at this piece's XZ position.
                 // We do NOT use TerrainLeveler.TargetLevelY (a uniform height) because the
@@ -762,7 +816,7 @@ namespace ValheimFloorPlan
                 float y = terrainY + def.YOffset;
 
                 var pos = new Vector3(x, y, z);
-                var rot = Quaternion.Euler(0, piece.Rotation, 0);
+                var rot = Quaternion.Euler(0, piece.Rotation + rotationDeg, 0);
 
                 if (placed == 0)
                 {

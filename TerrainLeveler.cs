@@ -58,11 +58,21 @@ namespace ValheimFloorPlan
         // Terrain is ONLY ever raised → disc falloff always slopes DOWN to natural
         // terrain → no upward spikes possible.
         // If the range exceeds WARN_RAISE a warning is logged but the build continues.
-        public static IEnumerator LevelForPlan(FloorPlan plan, Vector3 origin)
+        public static IEnumerator LevelForPlan(FloorPlan plan, Vector3 origin, float rotationDeg = 0f)
         {
-            GetBounds(plan, origin, INNER_PAD,
+            // Always iterate in unrotated (plan-local) space, then rotate each point around
+            // the player origin.  This keeps disc stamps aligned with the rotated footprint
+            // rather than stamping an axis-aligned AABB.
+            GetBounds(plan, origin, INNER_PAD, 0f,
                 out float innerMinX, out float innerMaxX,
                 out float innerMinZ, out float innerMaxZ);
+
+            float cosR = Mathf.Cos(rotationDeg * Mathf.Deg2Rad);
+            float sinR = Mathf.Sin(rotationDeg * Mathf.Deg2Rad);
+            bool axisAligned = Mathf.Approximately(rotationDeg % 90f, 0f);
+            float preSampleStep = axisAligned ? PRE_SAMPLE_STEP : 0.25f;
+            float levelSampleStep = axisAligned ? LEVEL_SAMPLE_STEP : 0.25f;
+            float spikeScanStep = axisAligned ? SPIKE_SCAN_STEP : 0.25f;
 
             // Pre-sample: find min and max terrain heights across the full area that can be
             // affected by leveling ops (inner pad + disc falloff radius). If we sample only
@@ -73,20 +83,20 @@ namespace ValheimFloorPlan
             float sampleMinZ = innerMinZ - LEVEL_RADIUS;
             float sampleMaxZ = innerMaxZ + LEVEL_RADIUS;
 
-            // Pre-sample: find min and max terrain heights across the affected area.
-            // Use count-based loops so the last step always lands exactly on the boundary,
-            // regardless of whether (max - min) is an integer multiple of SAMPLE_STEP.
             float maxY = float.MinValue;
             float minY = float.MaxValue;
-            int preStepsX = Mathf.CeilToInt((sampleMaxX - sampleMinX) / PRE_SAMPLE_STEP);
-            int preStepsZ = Mathf.CeilToInt((sampleMaxZ - sampleMinZ) / PRE_SAMPLE_STEP);
+            int preStepsX = Mathf.CeilToInt((sampleMaxX - sampleMinX) / preSampleStep);
+            int preStepsZ = Mathf.CeilToInt((sampleMaxZ - sampleMinZ) / preSampleStep);
             for (int ix = 0; ix <= preStepsX; ix++)
             {
-                float x = (ix == preStepsX) ? sampleMaxX : sampleMinX + ix * PRE_SAMPLE_STEP;
+                float lx = (ix == preStepsX) ? sampleMaxX : sampleMinX + ix * preSampleStep;
                 for (int iz = 0; iz <= preStepsZ; iz++)
                 {
-                    float z = (iz == preStepsZ) ? sampleMaxZ : sampleMinZ + iz * PRE_SAMPLE_STEP;
-                    float h = SampleHeight(x, z, origin.y);
+                    float lz = (iz == preStepsZ) ? sampleMaxZ : sampleMinZ + iz * preSampleStep;
+                    float ldx = lx - origin.x, ldz = lz - origin.z;
+                    float wx = origin.x + ldx * cosR + ldz * sinR;
+                    float wz = origin.z - ldx * sinR + ldz * cosR;
+                    float h = SampleHeight(wx, wz, origin.y);
                     if (h > maxY) maxY = h;
                     if (h < minY) minY = h;
                 }
@@ -104,21 +114,13 @@ namespace ValheimFloorPlan
 
             ValheimFloorPlanPlugin.Log.LogInfo(
                 $"[TerrainLeveler] Raising pad to Y={targetY:F2}  minY={minY:F2}  range={range:F1}m" +
-                $"  [{innerMinX:F1}..{innerMaxX:F1}] x [{innerMinZ:F1}..{innerMaxZ:F1}]" +
-                $"  sampled=[{sampleMinX:F1}..{sampleMaxX:F1}] x [{sampleMinZ:F1}..{sampleMaxZ:F1}]");
+                $"  rotation={rotationDeg:F0}°" +
+                $"  inner(local)=[{innerMinX:F1}..{innerMaxX:F1}] x [{innerMinZ:F1}..{innerMaxZ:F1}]");
 
-            // Scale pass count with height range.
-            // The disc falloff means terrain-chunk boundary vertices converge at ~67% of
-            // the remaining delta per pass (linear falloff: t = 1 − dist/radius; worst
-            // case dist ≈ 1m from nearest disc centre in a 3m-radius disc).
-            // Residual gap after N passes ≈ 0.33^N × range.  Choose N so the gap stays
-            // below ~0.05m:  range ≥ 10m needs 5 passes (0.33^5 × 10 = 0.04m).
             int totalPasses = range >= 10f ? 5 : range >= 6f ? 4 : 3;
 
-            // Count-based loops guarantee the last iteration always lands on innerMaxX /
-            // innerMaxZ exactly, so the full boundary is covered regardless of SAMPLE_STEP.
-            int stepsX = Mathf.CeilToInt((innerMaxX - innerMinX) / LEVEL_SAMPLE_STEP);
-            int stepsZ = Mathf.CeilToInt((innerMaxZ - innerMinZ) / LEVEL_SAMPLE_STEP);
+            int stepsX = Mathf.CeilToInt((innerMaxX - innerMinX) / levelSampleStep);
+            int stepsZ = Mathf.CeilToInt((innerMaxZ - innerMinZ) / levelSampleStep);
 
             int ops = 0;
             var modified = new HashSet<TerrainComp>();
@@ -133,11 +135,14 @@ namespace ValheimFloorPlan
             {
                 for (int ix = 0; ix <= stepsX; ix++)
                 {
-                    float x = (ix == stepsX) ? innerMaxX : innerMinX + ix * LEVEL_SAMPLE_STEP;
+                    float lx = (ix == stepsX) ? innerMaxX : innerMinX + ix * levelSampleStep;
                     for (int iz = 0; iz <= stepsZ; iz++)
                     {
-                        float z = (iz == stepsZ) ? innerMaxZ : innerMinZ + iz * LEVEL_SAMPLE_STEP;
-                        ApplyLevel(x, targetY, z, LEVEL_RADIUS, modified);
+                        float lz = (iz == stepsZ) ? innerMaxZ : innerMinZ + iz * levelSampleStep;
+                        float ldx2 = lx - origin.x, ldz2 = lz - origin.z;
+                        float wx = origin.x + ldx2 * cosR + ldz2 * sinR;
+                        float wz = origin.z - ldx2 * sinR + ldz2 * cosR;
+                        ApplyLevel(wx, targetY, wz, LEVEL_RADIUS, modified);
                         ops++;
                         if (totalLevelOps > 0)
                         {
@@ -156,24 +161,25 @@ namespace ValheimFloorPlan
                     yield return new WaitForSeconds(0.1f);
             }
 
-            // Spike suppression: explicitly cut any residual points above target in the
-            // full affected area (inner pad + falloff radius). This handles narrow
-            // needle outcrops that can survive regular grid-aligned passes.
+            // Spike suppression: scan the extended area in local space, rotate, check/fix.
             int spikeOps = 0;
-            int spikeStepsX = Mathf.CeilToInt((sampleMaxX - sampleMinX) / SPIKE_SCAN_STEP);
-            int spikeStepsZ = Mathf.CeilToInt((sampleMaxZ - sampleMinZ) / SPIKE_SCAN_STEP);
+            int spikeStepsX = Mathf.CeilToInt((sampleMaxX - sampleMinX) / spikeScanStep);
+            int spikeStepsZ = Mathf.CeilToInt((sampleMaxZ - sampleMinZ) / spikeScanStep);
             for (int pass = 1; pass <= SPIKE_PASSES; pass++)
             {
                 for (int ix = 0; ix <= spikeStepsX; ix++)
                 {
-                    float x = (ix == spikeStepsX) ? sampleMaxX : sampleMinX + ix * SPIKE_SCAN_STEP;
+                    float lx = (ix == spikeStepsX) ? sampleMaxX : sampleMinX + ix * spikeScanStep;
                     for (int iz = 0; iz <= spikeStepsZ; iz++)
                     {
-                        float z = (iz == spikeStepsZ) ? sampleMaxZ : sampleMinZ + iz * SPIKE_SCAN_STEP;
-                        float h = SampleHeight(x, z, targetY);
+                        float lz = (iz == spikeStepsZ) ? sampleMaxZ : sampleMinZ + iz * spikeScanStep;
+                        float ldx3 = lx - origin.x, ldz3 = lz - origin.z;
+                        float wx = origin.x + ldx3 * cosR + ldz3 * sinR;
+                        float wz = origin.z - ldx3 * sinR + ldz3 * cosR;
+                        float h = SampleHeight(wx, wz, targetY);
                         if (h > targetY + SPIKE_TOLERANCE)
                         {
-                            ApplyLevel(x, targetY, z, SPIKE_LEVEL_RADIUS, modified);
+                            ApplyLevel(wx, targetY, wz, SPIKE_LEVEL_RADIUS, modified);
                             spikeOps++;
                             if (spikeOps % OPS_PER_FRAME == 0) yield return null;
                         }
@@ -212,7 +218,7 @@ namespace ValheimFloorPlan
             float moatY   = targetY - MOAT_DEPTH;
 
             // Inner pad boundary (same as LevelForPlan so we know the safe zone).
-            GetBounds(plan, origin, INNER_PAD,
+            GetBounds(plan, origin, INNER_PAD, 0f,
                 out float innerMinX, out float innerMaxX,
                 out float innerMinZ, out float innerMaxZ);
 
@@ -259,9 +265,10 @@ namespace ValheimFloorPlan
         /// Used by FloorPlanBuilder to poll terrain physics readiness.
         /// </summary>
         public static void GetPadBounds(FloorPlan plan, Vector3 origin,
-            out float minX, out float maxX, out float minZ, out float maxZ)
+            out float minX, out float maxX, out float minZ, out float maxZ,
+            float rotationDeg = 0f)
         {
-            GetBounds(plan, origin, INNER_PAD, out minX, out maxX, out minZ, out maxZ);
+            GetBounds(plan, origin, INNER_PAD, rotationDeg, out minX, out maxX, out minZ, out maxZ);
         }
 
         /// <summary>
@@ -271,9 +278,10 @@ namespace ValheimFloorPlan
         /// the visible terrain change, not the dormant moat extent.
         /// </summary>
         public static void GetLeveledAreaBounds(FloorPlan plan, Vector3 origin,
-            out float minX, out float maxX, out float minZ, out float maxZ)
+            out float minX, out float maxX, out float minZ, out float maxZ,
+            float rotationDeg = 0f)
         {
-            GetBounds(plan, origin, INNER_PAD, out minX, out maxX, out minZ, out maxZ);
+            GetBounds(plan, origin, INNER_PAD, rotationDeg, out minX, out maxX, out minZ, out maxZ);
             minX -= LEVEL_RADIUS;
             maxX += LEVEL_RADIUS;
             minZ -= LEVEL_RADIUS;
@@ -285,30 +293,80 @@ namespace ValheimFloorPlan
         /// Used by FloorPlanBuilder to capture a terrain snapshot before leveling.
         /// </summary>
         public static void GetSnapshotBounds(FloorPlan plan, Vector3 origin,
-            out float minX, out float maxX, out float minZ, out float maxZ)
+            out float minX, out float maxX, out float minZ, out float maxZ,
+            float rotationDeg = 0f)
         {
             // Use the moat outer edge as the snapshot boundary so the full
             // modified area is captured, including any future moat ops.
             int pad = INNER_PAD + MOAT_OFFSET + MOAT_WIDTH + 4;
-            GetBounds(plan, origin, pad, out minX, out maxX, out minZ, out maxZ);
+            GetBounds(plan, origin, pad, rotationDeg, out minX, out maxX, out minZ, out maxZ);
         }
 
-        private static void GetBounds(FloorPlan plan, Vector3 origin, int pad,
+        private static void GetBounds(FloorPlan plan, Vector3 origin, int pad, float rotationDeg,
             out float minX, out float maxX, out float minZ, out float maxZ)
         {
             int minCol = int.MaxValue, maxCol = int.MinValue;
             int minRow = int.MaxValue, maxRow = int.MinValue;
             foreach (var p in plan.Pieces)
             {
+                int effW = 1;
+                int effH = 1;
+                var def = PieceMap.GetDef(p.Type);
+                if (def != null)
+                {
+                    effW = def.EffW(p.Rotation);
+                    effH = def.EffH(p.Rotation);
+                }
+
                 if (p.Col < minCol) minCol = p.Col;
-                if (p.Col > maxCol) maxCol = p.Col;
+                if (p.Col + effW > maxCol) maxCol = p.Col + effW;
                 if (p.Row < minRow) minRow = p.Row;
-                if (p.Row > maxRow) maxRow = p.Row;
+                if (p.Row + effH > maxRow) maxRow = p.Row + effH;
             }
-            minX = origin.x + (minCol - pad) * PieceMap.CELL_SIZE;
-            maxX = origin.x + (maxCol + pad) * PieceMap.CELL_SIZE;
-            minZ = origin.z + (minRow - pad) * PieceMap.CELL_SIZE;
-            maxZ = origin.z + (maxRow + pad) * PieceMap.CELL_SIZE;
+
+            if (minCol == int.MaxValue)
+            {
+                minCol = 0;
+                minRow = 0;
+                maxCol = plan.Cols;
+                maxRow = plan.Rows;
+            }
+
+            float dx0 = (minCol - pad) * PieceMap.CELL_SIZE;
+            float dx1 = (maxCol + pad) * PieceMap.CELL_SIZE;
+            float dz0 = (minRow - pad) * PieceMap.CELL_SIZE;
+            float dz1 = (maxRow + pad) * PieceMap.CELL_SIZE;
+
+            if (Mathf.Approximately(rotationDeg % 360f, 0f))
+            {
+                minX = origin.x + dx0;
+                maxX = origin.x + dx1;
+                minZ = origin.z + dz0;
+                maxZ = origin.z + dz1;
+                return;
+            }
+
+            // Compute axis-aligned bounding box of the rotated rectangle.
+            // Unity clockwise Y-rotation: x' = dx*cos + dz*sin,  z' = -dx*sin + dz*cos.
+            float rad = rotationDeg * Mathf.Deg2Rad;
+            float cos = Mathf.Cos(rad), sin = Mathf.Sin(rad);
+            float[] cxArr = new float[] { dx0, dx1, dx1, dx0 };
+            float[] czArr = new float[] { dz0, dz0, dz1, dz1 };
+            float rMinX = float.MaxValue, rMaxX = float.MinValue;
+            float rMinZ = float.MaxValue, rMaxZ = float.MinValue;
+            for (int i = 0; i < 4; i++)
+            {
+                float rx = cxArr[i] * cos + czArr[i] * sin;
+                float rz = -cxArr[i] * sin + czArr[i] * cos;
+                if (rx < rMinX) rMinX = rx;
+                if (rx > rMaxX) rMaxX = rx;
+                if (rz < rMinZ) rMinZ = rz;
+                if (rz > rMaxZ) rMaxZ = rz;
+            }
+            minX = origin.x + rMinX;
+            maxX = origin.x + rMaxX;
+            minZ = origin.z + rMinZ;
+            maxZ = origin.z + rMaxZ;
         }
 
         private static void ApplyLevel(float x, float y, float z, float radius,
