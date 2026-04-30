@@ -18,6 +18,7 @@ namespace ValheimFloorPlan
     public class FloorPlanBuilder : MonoBehaviour
     {
         private const float PLACE_DELAY = 0.05f; // seconds between spawns to avoid lag spikes
+        private const float PREVIEW_MOVE_STEP = 2f; // metres per arrow-key press (1 cell)
 
         // ZDO key written on every piece we place.  Used by Undo() to find VFP pieces
         // across sessions — any ZNetView with this key set to "1" was placed by this mod.
@@ -41,6 +42,7 @@ namespace ValheimFloorPlan
         private LineRenderer? _previewLinePad  = null;  // white — leveled pad
         private LineRenderer? _previewLineMoat = null;  // green — moat outer edge
         private float         _previewRotationDeg = 0f; // clockwise yaw, degrees
+        private Vector3       _previewOrigin   = Vector3.zero; // locked at preview start, not updated per-frame
 
         private void Awake()
         {
@@ -74,6 +76,14 @@ namespace ValheimFloorPlan
             _previewPlan   = plan;
             _previewActive = true;
 
+            // Lock the build origin to the player's position + facing at the moment preview
+            // starts.  Moving or turning after this point does NOT shift the rectangle —
+            // cancel and re-trigger to pick a new position.
+            var previewPlayer = Player.m_localPlayer;
+            _previewOrigin = previewPlayer != null
+                ? GetBuildOrigin(previewPlayer)
+                : Vector3.zero;
+
             // Two nested rectangles: white = leveled pad, green = moat outer edge.
             _previewGo = new GameObject("VFP_Preview");
             _previewLinePad  = MakeLine(_previewGo, new Color(1f,  1f,  1f,  0.9f), 0.12f);
@@ -83,7 +93,7 @@ namespace ValheimFloorPlan
                 $"[FloorPlanBuilder] Preview active ({plan.Pieces.Count} pieces, " +
                 $"{plan.Cols}×{plan.Rows} cells). Left-click to build, RMB/ESC to cancel.");
             Player.m_localPlayer?.Message(MessageHud.MessageType.Center,
-                "ValheimFloorPlan: ←/→ rotate | Left-click to place | RMB/ESC cancel");
+                "ValheimFloorPlan: ←/→/↑/↓ move | Q/E rotate | Left-click to place | RMB/ESC cancel");
         }
 
         private static LineRenderer MakeLine(GameObject parent, Color color, float width)
@@ -110,6 +120,7 @@ namespace ValheimFloorPlan
             _previewLinePad     = null;
             _previewLineMoat    = null;
             _previewRotationDeg = 0f;
+            _previewOrigin      = Vector3.zero;
             if (_previewGo != null) { Destroy(_previewGo); _previewGo = null; }
         }
 
@@ -124,21 +135,55 @@ namespace ValheimFloorPlan
             var player = Player.m_localPlayer;
             if (player == null) { CancelPreview(); return; }
 
-            // Keep the rectangle centred on the player each frame.
-            UpdatePreviewPosition(player.transform.position);
+            // Keep the rectangle on the locked origin (fixed when preview started).
+            UpdatePreviewPosition(_previewOrigin);
 
-            // Rotate with left/right arrow keys (15° steps; right = clockwise from above).
-            if (UnityEngine.Input.GetKeyDown(KeyCode.LeftArrow))
+            // Q/E rotate the plan (15° steps; E = clockwise from above).
+            if (UnityEngine.Input.GetKeyDown(KeyCode.Q))
             {
                 _previewRotationDeg = (_previewRotationDeg - 15f + 360f) % 360f;
                 player.Message(ValheimFloorPlanPlugin.ProgressMessageType,
                     $"ValheimFloorPlan: Rotation {_previewRotationDeg:F0}\u00b0");
             }
-            else if (UnityEngine.Input.GetKeyDown(KeyCode.RightArrow))
+            else if (UnityEngine.Input.GetKeyDown(KeyCode.E))
             {
                 _previewRotationDeg = (_previewRotationDeg + 15f) % 360f;
                 player.Message(ValheimFloorPlanPlugin.ProgressMessageType,
                     $"ValheimFloorPlan: Rotation {_previewRotationDeg:F0}\u00b0");
+            }
+
+            // Arrow keys nudge the origin relative to the current camera view.
+            // Flatten onto the XZ plane so movement follows terrain positioning.
+            Vector3 moveForward = Vector3.forward;
+            Vector3 moveRight = Vector3.right;
+            Camera movementCamera = Camera.main;
+            if (movementCamera != null)
+            {
+                moveForward = movementCamera.transform.forward;
+                moveForward.y = 0f;
+                if (moveForward.sqrMagnitude > 0.0001f)
+                {
+                    moveForward.Normalize();
+                    moveRight = new Vector3(moveForward.z, 0f, -moveForward.x);
+                }
+                else
+                {
+                    moveForward = Vector3.forward;
+                    moveRight = Vector3.right;
+                }
+            }
+
+            Vector3 nudge = Vector3.zero;
+            if (UnityEngine.Input.GetKeyDown(KeyCode.UpArrow))         nudge =  moveForward * PREVIEW_MOVE_STEP;
+            else if (UnityEngine.Input.GetKeyDown(KeyCode.DownArrow))  nudge = -moveForward * PREVIEW_MOVE_STEP;
+            else if (UnityEngine.Input.GetKeyDown(KeyCode.RightArrow)) nudge =  moveRight   * PREVIEW_MOVE_STEP;
+            else if (UnityEngine.Input.GetKeyDown(KeyCode.LeftArrow))  nudge = -moveRight   * PREVIEW_MOVE_STEP;
+
+            if (nudge != Vector3.zero)
+            {
+                _previewOrigin += nudge;
+                player.Message(ValheimFloorPlanPlugin.ProgressMessageType,
+                    $"ValheimFloorPlan: Origin ({_previewOrigin.x:F0}, {_previewOrigin.z:F0})");
             }
 
             // Cancel on right-click or Escape.
@@ -153,13 +198,29 @@ namespace ValheimFloorPlan
             bool uiOpen = Chat.instance != null && Chat.instance.HasFocus();
             if (UnityEngine.Input.GetMouseButtonDown(0) && !uiOpen)
             {
-                var plan     = _previewPlan;
-                float rotation = _previewRotationDeg;
+                var plan        = _previewPlan;
+                float rotation  = _previewRotationDeg;
+                Vector3 origin  = _previewOrigin;
                 CancelPreview();
                 ValheimFloorPlanPlugin.Log.LogInfo(
-                    $"[FloorPlanBuilder] Build confirmed by left-click. Rotation={rotation:F0}\u00b0");
-                StartCoroutine(LevelThenPlace(plan, rotation));
+                    $"[FloorPlanBuilder] Build confirmed by left-click. Rotation={rotation:F0}\u00b0  origin={origin}");
+                StartCoroutine(LevelThenPlace(plan, rotation, origin));
             }
+        }
+
+        private static Vector3 GetBuildOrigin(Player player)
+        {
+            Vector3 origin = player.transform.position;
+            float forwardOffset = Mathf.Max(0f, ValheimFloorPlanPlugin.BuildOriginForwardOffset);
+            if (forwardOffset <= 0f) return origin;
+
+            Vector3 forward = player.transform.forward;
+            forward.y = 0f;
+            if (forward.sqrMagnitude < 0.0001f)
+                return origin;
+
+            forward.Normalize();
+            return origin + forward * forwardOffset;
         }
 
         /// <summary>
@@ -291,11 +352,13 @@ namespace ValheimFloorPlan
                 return;
             }
 
+            var bfPlayer = Player.m_localPlayer;
+            if (bfPlayer == null) { ValheimFloorPlanPlugin.Log.LogError("No local player found."); return; }
             ValheimFloorPlanPlugin.Log.LogInfo($"Building floor plan: {plan.Pieces.Count} pieces from {path}");
-            StartCoroutine(LevelThenPlace(plan));
+            StartCoroutine(LevelThenPlace(plan, 0f, GetBuildOrigin(bfPlayer)));
         }
 
-        private IEnumerator LevelThenPlace(FloorPlan plan, float rotationDeg = 0f)
+        private IEnumerator LevelThenPlace(FloorPlan plan, float rotationDeg, Vector3 origin)
         {
             var player = Player.m_localPlayer;
             if (player == null)
@@ -304,7 +367,6 @@ namespace ValheimFloorPlan
                 yield break;
             }
 
-            Vector3 origin = player.transform.position;
             ValheimFloorPlanPlugin.Log.LogInfo($"Build origin: {origin}  rotation={rotationDeg:F0}\u00b0");
 
             // Clear any previous undo state.

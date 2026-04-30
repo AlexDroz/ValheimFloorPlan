@@ -27,7 +27,6 @@ namespace ValheimFloorPlan
         private const float SPIKE_SCAN_STEP   = 0.5f;
         private const float SPIKE_LEVEL_RADIUS = 1.5f;
         private const float SPIKE_TOLERANCE   = 0.2f;
-        private const int   SPIKE_PASSES      = 2;
         private const int   INNER_PAD     = 2;      // cells of buffer around plan bounding box
 
         // ── moat ──────────────────────────────────────────────────────────────
@@ -52,9 +51,10 @@ namespace ValheimFloorPlan
 
         // ── LevelForPlan ──────────────────────────────────────────────────────
         // Pre-samples the footprint to find min/max height, then raises everything
-        // to maxY in TWO passes.  The settle time between passes and the recommended
-        // placement wait both scale with the number of terrain chunks modified so
-        // that large builds get the time they need.
+        // to maxY using a configurable number of passes.
+        // The settle time between passes and the recommended placement wait both
+        // scale with the number of terrain chunks modified so that large builds get
+        // the time they need.
         // Terrain is ONLY ever raised → disc falloff always slopes DOWN to natural
         // terrain → no upward spikes possible.
         // If the range exceeds WARN_RAISE a warning is logged but the build continues.
@@ -117,7 +117,7 @@ namespace ValheimFloorPlan
                 $"  rotation={rotationDeg:F0}°" +
                 $"  inner(local)=[{innerMinX:F1}..{innerMaxX:F1}] x [{innerMinZ:F1}..{innerMaxZ:F1}]");
 
-            int totalPasses = range >= 10f ? 5 : range >= 6f ? 4 : 3;
+            int totalPasses = Mathf.Clamp(ValheimFloorPlanPlugin.TerrainLevelPasses, 1, 5);
 
             int stepsX = Mathf.CeilToInt((innerMaxX - innerMinX) / levelSampleStep);
             int stepsZ = Mathf.CeilToInt((innerMaxZ - innerMinZ) / levelSampleStep);
@@ -128,7 +128,7 @@ namespace ValheimFloorPlan
             int nextLevelPct = 10;
 
             ValheimFloorPlanPlugin.Log.LogInfo(
-                $"[TerrainLeveler] Running {totalPasses} leveling passes (range={range:F1}m).");
+                $"[TerrainLeveler] Running {totalPasses} leveling passes (configured, range={range:F1}m).");
             ShowProgress($"Leveling terrain... 0% ({totalPasses} pass(es))");
 
             for (int pass = 1; pass <= totalPasses; pass++)
@@ -162,10 +162,11 @@ namespace ValheimFloorPlan
             }
 
             // Spike suppression: scan the extended area in local space, rotate, check/fix.
+            int spikePasses = Mathf.Clamp(ValheimFloorPlanPlugin.TerrainSpikeCleanupPasses, 1, 5);
             int spikeOps = 0;
             int spikeStepsX = Mathf.CeilToInt((sampleMaxX - sampleMinX) / spikeScanStep);
             int spikeStepsZ = Mathf.CeilToInt((sampleMaxZ - sampleMinZ) / spikeScanStep);
-            for (int pass = 1; pass <= SPIKE_PASSES; pass++)
+            for (int pass = 1; pass <= spikePasses; pass++)
             {
                 for (int ix = 0; ix <= spikeStepsX; ix++)
                 {
@@ -186,14 +187,14 @@ namespace ValheimFloorPlan
                     }
                 }
 
-                if (pass < SPIKE_PASSES)
+                if (pass < spikePasses)
                     yield return new WaitForSeconds(0.05f);
             }
 
             if (spikeOps > 0)
             {
                 ValheimFloorPlanPlugin.Log.LogInfo(
-                    $"[TerrainLeveler] Spike suppression applied: {spikeOps} ops across {SPIKE_PASSES} pass(es).");
+                    $"[TerrainLeveler] Spike suppression applied: {spikeOps} ops across {spikePasses} pass(es).");
                 ShowProgress("Leveling terrain... final cleanup");
             }
             else
