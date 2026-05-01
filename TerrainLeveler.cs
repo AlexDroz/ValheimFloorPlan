@@ -15,8 +15,6 @@ namespace ValheimFloorPlan
     ///                  when a disc lowers terrain, the falloff zone must ramp back up to
     ///                  the original higher ground on the uphill side → spike.
     ///
-    ///  DigMoat       – Optional.  Digs a trench ring at a safe distance from the inner
-    ///                  pad after pieces are placed.
     /// </summary>
     public static class TerrainLeveler
     {
@@ -28,13 +26,6 @@ namespace ValheimFloorPlan
         private const float SPIKE_LEVEL_RADIUS = 1.5f;
         private const float SPIKE_TOLERANCE   = 0.2f;
         private const int   INNER_PAD     = 2;      // cells of buffer around plan bounding box
-
-        // ── moat ──────────────────────────────────────────────────────────────
-        private const int   MOAT_OFFSET       = 6;  // gap in cells between inner pad and moat inner edge
-        private const int   MOAT_WIDTH        = 4;  // moat width in cells
-        private const float MOAT_DEPTH        = 2f; // metres below pad level
-        private const float MOAT_LEVEL_RADIUS = 1.0f; // small discs → minimal overlap between neighbours
-        private const float MOAT_SAMPLE_STEP  = 1.0f; // dense sampling → no gaps in moat floor
 
         private const float WARN_RAISE   = 6f;   // warn in log above this height range
         private const int   OPS_PER_FRAME = 10;
@@ -210,55 +201,6 @@ namespace ValheimFloorPlan
             ShowProgress("Leveling terrain... done");
         }
 
-        // ── DigMoat ───────────────────────────────────────────────────────────
-        // Digs a trench ring MOAT_OFFSET cells beyond the inner pad.
-        // Called after PlacePieces so it cannot disturb the flat build pad.
-        public static IEnumerator DigMoat(FloorPlan plan, Vector3 origin)
-        {
-            float targetY = SampleHeight(origin.x, origin.z, origin.y);
-            float moatY   = targetY - MOAT_DEPTH;
-
-            // Inner pad boundary (same as LevelForPlan so we know the safe zone).
-            GetBounds(plan, origin, INNER_PAD, 0f,
-                out float innerMinX, out float innerMaxX,
-                out float innerMinZ, out float innerMaxZ);
-
-            // Moat inner edge: MOAT_OFFSET cells beyond the inner pad.
-            float moatInnerMinX = innerMinX - MOAT_OFFSET * PieceMap.CELL_SIZE;
-            float moatInnerMaxX = innerMaxX + MOAT_OFFSET * PieceMap.CELL_SIZE;
-            float moatInnerMinZ = innerMinZ - MOAT_OFFSET * PieceMap.CELL_SIZE;
-            float moatInnerMaxZ = innerMaxZ + MOAT_OFFSET * PieceMap.CELL_SIZE;
-
-            // Moat outer edge: MOAT_WIDTH cells beyond the moat inner edge.
-            float moatOuterMinX = moatInnerMinX - MOAT_WIDTH * PieceMap.CELL_SIZE;
-            float moatOuterMaxX = moatInnerMaxX + MOAT_WIDTH * PieceMap.CELL_SIZE;
-            float moatOuterMinZ = moatInnerMinZ - MOAT_WIDTH * PieceMap.CELL_SIZE;
-            float moatOuterMaxZ = moatInnerMaxZ + MOAT_WIDTH * PieceMap.CELL_SIZE;
-
-            ValheimFloorPlanPlugin.Log.LogInfo(
-                $"[TerrainLeveler] Digging moat at Y={moatY:F2}" +
-                $"  outer [{moatOuterMinX:F1}..{moatOuterMaxX:F1}] x [{moatOuterMinZ:F1}..{moatOuterMaxZ:F1}]");
-
-            int ops = 0;
-            var modified = new HashSet<TerrainComp>();
-
-            for (float x = moatOuterMinX; x <= moatOuterMaxX + 0.01f; x += MOAT_SAMPLE_STEP)
-                for (float z = moatOuterMinZ; z <= moatOuterMaxZ + 0.01f; z += MOAT_SAMPLE_STEP)
-                {
-                    // Only stamp points that fall inside the outer boundary but outside the inner.
-                    bool inMoatInner = x >= moatInnerMinX && x <= moatInnerMaxX
-                                    && z >= moatInnerMinZ && z <= moatInnerMaxZ;
-                    if (!inMoatInner)
-                    {
-                        ApplyLevel(x, moatY, z, MOAT_LEVEL_RADIUS, modified);
-                        if (++ops % OPS_PER_FRAME == 0) yield return null;
-                    }
-                }
-
-            ValheimFloorPlanPlugin.Log.LogInfo(
-                $"[TerrainLeveler] Moat dug: {ops} ops across {modified.Count} chunks.");
-        }
-
         // ── helpers ──────────────────────────────────────────────────────────
 
         /// <summary>
@@ -276,7 +218,7 @@ namespace ValheimFloorPlan
         /// Returns the actual outer edge of terrain modification: the leveled pad
         /// boundary (plan + INNER_PAD) expanded by LEVEL_RADIUS (the disc falloff).
         /// Used by FloorPlanBuilder to draw the outer preview rectangle so it matches
-        /// the visible terrain change, not the dormant moat extent.
+        /// the visible terrain change boundary.
         /// </summary>
         public static void GetLeveledAreaBounds(FloorPlan plan, Vector3 origin,
             out float minX, out float maxX, out float minZ, out float maxZ,
@@ -297,9 +239,9 @@ namespace ValheimFloorPlan
             out float minX, out float maxX, out float minZ, out float maxZ,
             float rotationDeg = 0f)
         {
-            // Use the moat outer edge as the snapshot boundary so the full
-            // modified area is captured, including any future moat ops.
-            int pad = INNER_PAD + MOAT_OFFSET + MOAT_WIDTH + 4;
+            // Snapshot a generous boundary around the full leveled-area footprint
+            // (inner pad + level radius) so Undo can restore all modified chunks.
+            int pad = INNER_PAD + Mathf.CeilToInt(LEVEL_RADIUS) + 4;
             GetBounds(plan, origin, pad, rotationDeg, out minX, out maxX, out minZ, out maxZ);
         }
 

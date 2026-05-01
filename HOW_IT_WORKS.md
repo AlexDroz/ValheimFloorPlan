@@ -28,7 +28,6 @@ On startup (`Awake`), the plugin registers BepInEx configuration entries for fil
 - **`TerrainSpikeCleanupPasses`** (default `2`, range `1–5`) — number of post-leveling spike cleanup scans.
 - **`ExternalWallHeight`** (default `1`, range `1–4`) — stacks external `Wall`/`Pillar` pieces to this many levels.
 - **`WallPillarMaterial`** (`Stone` or `Wood`, default `Stone`) — chooses wall/pillar prefab set.
-- **`WoodWallOuterOffset`** (default `0.2 m`) — outward shift applied to external wood walls for edge alignment.
 - **`BuildOriginForwardOffset`** (default `12 m`, range `10–20`) — initial preview/build origin in front of the player.
 - **`ProgressMessagePosition`** — HUD slot used for progress messages.
 - **Preview movement/rotation settings and keys** — step sizes, fine-adjust key, movement keys, rotation keys, and cancel key.
@@ -82,7 +81,7 @@ The grid origin (col=0, row=0) maps to the selected preview origin (default: pla
 When `F8` is pressed, `FloorPlanBuilder.StartPreview` enters placement preview mode. The initial preview origin is the player's position plus `BuildOriginForwardOffset` in the facing direction. In preview, you can nudge or rotate the plan, then confirm with left-click to launch `LevelThenPlace`. All heavy steps are spread across Unity frames to avoid freezing the game.
 
 ### 4a. Snapshot terrain
-Before any changes, `TerrainSnapshot.Capture` samples the bounding area of the entire plan (including a generous margin for the optional moat) and clones the raw `m_levelDelta` / `m_modifiedHeight` arrays from every `TerrainComp` chunk in the region via reflection. This snapshot is what `Undo` uses to restore the ground later.
+Before any changes, `TerrainSnapshot.Capture` samples a generous bounding area around the leveled footprint and clones the raw `m_levelDelta` / `m_modifiedHeight` arrays from every `TerrainComp` chunk in the region via reflection. This snapshot is what `Undo` uses to restore the ground later.
 
 ### 4b. Clear blockers in the leveled area
 Before leveling, `ClearRocksInPad` removes rock-like blockers (for example `MineRock` / `MineRock5`) intersecting the leveled footprint. It combines collider overlap scans with renderer-bounds fallback so protruding meshes are caught even when pivots sit outside bounds.
@@ -128,7 +127,7 @@ For each piece in the plan:
 
 External wall stacking: pieces of type `Wall` or `Pillar` whose footprint touches the outer perimeter of the plan are treated as external and stacked vertically to `ExternalWallHeight` levels.
 
-When `WallPillarMaterial=Wood`, `Wall` maps to `wood_wall_half` and `Pillar` maps to `wood_pole`. External wood walls are shifted outward by `WoodWallOuterOffset` to align with floor edges. For wood walls, `.vfp` `wallFace=inner` flips wall rotation by 180° so inner/outer faces can be controlled from the plan file.
+When `WallPillarMaterial=Wood`, `Wall` maps to `wood_wall_half` and `Pillar` maps to `wood_pole2`. External wood walls and pillars are automatically shifted outward to match the outer edge alignment used by stone pieces. For wood walls, `.vfp` `wallFace=inner` flips wall rotation by 180° so inner/outer faces can be controlled from the plan file.
 
 ### 4f. Post-build spike guard
 After placement, `PostBuildSpikeGuard` runs several delayed scans over the leveled area and removes tall non-piece blockers still protruding above terrain. This catches late-appearing spike meshes that can show up after leveling and placement complete.
@@ -163,6 +162,3 @@ Pressing `F9` calls `FloorPlanBuilder.Undo`:
 
 ---
 
-## Optional: Moat
-
-`TerrainLeveler.DigMoat` is defined but not called in the default build sequence. It digs a trench ring around the leveled pad: a 6-cell gap from the inner pad, 4 cells wide, and 2 m below pad level. It uses the same `ApplyLevel` stamp approach, but stamps to `targetY − 2 m` and skips points inside the inner boundary.

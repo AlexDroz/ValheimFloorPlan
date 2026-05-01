@@ -40,8 +40,8 @@ namespace ValheimFloorPlan
         private bool          _previewActive   = false;
         private FloorPlan?    _previewPlan     = null;
         private GameObject?   _previewGo       = null;
-        private MeshFilter?   _previewPadWalls  = null;  // white — leveled pad wall ring
-        private MeshFilter?   _previewMoatWalls = null;  // green — moat outer-edge wall ring
+        private MeshFilter?   _previewPadWalls   = null;  // white — leveled pad wall ring
+        private MeshFilter?   _previewOuterWalls = null;  // green — outer terrain-change wall ring
         private LineRenderer? _previewOriginMarker = null; // yellow — exact preview origin
         private float         _previewRotationDeg = 0f; // clockwise yaw, degrees
         private Vector3       _previewOrigin   = Vector3.zero; // locked at preview start, not updated per-frame
@@ -87,10 +87,10 @@ namespace ValheimFloorPlan
                 : Vector3.zero;
 
             // Two nested vertical wall rings (open-cube style):
-            // white = leveled pad, green = moat outer edge.
+            // white = leveled pad, green = outer terrain-change boundary.
             _previewGo = new GameObject("VFP_Preview");
             _previewPadWalls  = MakeWallRing(_previewGo, "VFP_WallsPad",  new Color(1f,  1f,  1f,  0.28f));
-            _previewMoatWalls = MakeWallRing(_previewGo, "VFP_WallsMoat", new Color(0.2f, 1f, 0.2f, 0.24f));
+            _previewOuterWalls = MakeWallRing(_previewGo, "VFP_WallsOuter", new Color(0.2f, 1f, 0.2f, 0.24f));
             _previewOriginMarker = MakeLine(_previewGo, new Color(0.18f, 0.05f, 0.02f, 0.98f), 0.14f, 7);
 
             ValheimFloorPlanPlugin.Log.LogInfo(
@@ -166,7 +166,7 @@ namespace ValheimFloorPlan
             _previewActive      = false;
             _previewPlan        = null;
             _previewPadWalls     = null;
-            _previewMoatWalls    = null;
+            _previewOuterWalls   = null;
             _previewOriginMarker = null;
             _previewRotationDeg = 0f;
             _previewOrigin      = Vector3.zero;
@@ -296,7 +296,7 @@ namespace ValheimFloorPlan
 
         /// <summary>
         /// Repositions both preview wall-rings each frame so they track the player.
-        /// White = leveled pad volume. Green = moat outer-edge volume.
+        /// White = leveled pad volume. Green = outer terrain-change volume.
         /// </summary>
         private void UpdatePreviewPosition(Vector3 origin)
         {
@@ -311,7 +311,7 @@ namespace ValheimFloorPlan
 
             SetWallRingRectangle(_previewPadWalls, origin.y,
                 RotateBoundsCorners(origin, padMinX, padMaxX, padMinZ, padMaxZ, _previewRotationDeg));
-            SetWallRingRectangle(_previewMoatWalls, origin.y,
+            SetWallRingRectangle(_previewOuterWalls, origin.y,
                 RotateBoundsCorners(origin, lvlMinX, lvlMaxX, lvlMinZ, lvlMaxZ, _previewRotationDeg));
             SetOriginMarker(_previewOriginMarker, origin.y, origin);
         }

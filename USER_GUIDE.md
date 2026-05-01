@@ -39,7 +39,6 @@ Important settings:
 - `TerrainSpikeCleanupPasses`: Cleanup pass count after leveling (default `2`, range `1-5`).
 - `ExternalWallHeight`: Stacks external `Wall` and `Pillar` objects to this many levels (default `1`, range `1-4`).
 - `WallPillarMaterial`: Choose `Stone` or `Wood` for `Wall` and `Pillar` types (default `Stone`).
-- `WoodWallOuterOffset`: Outward shift for external wood walls so they align to floor edges (default `0.2`, range `0.0-0.5`).
 
 Optional `.vfp` wall-face field:
 - Piece lines can include a sixth field: `piece,col,row,type,rotation,wallFace`
@@ -134,9 +133,6 @@ Yes. Use `Q` / `E` in preview mode.
 
 ### Can I fine-adjust placement?
 Yes. Hold `LeftShift` while moving/rotating.
-
-### Is moat digging enabled by default?
-No. Moat logic exists in code but is not part of the default build sequence.
 
 ## Best Practices
 - Always verify preview alignment before left-click confirm.
