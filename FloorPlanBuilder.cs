@@ -19,7 +19,7 @@ namespace ValheimFloorPlan
     {
         private const float PLACE_DELAY = 0.05f; // seconds between spawns to avoid lag spikes
         private const float ORIGIN_MARKER_RADIUS = 0.75f;
-        private const float ORIGIN_MARKER_LIFT = 0.2f;
+        private const float ORIGIN_MARKER_LIFT = 0.45f;
 
         // ZDO key written on every piece we place.  Used by Undo() to find VFP pieces
         // across sessions — any ZNetView with this key set to "1" was placed by this mod.
@@ -40,8 +40,8 @@ namespace ValheimFloorPlan
         private bool          _previewActive   = false;
         private FloorPlan?    _previewPlan     = null;
         private GameObject?   _previewGo       = null;
-        private LineRenderer? _previewLinePad  = null;  // white — leveled pad
-        private LineRenderer? _previewLineMoat = null;  // green — moat outer edge
+        private MeshFilter?   _previewPadWalls  = null;  // white — leveled pad wall ring
+        private MeshFilter?   _previewMoatWalls = null;  // green — moat outer-edge wall ring
         private LineRenderer? _previewOriginMarker = null; // yellow — exact preview origin
         private float         _previewRotationDeg = 0f; // clockwise yaw, degrees
         private Vector3       _previewOrigin   = Vector3.zero; // locked at preview start, not updated per-frame
@@ -86,17 +86,62 @@ namespace ValheimFloorPlan
                 ? GetBuildOrigin(previewPlayer)
                 : Vector3.zero;
 
-            // Two nested rectangles: white = leveled pad, green = moat outer edge.
+            // Two nested vertical wall rings (open-cube style):
+            // white = leveled pad, green = moat outer edge.
             _previewGo = new GameObject("VFP_Preview");
-            _previewLinePad  = MakeLine(_previewGo, new Color(1f,  1f,  1f,  0.9f), 0.12f);
-            _previewLineMoat = MakeLine(_previewGo, new Color(0.2f, 1f, 0.2f, 0.9f), 0.15f);
-            _previewOriginMarker = MakeLine(_previewGo, new Color(1f, 0.85f, 0.1f, 0.95f), 0.10f, 7);
+            _previewPadWalls  = MakeWallRing(_previewGo, "VFP_WallsPad",  new Color(1f,  1f,  1f,  0.28f));
+            _previewMoatWalls = MakeWallRing(_previewGo, "VFP_WallsMoat", new Color(0.2f, 1f, 0.2f, 0.24f));
+            _previewOriginMarker = MakeLine(_previewGo, new Color(0.18f, 0.05f, 0.02f, 0.98f), 0.14f, 7);
 
             ValheimFloorPlanPlugin.Log.LogInfo(
                 $"[FloorPlanBuilder] Preview active ({plan.Pieces.Count} pieces, " +
                 $"{plan.Cols}×{plan.Rows} cells). Left-click to build, RMB/ESC to cancel.");
             Player.m_localPlayer?.Message(MessageHud.MessageType.Center,
                 $"ValheimFloorPlan: {ValheimFloorPlanPlugin.PreviewMoveLeftKey}/{ValheimFloorPlanPlugin.PreviewMoveRightKey}/{ValheimFloorPlanPlugin.PreviewMoveForwardKey}/{ValheimFloorPlanPlugin.PreviewMoveBackwardKey} move | {ValheimFloorPlanPlugin.PreviewRotateLeftKey}/{ValheimFloorPlanPlugin.PreviewRotateRightKey} rotate | {ValheimFloorPlanPlugin.PreviewFineAdjustKey} fine | Left-click to place | RMB/{ValheimFloorPlanPlugin.PreviewCancelKey} cancel");
+        }
+
+        private static MeshFilter MakeWallRing(GameObject parent, string name, Color color)
+        {
+            var child = new GameObject(name);
+            child.transform.SetParent(parent.transform, false);
+
+            var mf = child.AddComponent<MeshFilter>();
+            var mr = child.AddComponent<MeshRenderer>();
+            mr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            mr.receiveShadows = false;
+
+            var mat = new Material(Shader.Find("Sprites/Default"));
+            mat.color = color;
+            mr.sharedMaterial = mat;
+
+            var mesh = new Mesh { name = name + "_Mesh" };
+            // 4 sides × 4 verts per side (bottomA, bottomB, topB, topA)
+            mesh.vertices = new Vector3[16];
+            mesh.uv = new Vector2[16];
+            for (int i = 0; i < 16; i++)
+            {
+                int j = i % 4;
+                mesh.uv[i] = j switch
+                {
+                    0 => new Vector2(0f, 0f),
+                    1 => new Vector2(1f, 0f),
+                    2 => new Vector2(1f, 1f),
+                    _ => new Vector2(0f, 1f)
+                };
+            }
+
+            // Two-sided triangles for each of the 4 wall faces.
+            mesh.triangles = new[]
+            {
+                 0,  1,  2,   0,  2,  3,   2,  1,  0,   3,  2,  0,
+                 4,  5,  6,   4,  6,  7,   6,  5,  4,   7,  6,  4,
+                 8,  9, 10,   8, 10, 11,  10,  9,  8,  11, 10,  8,
+                12, 13, 14,  12, 14, 15,  14, 13, 12,  15, 14, 12
+            };
+            mesh.RecalculateNormals();
+            mf.sharedMesh = mesh;
+
+            return mf;
         }
 
         private static LineRenderer MakeLine(GameObject parent, Color color, float width, int positionCount = 5)
@@ -120,8 +165,8 @@ namespace ValheimFloorPlan
         {
             _previewActive      = false;
             _previewPlan        = null;
-            _previewLinePad     = null;
-            _previewLineMoat    = null;
+            _previewPadWalls     = null;
+            _previewMoatWalls    = null;
             _previewOriginMarker = null;
             _previewRotationDeg = 0f;
             _previewOrigin      = Vector3.zero;
@@ -250,9 +295,8 @@ namespace ValheimFloorPlan
         }
 
         /// <summary>
-        /// Repositions both preview rectangles each frame so they track the player.
-        /// White = leveled pad boundary.  Green = moat outer edge.
-        /// Each corner is Y-sampled via Physics.Raycast so the lines hug the terrain.
+        /// Repositions both preview wall-rings each frame so they track the player.
+        /// White = leveled pad volume. Green = moat outer-edge volume.
         /// </summary>
         private void UpdatePreviewPosition(Vector3 origin)
         {
@@ -265,9 +309,9 @@ namespace ValheimFloorPlan
             TerrainLeveler.GetLeveledAreaBounds(_previewPlan, origin,
                 out float lvlMinX, out float lvlMaxX, out float lvlMinZ, out float lvlMaxZ);
 
-            SetRectangle(_previewLinePad,  origin.y,
+            SetWallRingRectangle(_previewPadWalls, origin.y,
                 RotateBoundsCorners(origin, padMinX, padMaxX, padMinZ, padMaxZ, _previewRotationDeg));
-            SetRectangle(_previewLineMoat, origin.y,
+            SetWallRingRectangle(_previewMoatWalls, origin.y,
                 RotateBoundsCorners(origin, lvlMinX, lvlMaxX, lvlMinZ, lvlMaxZ, _previewRotationDeg));
             SetOriginMarker(_previewOriginMarker, origin.y, origin);
         }
@@ -302,26 +346,54 @@ namespace ValheimFloorPlan
             return corners;
         }
 
-        private static void SetRectangle(LineRenderer? lr,
+        private static void SetWallRingRectangle(MeshFilter? mf,
             float referenceY, Vector2[] corners)
         {
-            if (lr == null) return;
+            if (mf == null || mf.sharedMesh == null) return;
 
             float rayY = referenceY + 300f;
             const int   terrainLayer = 1 << 11;
-            const float yLift        = 0.15f;
+            const float bottomLift = 0.06f;
+            const float topLift    = 0.30f;
+            const float minHeight  = 0.75f;
 
-            var pts = new Vector3[5];
+            var terrainY = new float[4];
+            float low = float.MaxValue;
+            float high = float.MinValue;
             for (int i = 0; i < 4; i++)
             {
                 float y = referenceY;
                 if (Physics.Raycast(new Vector3(corners[i].x, rayY, corners[i].y),
                         Vector3.down, out var hit, 600f, terrainLayer))
                     y = hit.point.y;
-                pts[i] = new Vector3(corners[i].x, y + yLift, corners[i].y);
+
+                terrainY[i] = y;
+                if (y < low) low = y;
+                if (y > high) high = y;
             }
-            pts[4] = pts[0];
-            lr.SetPositions(pts);
+
+            float bottomY = low + bottomLift;
+            float topY = high + topLift;
+            if (topY - bottomY < minHeight)
+                topY = bottomY + minHeight;
+
+            var mesh = mf.sharedMesh;
+            var verts = mesh.vertices;
+
+            for (int side = 0; side < 4; side++)
+            {
+                int next = (side + 1) % 4;
+                int v = side * 4;
+
+                verts[v + 0] = new Vector3(corners[side].x, bottomY, corners[side].y); // bottom A
+                verts[v + 1] = new Vector3(corners[next].x, bottomY, corners[next].y); // bottom B
+                verts[v + 2] = new Vector3(corners[next].x, topY, corners[next].y);    // top B
+                verts[v + 3] = new Vector3(corners[side].x, topY, corners[side].y);    // top A
+            }
+
+            mesh.vertices = verts;
+            mesh.RecalculateBounds();
+            mesh.RecalculateNormals();
         }
 
         private static void SetOriginMarker(LineRenderer? lr, float referenceY, Vector3 origin)
