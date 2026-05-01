@@ -1,0 +1,285 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>ValheimFloorPlan - User Guide</title>
+  <style>
+    :root {
+      --bg: #f6f4ee;
+      --surface: #fffdf7;
+      --ink: #1d1d1b;
+      --muted: #4a4a44;
+      --accent: #2f6f5e;
+      --accent-2: #9c5d2f;
+      --border: #d9d2bf;
+      --code-bg: #f2efe5;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      font-family: "Segoe UI", "Noto Sans", "Helvetica Neue", sans-serif;
+      color: var(--ink);
+      background:
+        radial-gradient(1200px 600px at 10% -10%, #ece8d8 0%, transparent 55%),
+        radial-gradient(800px 500px at 100% 0%, #e8eee6 0%, transparent 45%),
+        var(--bg);
+      line-height: 1.6;
+    }
+
+    .wrap {
+      max-width: 980px;
+      margin: 0 auto;
+      padding: 24px 16px 60px;
+    }
+
+    .hero {
+      background: linear-gradient(135deg, #315f4f 0%, #24483d 60%, #1f3f35 100%);
+      color: #f8f8f3;
+      border-radius: 14px;
+      padding: 24px 20px;
+      box-shadow: 0 10px 24px rgba(0, 0, 0, 0.18);
+    }
+
+    .hero h1 {
+      margin: 0 0 8px;
+      font-size: clamp(1.45rem, 2vw + 1rem, 2.2rem);
+      line-height: 1.2;
+      letter-spacing: 0.2px;
+    }
+
+    .hero p {
+      margin: 0;
+      color: #e6eee9;
+      max-width: 70ch;
+    }
+
+    .card {
+      margin-top: 16px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 18px;
+      box-shadow: 0 6px 16px rgba(0, 0, 0, 0.06);
+    }
+
+    h2 {
+      margin: 8px 0 10px;
+      font-size: 1.35rem;
+      color: #1e453a;
+    }
+
+    h3 {
+      margin: 16px 0 8px;
+      font-size: 1.05rem;
+      color: #314d45;
+    }
+
+    p, li {
+      color: var(--muted);
+    }
+
+    ul, ol {
+      margin: 8px 0 12px;
+      padding-left: 1.25rem;
+    }
+
+    code {
+      background: var(--code-bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 0.08rem 0.35rem;
+      font-family: "Cascadia Code", "Consolas", monospace;
+      font-size: 0.92em;
+      color: #1f4539;
+    }
+
+    .pillrow {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 10px;
+    }
+
+    .pill {
+      border: 1px solid #88a79b;
+      background: #e8f1ec;
+      color: #1e4b3e;
+      border-radius: 999px;
+      padding: 5px 10px;
+      font-size: 0.9rem;
+      font-weight: 600;
+    }
+
+    .warning {
+      border-left: 4px solid var(--accent-2);
+      background: #fff7ef;
+      padding: 10px 12px;
+      border-radius: 8px;
+      color: #6a4324;
+      margin: 10px 0;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 8px;
+      overflow: hidden;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+    }
+
+    th, td {
+      border-bottom: 1px solid var(--border);
+      padding: 9px 10px;
+      text-align: left;
+      font-size: 0.96rem;
+    }
+
+    th {
+      background: #edf3ef;
+      color: #27443a;
+    }
+
+    tr:last-child td { border-bottom: 0; }
+
+    @media (max-width: 700px) {
+      .wrap { padding: 14px 10px 40px; }
+      .hero { padding: 18px 14px; border-radius: 10px; }
+      .card { padding: 14px; border-radius: 10px; }
+      th, td { font-size: 0.9rem; padding: 8px; }
+    }
+  </style>
+</head>
+<body>
+  <main class="wrap">
+    <section class="hero">
+      <h1>ValheimFloorPlan - User Guide</h1>
+      <p>Place a pre-made .vfp floor plan in game, preview the footprint, align it precisely, and let the mod level terrain and spawn pieces automatically.</p>
+      <div class="pillrow">
+        <span class="pill">Preview First</span>
+        <span class="pill">Auto Terrain Prep</span>
+        <span class="pill">One-Key Undo</span>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Quick Start</h2>
+      <ol>
+        <li>Set <code>FloorPlanFile</code> to your .vfp file in config.</li>
+        <li>Enter your world and press <code>F8</code> to open preview.</li>
+        <li>Move/rotate preview until placement looks right.</li>
+        <li>Left-click to confirm build.</li>
+        <li>Use <code>F9</code> to undo if needed.</li>
+      </ol>
+    </section>
+
+    <section class="card">
+      <h2>Installation</h2>
+      <h3>Thunderstore Mod Manager</h3>
+      <ol>
+        <li>Install ValheimFloorPlan in Thunderstore Mod Manager.</li>
+        <li>Launch the game once.</li>
+        <li>Close game and update config if needed.</li>
+      </ol>
+
+      <h3>Manual</h3>
+      <ol>
+        <li>Install BepInEx for Valheim.</li>
+        <li>Copy the mod DLL to <code>BepInEx/plugins</code>.</li>
+        <li>Launch once to generate config.</li>
+      </ol>
+    </section>
+
+    <section class="card">
+      <h2>Configuration</h2>
+      <p>Default config file:</p>
+      <p><code>BepInEx/config/com.yourname.valheimfloorplan.cfg</code></p>
+
+      <table>
+        <thead>
+          <tr><th>Setting</th><th>Default</th><th>What it does</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>FloorPlanFile</code></td><td>empty</td><td>Full path to the .vfp file to build.</td></tr>
+          <tr><td><code>BuildHotkey</code></td><td><code>F8</code></td><td>Opens placement preview.</td></tr>
+          <tr><td><code>UndoHotkey</code></td><td><code>F9</code></td><td>Removes nearby VFP pieces and restores terrain snapshot.</td></tr>
+          <tr><td><code>BuildOriginForwardOffset</code></td><td>12</td><td>Initial preview origin in front of player (10-20).</td></tr>
+          <tr><td><code>TerrainLevelPasses</code></td><td>2</td><td>Main terrain leveling pass count (1-5).</td></tr>
+          <tr><td><code>TerrainSpikeCleanupPasses</code></td><td>2</td><td>Post-leveling cleanup pass count (1-5).</td></tr>
+          <tr><td><code>ExternalWallHeight</code></td><td>1</td><td>Stacks external Wall/Pillar objects to this many levels (1-4).</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section class="card">
+      <h2>Preview and Build Controls (Default)</h2>
+      <ul>
+        <li>Build preview: <code>F8</code></li>
+        <li>Undo: <code>F9</code></li>
+        <li>Move preview: <code>UpArrow / DownArrow / LeftArrow / RightArrow</code></li>
+        <li>Rotate preview: <code>Q / E</code></li>
+        <li>Fine adjust: hold <code>LeftShift</code></li>
+        <li>Cancel preview: <code>Esc</code> or right-click</li>
+        <li>Confirm build: left-click</li>
+      </ul>
+    </section>
+
+    <section class="card">
+      <h2>What Happens During Build</h2>
+      <ol>
+        <li>Terrain snapshot is captured for undo.</li>
+        <li>Rock-like blockers in the leveled area are cleared.</li>
+        <li>Terrain is leveled to the highest sampled point.</li>
+        <li>Terrain physics is polled until collider is ready.</li>
+        <li>Pieces are spawned at terrain-conforming heights.</li>
+        <li>Post-build spike guard removes late protruding blockers.</li>
+      </ol>
+    </section>
+
+    <section class="card">
+      <h2>Undo Behavior</h2>
+      <ul>
+        <li>Removes VFP-tagged pieces within about 75m of player.</li>
+        <li>Restores terrain from captured snapshot.</li>
+      </ul>
+      <div class="warning">
+        Piece removal can work across sessions. Terrain restore depends on a valid captured snapshot from the current run.
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Tuning Tips</h2>
+      <ul>
+        <li>Faster test builds: set passes to <code>1 / 1</code>.</li>
+        <li>Balanced default: <code>2 / 2</code>.</li>
+        <li>Rough terrain: try <code>4 / 3</code> or higher.</li>
+      </ul>
+    </section>
+
+    <section class="card">
+      <h2>Troubleshooting</h2>
+      <h3>Build hotkey does nothing</h3>
+      <ul>
+        <li>Check <code>FloorPlanFile</code> points to a valid file.</li>
+        <li>Check keybind conflicts.</li>
+        <li>Review BepInEx log for load errors.</li>
+      </ul>
+
+      <h3>Placement is wrong</h3>
+      <ul>
+        <li>Adjust in preview before confirming.</li>
+        <li>Tune <code>BuildOriginForwardOffset</code>.</li>
+      </ul>
+
+      <h3>Pieces float/collapse</h3>
+      <ul>
+        <li>Let the full build sequence finish.</li>
+        <li>Increase terrain pass settings on difficult ground.</li>
+      </ul>
+    </section>
+  </main>
+</body>
+</html>

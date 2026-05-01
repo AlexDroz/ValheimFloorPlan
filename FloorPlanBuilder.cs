@@ -875,7 +875,13 @@ namespace ValheimFloorPlan
             int skipped = 0;
             Vector3 firstPos = Vector3.zero;
             int totalPieces = plan.Pieces.Count;
+            int processed = 0;
             int nextProgressPct = 10;
+            int configuredExternalWallHeight = Mathf.Clamp(ValheimFloorPlanPlugin.ExternalWallHeight, 1, 4);
+
+            GetPlanPieceBounds(plan,
+                out int minCol, out int maxColExclusive,
+                out int minRow, out int maxRowExclusive);
 
             float cosR = Mathf.Cos(rotationDeg * Mathf.Deg2Rad);
             float sinR = Mathf.Sin(rotationDeg * Mathf.Deg2Rad);
@@ -929,49 +935,61 @@ namespace ValheimFloorPlan
 
                 var pos = new Vector3(x, y, z);
                 var rot = Quaternion.Euler(0, piece.Rotation + rotationDeg, 0);
+                bool isExternal = IsOnPlanOuterPerimeter(
+                    piece.Col, piece.Row, effW, effH,
+                    minCol, maxColExclusive, minRow, maxRowExclusive);
+                bool shouldStack = IsExternalWallOrPillarType(piece.Type) && isExternal;
+                int stackCount = shouldStack ? configuredExternalWallHeight : 1;
+                float stackStepY = GetStackStepY(piece.Type);
 
-                if (placed == 0)
+                for (int i = 0; i < stackCount; i++)
                 {
-                    firstPos = pos;
-                    ValheimFloorPlanPlugin.Log.LogInfo($"First piece: type={piece.Type} prefab={def.Prefab} pos={pos}");
-                }
+                    var stackedPos = new Vector3(pos.x, pos.y + stackStepY * i, pos.z);
 
-                var go = UnityEngine.Object.Instantiate(prefab, pos, rot);
-
-                // Track for undo.
-                _lastPlaced.Add(go);
-
-                // Register owner and creator so the piece is properly tracked,
-                // and write the VFP tag so Undo() can find this piece across sessions.
-                var zNetView = go.GetComponent<ZNetView>();
-                if (zNetView != null)
-                {
-                    var zdo = zNetView.GetZDO();
-                    if (zdo != null)
+                    if (placed == 0)
                     {
-                        zdo.SetOwner(ZDOMan.GetSessionID());
-                        zdo.Set(VFP_TAG, "1");
+                        firstPos = stackedPos;
+                        ValheimFloorPlanPlugin.Log.LogInfo($"First piece: type={piece.Type} prefab={def.Prefab} pos={stackedPos}");
                     }
+
+                    var go = UnityEngine.Object.Instantiate(prefab, stackedPos, rot);
+
+                    // Track for undo.
+                    _lastPlaced.Add(go);
+
+                    // Register owner and creator so the piece is properly tracked,
+                    // and write the VFP tag so Undo() can find this piece across sessions.
+                    var zNetView = go.GetComponent<ZNetView>();
+                    if (zNetView != null)
+                    {
+                        var zdo = zNetView.GetZDO();
+                        if (zdo != null)
+                        {
+                            zdo.SetOwner(ZDOMan.GetSessionID());
+                            zdo.Set(VFP_TAG, "1");
+                        }
+                    }
+
+                    var pieceComp = go.GetComponent<Piece>();
+                    pieceComp?.SetCreator(player.GetPlayerID());
+
+                    placed++;
+
+                    // Brief yield every 10 spawned objects to avoid freezing
+                    if (placed % 10 == 0)
+                        yield return new WaitForSeconds(PLACE_DELAY);
                 }
 
-                var pieceComp = go.GetComponent<Piece>();
-                pieceComp?.SetCreator(player.GetPlayerID());
-
-                placed++;
-
+                processed++;
                 if (totalPieces > 0)
                 {
-                    int pct = Mathf.FloorToInt((placed * 100f) / totalPieces);
+                    int pct = Mathf.FloorToInt((processed * 100f) / totalPieces);
                     if (pct >= nextProgressPct)
                     {
-                        ShowBuildProgress($"Placing pieces... {placed}/{totalPieces}");
+                        ShowBuildProgress($"Placing pieces... {processed}/{totalPieces}");
                         nextProgressPct += 10;
                     }
                 }
-
-                // Brief yield every piece to avoid freezing
-                if (placed % 10 == 0)
-                    yield return new WaitForSeconds(PLACE_DELAY);
             }
 
             ValheimFloorPlanPlugin.Log.LogInfo($"Floor plan complete: {placed} placed, {skipped} skipped.");
@@ -984,6 +1002,62 @@ namespace ValheimFloorPlan
         private static void ShowBuildProgress(string message)
         {
             ValheimFloorPlanPlugin.ShowProgressMessage(message);
+        }
+
+        private static bool IsExternalWallOrPillarType(string type)
+        {
+            return type == "Wall" || type == "Pillar";
+        }
+
+        private static float GetStackStepY(string type)
+        {
+            if (type == "Wall") return 1f;
+            if (type == "Pillar") return 2f;
+            return 0f;
+        }
+
+        private static bool IsOnPlanOuterPerimeter(
+            int col, int row, int effW, int effH,
+            int minCol, int maxColExclusive, int minRow, int maxRowExclusive)
+        {
+            return col <= minCol || row <= minRow ||
+                   (col + effW) >= maxColExclusive || (row + effH) >= maxRowExclusive;
+        }
+
+        private static void GetPlanPieceBounds(
+            FloorPlan plan,
+            out int minCol, out int maxColExclusive,
+            out int minRow, out int maxRowExclusive)
+        {
+            minCol = int.MaxValue;
+            maxColExclusive = int.MinValue;
+            minRow = int.MaxValue;
+            maxRowExclusive = int.MinValue;
+
+            foreach (var p in plan.Pieces)
+            {
+                int effW = 1;
+                int effH = 1;
+                var def = PieceMap.GetDef(p.Type);
+                if (def != null)
+                {
+                    effW = def.EffW(p.Rotation);
+                    effH = def.EffH(p.Rotation);
+                }
+
+                if (p.Col < minCol) minCol = p.Col;
+                if (p.Col + effW > maxColExclusive) maxColExclusive = p.Col + effW;
+                if (p.Row < minRow) minRow = p.Row;
+                if (p.Row + effH > maxRowExclusive) maxRowExclusive = p.Row + effH;
+            }
+
+            if (minCol == int.MaxValue)
+            {
+                minCol = 0;
+                minRow = 0;
+                maxColExclusive = plan.Cols;
+                maxRowExclusive = plan.Rows;
+            }
         }
     }
 }

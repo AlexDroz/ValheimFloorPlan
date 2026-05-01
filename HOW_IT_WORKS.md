@@ -1,6 +1,6 @@
 # ValheimFloorPlan — How It Works
 
-ValheimFloorPlan is a BepInEx mod that reads a design file (`.vfp`), levels the terrain under the build site, and spawns Valheim building pieces to construct a floor plan automatically.
+ValheimFloorPlan is a BepInEx mod that reads a design file (`.vfp`), previews placement in-world, levels the terrain under the build site, and spawns Valheim building pieces to construct a floor plan automatically.
 
 ---
 
@@ -8,7 +8,7 @@ ValheimFloorPlan is a BepInEx mod that reads a design file (`.vfp`), levels the 
 
 | File | Purpose |
 |---|---|
-| `ValheimFloorPlanPlugin.cs` | BepInEx plugin entry point; wires hotkeys and config |
+| `ValheimFloorPlanPlugin.cs` | BepInEx plugin entry point; wires hotkeys and configuration |
 | `FloorPlan.cs` | Parses the `.vfp` design file |
 | `PieceMap.cs` | Maps design-file piece names to Valheim prefab names and dimensions |
 | `TerrainLeveler.cs` | Raises and levels the terrain under the build footprint |
@@ -19,13 +19,19 @@ ValheimFloorPlan is a BepInEx mod that reads a design file (`.vfp`), levels the 
 
 ## Step 1 — Configuration and Hotkeys
 
-On startup (`Awake`), the plugin registers two BepInEx config entries:
+On startup (`Awake`), the plugin registers BepInEx configuration entries for file path, hotkeys, terrain passes, preview controls, and HUD behavior. Key entries are:
 
 - **`FloorPlanFile`** — full path to the `.vfp` file to load.
-- **`BuildHotkey`** (default `F8`) — triggers a build at the player's current position.
+- **`BuildHotkey`** (default `F8`) — starts placement preview for the configured `.vfp`.
 - **`UndoHotkey`** (default `F9`) — removes all placed pieces and restores terrain.
+- **`TerrainLevelPasses`** (default `2`, range `1–5`) — number of leveling passes run on the build pad.
+- **`TerrainSpikeCleanupPasses`** (default `2`, range `1–5`) — number of post-leveling spike cleanup scans.
+- **`ExternalWallHeight`** (default `1`, range `1–4`) — stacks external `Wall`/`Pillar` pieces to this many levels.
+- **`BuildOriginForwardOffset`** (default `12 m`, range `10–20`) — initial preview/build origin in front of the player.
+- **`ProgressMessagePosition`** — HUD slot used for progress messages.
+- **Preview movement/rotation settings and keys** — step sizes, fine-adjust key, movement keys, rotation keys, and cancel key.
 
-`Update()` polls those hotkeys every frame and calls `FloorPlanBuilder.BuildFromFile` or `FloorPlanBuilder.Undo` accordingly.
+`Update()` polls those hotkeys every frame and calls `FloorPlanBuilder.StartPreview` or `FloorPlanBuilder.Undo` accordingly.
 
 ---
 
@@ -46,7 +52,7 @@ piece,4,2,Pillar
 | `cols` / `rows` | Grid dimensions of the design |
 | `piece,col,row,type[,rotation]` | One building piece at grid position (col, row) with an optional rotation (0 / 90 / 180 / 270°) |
 
-The grid origin (col=0, row=0) maps to the player's world position when the build hotkey is pressed. Each grid cell is **1 Valheim metre** (`CELL_SIZE = 1f`).
+The grid origin (col=0, row=0) maps to the selected preview origin (default: player position plus forward offset when preview starts). Each grid cell is **1 Valheim metre** (`CELL_SIZE = 1f`).
 
 ---
 
@@ -71,46 +77,57 @@ The grid origin (col=0, row=0) maps to the player's world position when the buil
 
 ## Step 4 — The Build Sequence (Coroutine)
 
-When `F8` is pressed, `FloorPlanBuilder.BuildFromFile` launches the coroutine `LevelThenPlace`. All steps are spread across Unity frames to avoid freezing the game.
+When `F8` is pressed, `FloorPlanBuilder.StartPreview` enters placement preview mode. The initial preview origin is the player's position plus `BuildOriginForwardOffset` in the facing direction. In preview, you can nudge or rotate the plan, then confirm with left-click to launch `LevelThenPlace`. All heavy steps are spread across Unity frames to avoid freezing the game.
 
 ### 4a. Snapshot terrain
 Before any changes, `TerrainSnapshot.Capture` samples the bounding area of the entire plan (including a generous margin for the optional moat) and clones the raw `m_levelDelta` / `m_modifiedHeight` arrays from every `TerrainComp` chunk in the region via reflection. This snapshot is what `Undo` uses to restore the ground later.
 
-### 4b. Level the terrain (`TerrainLeveler.LevelForPlan`)
+### 4b. Clear blockers in the leveled area
+Before leveling, `ClearRocksInPad` removes rock-like blockers (for example `MineRock` / `MineRock5`) intersecting the leveled footprint. It combines collider overlap scans with renderer-bounds fallback so protruding meshes are caught even when pivots sit outside bounds.
 
-1. **Pre-sample heights.** The footprint (plan bounding box + 2-cell inner pad buffer) is sampled at 1 m intervals using `Physics.Raycast` against layer 11 (the terrain physics layer) to find the minimum and maximum terrain height (`minY` / `maxY`).
+### 4c. Level the terrain (`TerrainLeveler.LevelForPlan`)
+
+1. **Pre-sample heights.** Heights are sampled from `ZoneSystem.GetGroundHeight` (terrain heightmap) across the area that may be modified: inner pad (plan bounds + 2-cell buffer) expanded by level-disc radius. This avoids rock/mesh tops biasing `targetY`. Sampling density is `0.5 m` on axis-aligned rotations and `0.25 m` on non-right-angle rotations.
 
 2. **Target height = maxY.** The leveling target is always the *highest* point in the footprint. This means every disc operation only ever *raises* terrain — it never lowers it. When terrain is only raised, the disc falloff at the pad edge slopes *down* to natural terrain, never up. Upward falloff causes spikes at chunk boundaries; by design this approach avoids them entirely.
 
-3. **Multi-pass leveling.** Because Valheim's terrain disc falloff only converges ~67% of the remaining delta per pass, the leveler runs multiple passes. The number of passes scales with the height range:
-   - range < 3 m → 2 passes
-   - range 3–6 m → 3 passes
-   - range 6–10 m → 4 passes
-   - range ≥ 10 m → 5 passes
+3. **Multi-pass leveling (configurable).** The leveler runs the number of passes set by **`TerrainLevelPasses`** (clamped to `1–5`, default `2`). This makes convergence quality vs. speed a user-tunable choice instead of being auto-selected from the sampled height range.
 
-4. **`ApplyLevel` stamping.** For each sample point, a temporary `TerrainOp` GameObject is created at that XZ position at `targetY`. Instead of probing only the centre chunk, 9 points (centre + 4 corners + 4 edge midpoints of the disc's bounding box) are checked with `TerrainComp.FindTerrainCompiler` to find every chunk the disc overlaps — including diagonal neighbours at chunk corners. The operation is applied to all found chunks.
+4. **Spike cleanup passes (separate config).** After main leveling, the leveler runs a residual peak scan and stamps down any points above `targetY + 0.2 m` using a smaller disc. The number of cleanup scans is controlled independently by **`TerrainSpikeCleanupPasses`** (clamped to `1–5`, default `2`).
 
-### 4c. Wait for terrain physics
-After leveling, the heightmap data is updated but the physics collision mesh rebuilds asynchronously. `WaitForTerrainPhysics` polls a 3×3 grid of `Physics.Raycast` probes across the leveled pad every 0.25 s. Once all 9 probes report heights within 0.3 m of `targetY`, or 30 s elapse, the coroutine proceeds. This step is critical: Valheim's structural integrity check uses the physics collider, and pieces placed while the mesh is stale float and collapse.
+5. **`ApplyLevel` stamping.** For each sample point, a temporary `TerrainOp` GameObject is created at that XZ position at `targetY`. Instead of probing only the centre chunk, 9 points (centre + 4 corners + 4 edge midpoints of the disc's bounding box) are checked with `TerrainComp.FindTerrainCompiler` to find every chunk the disc overlaps, including diagonal neighbours. The operation is applied to all found chunks.
 
-### 4d. Place pieces (`PlacePieces`)
+6. **Recommended placement wait is derived from touched chunks.** After leveling, `RecommendedPlacementWait` is computed as `max(2.0 s, modifiedChunkCount × 0.5 s)` and logged for visibility.
+
+### 4d. Wait for terrain physics
+After leveling, the heightmap data is updated, but the physics collision mesh rebuilds asynchronously. `WaitForTerrainPhysics` polls a 3×3 grid of `Physics.Raycast` probes across the leveled pad every 0.25 s. Once all 9 probes report heights within 0.3 m of `targetY`, or 30 s elapse, the coroutine proceeds. This step is critical: Valheim's structural integrity check uses the physics collider, and pieces placed while the mesh is stale can float and collapse.
+
+### 4e. Place pieces (`PlacePieces`)
 
 For each piece in the plan:
 
 1. Look up its `PieceDef` in `PieceMap`. Unknown types are logged and skipped.
 2. Fetch the prefab from `ZNetScene`.
-3. Convert the top-left grid cell (col, row) to world-space centre:
+3. Convert the top-left grid cell (col, row) to a local world-space centre offset, then rotate around the chosen build origin by preview rotation:
    ```
-   x = origin.x + (col + EffW × 0.5) × CELL_SIZE
-   z = origin.z + (row + EffH × 0.5) × CELL_SIZE
+   dx = (col + EffW × 0.5) × CELL_SIZE
+   dz = (row + EffH × 0.5) × CELL_SIZE
+
+   x = origin.x + dx × cos(rotation) + dz × sin(rotation)
+   z = origin.z - dx × sin(rotation) + dz × cos(rotation)
    ```
-4. Raycast down from 300 m above `targetY` to get the actual physics terrain height at that XZ. This handles the tiny residual undulation left after leveling so each piece lands exactly on the surface.
+4. Raycast down from 300 m above `targetY` to get the actual physics terrain height at that XZ. This handles tiny residual undulation left after leveling so each piece lands exactly on the surface.
 5. Set `y = terrainY + def.YOffset`.
 6. `Instantiate` the prefab, then:
    - Set ZDO owner to the current session ID.
    - Write `vfp_build = "1"` into the piece's ZDO so it can be found by `Undo` in future sessions.
    - Set the `Piece` creator to the player's ID.
 7. Yield every 10 pieces (`PLACE_DELAY = 0.05 s`) to keep the game responsive.
+
+External wall stacking: pieces of type `Wall` or `Pillar` whose footprint touches the outer perimeter of the plan are treated as external and stacked vertically to `ExternalWallHeight` levels.
+
+### 4f. Post-build spike guard
+After placement, `PostBuildSpikeGuard` runs several delayed scans over the leveled area and removes tall non-piece blockers still protruding above terrain. This catches late-appearing spike meshes that can show up after leveling and placement complete.
 
 ---
 
@@ -131,16 +148,17 @@ Pressing `F9` calls `FloorPlanBuilder.Undo`:
               ^
               |
   +-----------+-----------> +X (east / col direction)
-  origin = player position when F8 is pressed
+   origin = preview origin (player position + forward offset by default)
 ```
 
 - `col` → `+X` world axis
 - `row` → `+Z` world axis
 - Each cell = 1 m
 - Piece positions are **centre-based** in world space, **top-left corner-based** in the `.vfp` file
+- Preview rotation is applied clockwise around the selected origin before placement
 
 ---
 
 ## Optional: Moat
 
-`TerrainLeveler.DigMoat` is defined but not called in the default build sequence. It digs a trench ring around the leveled pad: 6-cell gap from the inner pad, 4 cells wide, 2 m below pad level. It uses the same `ApplyLevel` stamp approach but stamps to `targetY − 2 m` and skips points inside the inner boundary.
+`TerrainLeveler.DigMoat` is defined but not called in the default build sequence. It digs a trench ring around the leveled pad: a 6-cell gap from the inner pad, 4 cells wide, and 2 m below pad level. It uses the same `ApplyLevel` stamp approach, but stamps to `targetY − 2 m` and skips points inside the inner boundary.
