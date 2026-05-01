@@ -210,8 +210,17 @@
           <tr><td><code>TerrainLevelPasses</code></td><td>2</td><td>Main terrain leveling pass count (1-5).</td></tr>
           <tr><td><code>TerrainSpikeCleanupPasses</code></td><td>2</td><td>Post-leveling cleanup pass count (1-5).</td></tr>
           <tr><td><code>ExternalWallHeight</code></td><td>1</td><td>Stacks external Wall/Pillar objects to this many levels (1-4).</td></tr>
+          <tr><td><code>WallPillarMaterial</code></td><td>Stone</td><td>Choose Stone or Wood prefabs for Wall/Pillar pieces.</td></tr>
+          <tr><td><code>WoodWallOuterOffset</code></td><td>0.2</td><td>Outward shift for external wood walls so they align with floor edges.</td></tr>
         </tbody>
       </table>
+
+      <h3>Optional .vfp wall-face field</h3>
+      <ul>
+        <li>Use: <code>piece,col,row,type,rotation,wallFace</code></li>
+        <li><code>wallFace</code> can be <code>outer</code> or <code>inner</code>.</li>
+        <li>This is used when <code>WallPillarMaterial=Wood</code> so wood wall faces orient correctly.</li>
+      </ul>
     </section>
 
     <section class="card">

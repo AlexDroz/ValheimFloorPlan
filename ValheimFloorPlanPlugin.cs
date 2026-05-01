@@ -8,6 +8,12 @@ namespace ValheimFloorPlan
     [BepInPlugin(PluginGUID, PluginName, PluginVersion)]
     public class ValheimFloorPlanPlugin : BaseUnityPlugin
     {
+        internal enum StructuralMaterial
+        {
+            Stone,
+            Wood
+        }
+
         public const string PluginGUID = "com.yourname.valheimfloorplan";
         public const string PluginName = "ValheimFloorPlan";
         public const string PluginVersion = "0.1.0";
@@ -17,6 +23,7 @@ namespace ValheimFloorPlan
         internal static int TerrainLevelPasses { get; private set; } = 2;
         internal static int TerrainSpikeCleanupPasses { get; private set; } = 2;
         internal static int ExternalWallHeight { get; private set; } = 1;
+        internal static StructuralMaterial WallPillarMaterial { get; private set; } = StructuralMaterial.Stone;
         internal static float BuildOriginForwardOffset { get; private set; } = 12f;
         internal static float PreviewMoveStep { get; private set; } = 2f;
         internal static float PreviewFineMoveStep { get; private set; } = 0.5f;
@@ -38,6 +45,7 @@ namespace ValheimFloorPlan
         private ConfigEntry<int> _terrainLevelPasses = null!;
         private ConfigEntry<int> _terrainSpikeCleanupPasses = null!;
         private ConfigEntry<int> _externalWallHeight = null!;
+        private ConfigEntry<string> _wallPillarMaterial = null!;
         private ConfigEntry<float> _buildOriginForwardOffset = null!;
         private ConfigEntry<float> _previewMoveStep = null!;
         private ConfigEntry<float> _previewFineMoveStep = null!;
@@ -101,6 +109,15 @@ namespace ValheimFloorPlan
             _externalWallHeight.SettingChanged += (_, _) =>
                 ExternalWallHeight = Mathf.Clamp(_externalWallHeight.Value, 1, 4);
             ExternalWallHeight = Mathf.Clamp(_externalWallHeight.Value, 1, 4);
+
+            _wallPillarMaterial = Config.Bind(
+                "Building", "WallPillarMaterial", "Stone",
+                new ConfigDescription(
+                    "Material used for Wall and Pillar types. Allowed: Stone, Wood.",
+                    new AcceptableValueList<string>("Stone", "Wood")));
+            _wallPillarMaterial.SettingChanged += (_, _) =>
+                WallPillarMaterial = ParseStructuralMaterial(_wallPillarMaterial.Value);
+            WallPillarMaterial = ParseStructuralMaterial(_wallPillarMaterial.Value);
 
             _buildOriginForwardOffset = Config.Bind(
                 "General", "BuildOriginForwardOffset", 12f,
@@ -193,7 +210,7 @@ namespace ValheimFloorPlan
             gameObject.AddComponent<FloorPlanBuilder>();
 
             Log.LogInfo($"{PluginName} v{PluginVersion} loaded! " +
-                $"Build: {_buildHotkey.Value}  Undo: {_undoHotkey.Value}  Progress HUD: {ProgressMessageType}  Terrain passes: {TerrainLevelPasses}  Spike cleanup passes: {TerrainSpikeCleanupPasses}  External wall height: {ExternalWallHeight}  Origin offset: {BuildOriginForwardOffset:F1}m  Preview move: {PreviewMoveStep:F2}/{PreviewFineMoveStep:F2}m  Preview rotate: {PreviewRotateStepDeg:F0}/{PreviewFineRotateStepDeg:F0}°");
+                $"Build: {_buildHotkey.Value}  Undo: {_undoHotkey.Value}  Progress HUD: {ProgressMessageType}  Terrain passes: {TerrainLevelPasses}  Spike cleanup passes: {TerrainSpikeCleanupPasses}  External wall height: {ExternalWallHeight}  Wall/Pillar material: {WallPillarMaterial}  Origin offset: {BuildOriginForwardOffset:F1}m  Preview move: {PreviewMoveStep:F2}/{PreviewFineMoveStep:F2}m  Preview rotate: {PreviewRotateStepDeg:F0}/{PreviewFineRotateStepDeg:F0}°");
         }
 
         private void Update()
@@ -233,6 +250,14 @@ namespace ValheimFloorPlan
             Log?.LogWarning(
                 $"Unknown ProgressMessagePosition '{value}'. Falling back to Center.");
             return MessageHud.MessageType.Center;
+        }
+
+        private static StructuralMaterial ParseStructuralMaterial(string value)
+        {
+            if (string.Equals(value?.Trim(), "Wood", System.StringComparison.OrdinalIgnoreCase))
+                return StructuralMaterial.Wood;
+
+            return StructuralMaterial.Stone;
         }
     }
 }

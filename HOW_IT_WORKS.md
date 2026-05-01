@@ -27,6 +27,8 @@ On startup (`Awake`), the plugin registers BepInEx configuration entries for fil
 - **`TerrainLevelPasses`** (default `2`, range `1–5`) — number of leveling passes run on the build pad.
 - **`TerrainSpikeCleanupPasses`** (default `2`, range `1–5`) — number of post-leveling spike cleanup scans.
 - **`ExternalWallHeight`** (default `1`, range `1–4`) — stacks external `Wall`/`Pillar` pieces to this many levels.
+- **`WallPillarMaterial`** (`Stone` or `Wood`, default `Stone`) — chooses wall/pillar prefab set.
+- **`WoodWallOuterOffset`** (default `0.2 m`) — outward shift applied to external wood walls for edge alignment.
 - **`BuildOriginForwardOffset`** (default `12 m`, range `10–20`) — initial preview/build origin in front of the player.
 - **`ProgressMessagePosition`** — HUD slot used for progress messages.
 - **Preview movement/rotation settings and keys** — step sizes, fine-adjust key, movement keys, rotation keys, and cancel key.
@@ -50,7 +52,7 @@ piece,4,2,Pillar
 | Field | Meaning |
 |---|---|
 | `cols` / `rows` | Grid dimensions of the design |
-| `piece,col,row,type[,rotation]` | One building piece at grid position (col, row) with an optional rotation (0 / 90 / 180 / 270°) |
+| `piece,col,row,type[,rotation][,wallFace]` | One building piece at grid position (col, row) with optional rotation and optional wall face (`outer` / `inner`) |
 
 The grid origin (col=0, row=0) maps to the selected preview origin (default: player position plus forward offset when preview starts). Each grid cell is **1 Valheim metre** (`CELL_SIZE = 1f`).
 
@@ -125,6 +127,8 @@ For each piece in the plan:
 7. Yield every 10 pieces (`PLACE_DELAY = 0.05 s`) to keep the game responsive.
 
 External wall stacking: pieces of type `Wall` or `Pillar` whose footprint touches the outer perimeter of the plan are treated as external and stacked vertically to `ExternalWallHeight` levels.
+
+When `WallPillarMaterial=Wood`, `Wall` maps to `wood_wall_half` and `Pillar` maps to `wood_pole`. External wood walls are shifted outward by `WoodWallOuterOffset` to align with floor edges. For wood walls, `.vfp` `wallFace=inner` flips wall rotation by 180° so inner/outer faces can be controlled from the plan file.
 
 ### 4f. Post-build spike guard
 After placement, `PostBuildSpikeGuard` runs several delayed scans over the leveled area and removes tall non-piece blockers still protruding above terrain. This catches late-appearing spike meshes that can show up after leveling and placement complete.

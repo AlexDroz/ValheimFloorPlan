@@ -878,6 +878,7 @@ namespace ValheimFloorPlan
             int processed = 0;
             int nextProgressPct = 10;
             int configuredExternalWallHeight = Mathf.Clamp(ValheimFloorPlanPlugin.ExternalWallHeight, 1, 4);
+            bool useWoodStructure = ValheimFloorPlanPlugin.WallPillarMaterial == ValheimFloorPlanPlugin.StructuralMaterial.Wood;
 
             GetPlanPieceBounds(plan,
                 out int minCol, out int maxColExclusive,
@@ -896,18 +897,23 @@ namespace ValheimFloorPlan
                     continue;
                 }
 
-                var prefab = ZNetScene.instance?.GetPrefab(def.Prefab);
+                int effectivePieceRotation = piece.Rotation;
+                if (useWoodStructure && piece.Type == "Wall" && piece.WallFace == WallFaceMode.Inner)
+                    effectivePieceRotation = (effectivePieceRotation + 180) % 360;
+
+                string prefabName = ResolvePrefabName(piece.Type, def.Prefab, useWoodStructure);
+                var prefab = ZNetScene.instance?.GetPrefab(prefabName);
                 if (prefab == null)
                 {
-                    ValheimFloorPlanPlugin.Log.LogWarning($"Prefab '{def.Prefab}' not found in ZNetScene — skipped.");
+                    ValheimFloorPlanPlugin.Log.LogWarning($"Prefab '{prefabName}' not found in ZNetScene — skipped.");
                     skipped++;
                     continue;
                 }
 
                 // Effective dimensions after applying rotation (90/270 swaps W and H),
                 // matching the B4J designer's EffW / EffH logic exactly.
-                int effW = def.EffW(piece.Rotation);
-                int effH = def.EffH(piece.Rotation);
+                int effW = def.EffW(effectivePieceRotation);
+                int effH = def.EffH(effectivePieceRotation);
 
                 // Convert from top-left grid corner (B4J storage) to world centre,
                 // then rotate the offset around the player origin by the plan rotation.
@@ -934,22 +940,33 @@ namespace ValheimFloorPlan
                 float y = terrainY + def.YOffset;
 
                 var pos = new Vector3(x, y, z);
-                var rot = Quaternion.Euler(0, piece.Rotation + rotationDeg, 0);
                 bool isExternal = IsOnPlanOuterPerimeter(
                     piece.Col, piece.Row, effW, effH,
                     minCol, maxColExclusive, minRow, maxRowExclusive);
                 bool shouldStack = IsExternalWallOrPillarType(piece.Type) && isExternal;
                 int stackCount = shouldStack ? configuredExternalWallHeight : 1;
                 float stackStepY = GetStackStepY(piece.Type);
+                var rot = Quaternion.Euler(0, effectivePieceRotation + rotationDeg, 0);
+
+                // Wood pieces are narrower/thinner than their stone equivalents; push
+                // external pieces outward so their outer face aligns with the floor edge.
+                // Direction is derived from which plan edge the piece sits on, not its
+                // own rotation (which would give wrong results for south/west walls).
+                Vector3 materialOffset = Vector3.zero;
+                if (useWoodStructure && (piece.Type == "Wall" || piece.Type == "Pillar") && isExternal)
+                    materialOffset = GetWoodPerimeterOffset(
+                        piece.Type, piece.Col, piece.Row, effW, effH,
+                        minCol, maxColExclusive, minRow, maxRowExclusive,
+                        rotationDeg);
 
                 for (int i = 0; i < stackCount; i++)
                 {
-                    var stackedPos = new Vector3(pos.x, pos.y + stackStepY * i, pos.z);
+                    var stackedPos = new Vector3(pos.x, pos.y + stackStepY * i, pos.z) + materialOffset;
 
                     if (placed == 0)
                     {
                         firstPos = stackedPos;
-                        ValheimFloorPlanPlugin.Log.LogInfo($"First piece: type={piece.Type} prefab={def.Prefab} pos={stackedPos}");
+                        ValheimFloorPlanPlugin.Log.LogInfo($"First piece: type={piece.Type} prefab={prefabName} pos={stackedPos}");
                     }
 
                     var go = UnityEngine.Object.Instantiate(prefab, stackedPos, rot);
@@ -1009,6 +1026,15 @@ namespace ValheimFloorPlan
             return type == "Wall" || type == "Pillar";
         }
 
+        private static string ResolvePrefabName(string type, string defaultPrefab, bool useWoodStructure)
+        {
+            if (!useWoodStructure) return defaultPrefab;
+
+            if (type == "Wall") return "wood_wall_half";
+            if (type == "Pillar") return "wood_pole_log";
+            return defaultPrefab;
+        }
+
         private static float GetStackStepY(string type)
         {
             if (type == "Wall") return 1f;
@@ -1022,6 +1048,59 @@ namespace ValheimFloorPlan
         {
             return col <= minCol || row <= minRow ||
                    (col + effW) >= maxColExclusive || (row + effH) >= maxRowExclusive;
+        }
+
+        /// <summary>
+        /// Returns the world-space offset to apply to a wood Wall or Pillar piece so its
+        /// outer face aligns with the outer face of the equivalent stone piece.
+        ///
+        /// Offset is derived from Valheim prefab geometry:
+        ///   stone_wall_2x1 depth = 1.0 m  →  half = 0.50 m
+        ///   wood_wall_half  depth = 0.3 m  →  half = 0.15 m  →  shift = 0.35 m
+        ///   stone_pillar   width = 0.5 m  →  half = 0.25 m
+        ///   wood_pole2     width = 0.2 m  →  half = 0.10 m  →  shift = 0.15 m
+        ///
+        /// Direction is determined by which plan edge the piece sits on (not its own
+        /// rotation), so south/west walls are handled correctly.  Corner pillars that
+        /// touch two edges are shifted along both axes independently.
+        /// touch two edges are shifted along both axes independently.  For walls, only
+        /// the axis perpendicular to the wall's face is shifted (so a corner wall that
+        /// touches two edges does not get a diagonal shift that would leave gaps).
+        /// </summary>
+        private static Vector3 GetWoodPerimeterOffset(
+            string pieceType,
+            int col, int row, int effW, int effH,
+            int minCol, int maxColExclusive, int minRow, int maxRowExclusive,
+            float planRotationDeg)
+        {
+            // Per-prefab outward shift (stone half-size minus wood half-size).
+            float shift = pieceType == "Pillar" ? 0.15f : 0.35f;
+
+            // Which plan edges does this piece touch?  col→+X axis, row→+Z axis.
+            float lx = 0f, lz = 0f;
+            if (col <= minCol)                    lx -= 1f;  // left (west) edge  → shift −X
+            if ((col + effW) >= maxColExclusive)  lx += 1f;  // right (east) edge → shift +X
+            if (row <= minRow)                    lz -= 1f;  // bottom (south) edge → shift −Z
+            if ((row + effH) >= maxRowExclusive)  lz += 1f;  // top (north) edge  → shift +Z
+
+            // Walls must only shift perpendicular to their face — never along their length —
+            // otherwise a corner wall that touches two edges gets a diagonal shift and leaves gaps.
+            //   effH==1  → wall runs E-W, faces N/S: only Z shift is valid, suppress X.
+            //   effW==1  → wall runs N-S, faces E/W: only X shift is valid, suppress Z.
+            // Pillars are 1×1 so both axes always apply (corner pillars shift diagonally, which is correct).
+            if (pieceType == "Wall")
+            {
+                if (effH == 1) lx = 0f;   // east-west wall: suppress X shift
+                else           lz = 0f;   // north-south wall: suppress Z shift
+            }
+
+            if (lx == 0f && lz == 0f) return Vector3.zero;
+
+            // Apply per-axis shift (not normalised: corner pillars shift in both axes).
+            var localOffset = new Vector3(lx * shift, 0f, lz * shift);
+
+            // Rotate into world space using the plan's rotation.
+            return Quaternion.Euler(0, planRotationDeg, 0) * localOffset;
         }
 
         private static void GetPlanPieceBounds(

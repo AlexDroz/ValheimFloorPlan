@@ -3,12 +3,20 @@ using System.IO;
 
 namespace ValheimFloorPlan
 {
+    public enum WallFaceMode
+    {
+        Default,
+        Outer,
+        Inner
+    }
+
     public class FloorPlanPiece
     {
         public int Col { get; set; }
         public int Row { get; set; }
         public string Type { get; set; } = "";
         public int Rotation { get; set; }
+        public WallFaceMode WallFace { get; set; } = WallFaceMode.Default;
     }
 
     public class FloorPlan
@@ -31,16 +39,44 @@ namespace ValheimFloorPlan
                 {
                     var parts = line.Split(',');
                     if (parts.Length < 4) continue;
+
+                    int rotation = 0;
+                    int faceIndex = -1;
+                    if (parts.Length > 4)
+                    {
+                        if (int.TryParse(parts[4], out int parsedRotation))
+                        {
+                            rotation = parsedRotation;
+                            faceIndex = parts.Length > 5 ? 5 : -1;
+                        }
+                        else
+                        {
+                            // Backward-compatible: allow piece,col,row,type,wallFace
+                            faceIndex = 4;
+                        }
+                    }
+
                     plan.Pieces.Add(new FloorPlanPiece
                     {
                         Col = int.Parse(parts[1]),
                         Row = int.Parse(parts[2]),
                         Type = parts[3],
-                        Rotation = parts.Length > 4 ? int.Parse(parts[4]) : 0
+                        Rotation = rotation,
+                        WallFace = faceIndex >= 0 ? ParseWallFace(parts[faceIndex]) : WallFaceMode.Default
                     });
                 }
             }
             return plan;
+        }
+
+        private static WallFaceMode ParseWallFace(string raw)
+        {
+            string value = (raw ?? string.Empty).Trim().ToLowerInvariant();
+            if (value == "outer" || value == "out" || value == "o")
+                return WallFaceMode.Outer;
+            if (value == "inner" || value == "in" || value == "i")
+                return WallFaceMode.Inner;
+            return WallFaceMode.Default;
         }
     }
 }

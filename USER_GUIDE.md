@@ -28,9 +28,23 @@ From a player perspective, the flow is simple:
 
 ## Configuration
 Config file path (default):
+- `BepInEx/config/com.yourname.valheimfloorplan.cfg`
 
 Important settings:
+- `FloorPlanFile`: Full path to your `.vfp` file.
+- `BuildHotkey`: Starts preview mode (default `F8`).
+- `UndoHotkey`: Removes nearby VFP pieces and restores terrain snapshot (default `F9`).
+- `BuildOriginForwardOffset`: Initial preview origin in front of your character (default `12`, range `10-20`).
+- `TerrainLevelPasses`: Main leveling pass count (default `2`, range `1-5`).
+- `TerrainSpikeCleanupPasses`: Cleanup pass count after leveling (default `2`, range `1-5`).
 - `ExternalWallHeight`: Stacks external `Wall` and `Pillar` objects to this many levels (default `1`, range `1-4`).
+- `WallPillarMaterial`: Choose `Stone` or `Wood` for `Wall` and `Pillar` types (default `Stone`).
+- `WoodWallOuterOffset`: Outward shift for external wood walls so they align to floor edges (default `0.2`, range `0.0-0.5`).
+
+Optional `.vfp` wall-face field:
+- Piece lines can include a sixth field: `piece,col,row,type,rotation,wallFace`
+- `wallFace` supports `outer` (default behavior) or `inner`
+- This is used when `WallPillarMaterial=Wood` to orient wood wall inner/outer faces correctly
 
 Preview controls are also configurable in the same file.
 
