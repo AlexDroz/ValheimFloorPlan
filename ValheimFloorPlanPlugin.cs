@@ -22,6 +22,7 @@ namespace ValheimFloorPlan
         internal static MessageHud.MessageType ProgressMessageType { get; private set; } = MessageHud.MessageType.Center;
         internal static int TerrainLevelPasses { get; private set; } = 2;
         internal static int TerrainSpikeCleanupPasses { get; private set; } = 2;
+        internal static float TerrainStampRadius { get; private set; } = 3.0f;
         internal static int ExternalWallHeight { get; private set; } = 1;
         internal static StructuralMaterial WallPillarMaterial { get; private set; } = StructuralMaterial.Stone;
         internal static float BuildOriginForwardOffset { get; private set; } = 12f;
@@ -37,6 +38,7 @@ namespace ValheimFloorPlan
         internal static KeyCode PreviewRotateRightKey { get; private set; } = KeyCode.E;
         internal static KeyCode PreviewCancelKey { get; private set; } = KeyCode.Escape;
         internal static KeyCode PreviewFineAdjustKey { get; private set; } = KeyCode.LeftShift;
+        internal static KeyCode TearRepairCancelKey { get; private set; } = KeyCode.Escape;
 
         private ConfigEntry<string> _vfpFilePath = null!;
         private ConfigEntry<KeyboardShortcut> _buildHotkey = null!;
@@ -44,6 +46,7 @@ namespace ValheimFloorPlan
         private ConfigEntry<string> _progressMessagePosition = null!;
         private ConfigEntry<int> _terrainLevelPasses = null!;
         private ConfigEntry<int> _terrainSpikeCleanupPasses = null!;
+        private ConfigEntry<float> _terrainStampRadius = null!;
         private ConfigEntry<int> _externalWallHeight = null!;
         private ConfigEntry<string> _wallPillarMaterial = null!;
         private ConfigEntry<float> _buildOriginForwardOffset = null!;
@@ -59,6 +62,8 @@ namespace ValheimFloorPlan
         private ConfigEntry<KeyCode> _previewRotateRightKey = null!;
         private ConfigEntry<KeyCode> _previewCancelKey = null!;
         private ConfigEntry<KeyCode> _previewFineAdjustKey = null!;
+        private ConfigEntry<KeyboardShortcut> _tearRepairHotkey = null!;
+        private ConfigEntry<KeyCode> _tearRepairCancelKey = null!;
 
         private void Awake()
         {
@@ -75,6 +80,10 @@ namespace ValheimFloorPlan
             _undoHotkey = Config.Bind(
                 "General", "UndoHotkey", new KeyboardShortcut(KeyCode.F9),
                 "Hotkey to undo the last floor plan build (removes pieces and restores terrain).");
+
+            _tearRepairHotkey = Config.Bind(
+                "General", "TearRepairHotkey", new KeyboardShortcut(KeyCode.F10),
+                "Hotkey to toggle tear-repair pointer mode for fixing terrain tears after building.");
 
             _progressMessagePosition = Config.Bind(
                 "General", "ProgressMessagePosition", "CenterLeft",
@@ -100,6 +109,15 @@ namespace ValheimFloorPlan
             _terrainSpikeCleanupPasses.SettingChanged += (_, _) =>
                 TerrainSpikeCleanupPasses = Mathf.Clamp(_terrainSpikeCleanupPasses.Value, 1, 5);
             TerrainSpikeCleanupPasses = Mathf.Clamp(_terrainSpikeCleanupPasses.Value, 1, 5);
+
+            _terrainStampRadius = Config.Bind(
+                "Terrain", "TerrainStampRadius", 3.0f,
+                new ConfigDescription(
+                    "Radius of each terrain leveling disc stamp in metres. Controls how wide the green preview border is and how far terrain is affected beyond the build pad edge. Larger = smoother blending but wider terrain disturbance; smaller = tighter edge but may leave small gaps.",
+                    new AcceptableValueRange<float>(3.0f, 6.0f)));
+            _terrainStampRadius.SettingChanged += (_, _) =>
+                TerrainStampRadius = Mathf.Clamp(_terrainStampRadius.Value, 3.0f, 6.0f);
+            TerrainStampRadius = Mathf.Clamp(_terrainStampRadius.Value, 3.0f, 6.0f);
 
             _externalWallHeight = Config.Bind(
                 "Building", "ExternalWallHeight", 1,
@@ -188,6 +206,9 @@ namespace ValheimFloorPlan
             _previewFineAdjustKey = Config.Bind(
                 "Preview", "FineAdjustKey", KeyCode.LeftShift,
                 "Hold this key for fine movement and fine rotation while previewing.");
+            _tearRepairCancelKey = Config.Bind(
+                "Repair", "TearRepairCancelKey", KeyCode.Escape,
+                "Keyboard key that exits tear-repair pointer mode. Right-click also exits.");
 
             _previewMoveForwardKey.SettingChanged += (_, _) => PreviewMoveForwardKey = _previewMoveForwardKey.Value;
             _previewMoveBackwardKey.SettingChanged += (_, _) => PreviewMoveBackwardKey = _previewMoveBackwardKey.Value;
@@ -197,6 +218,7 @@ namespace ValheimFloorPlan
             _previewRotateRightKey.SettingChanged += (_, _) => PreviewRotateRightKey = _previewRotateRightKey.Value;
             _previewCancelKey.SettingChanged += (_, _) => PreviewCancelKey = _previewCancelKey.Value;
             _previewFineAdjustKey.SettingChanged += (_, _) => PreviewFineAdjustKey = _previewFineAdjustKey.Value;
+            _tearRepairCancelKey.SettingChanged += (_, _) => TearRepairCancelKey = _tearRepairCancelKey.Value;
 
             PreviewMoveForwardKey = _previewMoveForwardKey.Value;
             PreviewMoveBackwardKey = _previewMoveBackwardKey.Value;
@@ -206,6 +228,7 @@ namespace ValheimFloorPlan
             PreviewRotateRightKey = _previewRotateRightKey.Value;
             PreviewCancelKey = _previewCancelKey.Value;
             PreviewFineAdjustKey = _previewFineAdjustKey.Value;
+            TearRepairCancelKey = _tearRepairCancelKey.Value;
 
             gameObject.AddComponent<FloorPlanBuilder>();
 
@@ -230,6 +253,9 @@ namespace ValheimFloorPlan
 
             if (_undoHotkey.Value.IsDown())
                 FloorPlanBuilder.Instance.Undo();
+
+            if (_tearRepairHotkey.Value.IsDown())
+                FloorPlanBuilder.Instance.ToggleTearRepairMode();
         }
 
         internal static void ShowProgressMessage(string message)

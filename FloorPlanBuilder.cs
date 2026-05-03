@@ -20,6 +20,9 @@ namespace ValheimFloorPlan
         private const float PLACE_DELAY = 0.05f; // seconds between spawns to avoid lag spikes
         private const float ORIGIN_MARKER_RADIUS = 0.75f;
         private const float ORIGIN_MARKER_LIFT = 0.45f;
+        private const float TEAR_MARKER_RADIUS = 0.6f;
+        private const float TEAR_MARKER_LIFT = 0.12f;
+        private const float TEAR_POINTER_MAX_DIST = 150f;
 
         // ZDO key written on every piece we place.  Used by Undo() to find VFP pieces
         // across sessions — any ZNetView with this key set to "1" was placed by this mod.
@@ -46,6 +49,15 @@ namespace ValheimFloorPlan
         private float         _previewRotationDeg = 0f; // clockwise yaw, degrees
         private Vector3       _previewOrigin   = Vector3.zero; // locked at preview start, not updated per-frame
 
+        // ── tear-repair pointer mode state ───────────────────────────────────
+        private bool          _tearRepairActive = false;
+        private bool          _tearRepairBusy = false;
+        private bool          _tearRepairHasHit = false;
+        private Vector3       _tearRepairHitPoint = Vector3.zero;
+        private GameObject?   _tearRepairGo = null;
+        private LineRenderer? _tearRepairRay = null;
+        private LineRenderer? _tearRepairMarker = null;
+
         private void Awake()
         {
             Instance = this;
@@ -61,6 +73,9 @@ namespace ValheimFloorPlan
         /// </summary>
         public void StartPreview(string path)
         {
+            if (_tearRepairActive)
+                DeactivateTearRepairMode(showMessage: false);
+
             if (_previewActive)
                 CancelPreview();
 
@@ -173,13 +188,74 @@ namespace ValheimFloorPlan
             if (_previewGo != null) { Destroy(_previewGo); _previewGo = null; }
         }
 
-        /// <summary>
-        /// Called every frame by Unity.  While in preview mode: updates the rectangle
-        /// position and handles confirmation (LMB) and cancellation (RMB / Escape).
-        /// </summary>
         private void Update()
         {
-            if (!_previewActive || _previewPlan == null) return;
+            if (_previewActive && _previewPlan != null)
+                UpdatePreviewMode();
+
+            if (_tearRepairActive)
+                UpdateTearRepairMode();
+        }
+
+        /// <summary>
+        /// Called from plugin hotkey (default F10) to toggle click-to-repair mode.
+        /// </summary>
+        public void ToggleTearRepairMode()
+        {
+            if (_previewActive)
+            {
+                Player.m_localPlayer?.Message(MessageHud.MessageType.Center,
+                    "ValheimFloorPlan: Cancel preview before using tear repair.");
+                return;
+            }
+
+            if (_tearRepairActive)
+                DeactivateTearRepairMode(showMessage: true);
+            else
+                ActivateTearRepairMode();
+        }
+
+        private void ActivateTearRepairMode()
+        {
+            if (_tearRepairActive) return;
+
+            _tearRepairActive = true;
+            _tearRepairBusy = false;
+            _tearRepairHasHit = false;
+            _tearRepairHitPoint = Vector3.zero;
+
+            _tearRepairGo = new GameObject("VFP_TearRepair");
+            _tearRepairRay = MakeLine(_tearRepairGo, new Color(1f, 0.65f, 0.12f, 0.95f), 0.045f, 2);
+            _tearRepairMarker = MakeLine(_tearRepairGo, new Color(1f, 0.25f, 0.08f, 0.95f), 0.095f, 7);
+
+            Player.m_localPlayer?.Message(MessageHud.MessageType.Center,
+                $"ValheimFloorPlan: Tear repair ON. Point with mouse + Left-click to blend. RMB/{ValheimFloorPlanPlugin.TearRepairCancelKey} exits.");
+        }
+
+        private void DeactivateTearRepairMode(bool showMessage)
+        {
+            _tearRepairActive = false;
+            _tearRepairBusy = false;
+            _tearRepairHasHit = false;
+            _tearRepairHitPoint = Vector3.zero;
+            _tearRepairRay = null;
+            _tearRepairMarker = null;
+            if (_tearRepairGo != null)
+            {
+                Destroy(_tearRepairGo);
+                _tearRepairGo = null;
+            }
+
+            if (showMessage)
+            {
+                Player.m_localPlayer?.Message(MessageHud.MessageType.Center,
+                    "ValheimFloorPlan: Tear repair OFF.");
+            }
+        }
+
+        private void UpdatePreviewMode()
+        {
+            if (_previewPlan == null) return;
 
             var player = Player.m_localPlayer;
             if (player == null) { CancelPreview(); return; }
@@ -263,6 +339,61 @@ namespace ValheimFloorPlan
                     $"[FloorPlanBuilder] Build confirmed by left-click. Rotation={rotation:F0}\u00b0  origin={origin}");
                 StartCoroutine(LevelThenPlace(plan, rotation, origin));
             }
+        }
+
+        private void UpdateTearRepairMode()
+        {
+            var player = Player.m_localPlayer;
+            if (player == null)
+            {
+                DeactivateTearRepairMode(showMessage: false);
+                return;
+            }
+
+            bool uiOpen = Chat.instance != null && Chat.instance.HasFocus();
+
+            if (UnityEngine.Input.GetMouseButtonDown(1) || IsPreviewKeyDown(ValheimFloorPlanPlugin.TearRepairCancelKey))
+            {
+                DeactivateTearRepairMode(showMessage: true);
+                return;
+            }
+
+            Camera cam = Camera.main;
+            if (cam == null)
+            {
+                _tearRepairHasHit = false;
+                return;
+            }
+
+            Ray pointerRay = cam.ScreenPointToRay(UnityEngine.Input.mousePosition);
+            _tearRepairHasHit = Physics.Raycast(pointerRay, out var hit, TEAR_POINTER_MAX_DIST, 1 << 11);
+
+            Vector3 lineEnd = _tearRepairHasHit
+                ? hit.point + Vector3.up * 0.05f
+                : pointerRay.origin + pointerRay.direction * 12f;
+            SetLinePositions(_tearRepairRay, pointerRay.origin, lineEnd);
+
+            if (_tearRepairHasHit)
+            {
+                _tearRepairHitPoint = hit.point;
+                SetTearMarker(_tearRepairMarker, _tearRepairHitPoint);
+            }
+
+            if (!_tearRepairBusy && _tearRepairHasHit && !uiOpen && UnityEngine.Input.GetMouseButtonDown(0))
+                StartCoroutine(RepairSelectedTear());
+        }
+
+        private IEnumerator RepairSelectedTear()
+        {
+            _tearRepairBusy = true;
+            Vector3 target = _tearRepairHitPoint;
+
+            ValheimFloorPlanPlugin.ShowProgressMessage(
+                $"Repairing tear at ({target.x:F1}, {target.z:F1})...");
+            yield return StartCoroutine(TerrainLeveler.RepairTearAtPoint(target));
+            ValheimFloorPlanPlugin.ShowProgressMessage("Tear repair complete.");
+
+            _tearRepairBusy = false;
         }
 
         private static Vector3 GetBuildOrigin(Player player)
@@ -416,6 +547,30 @@ namespace ValheimFloorPlan
             pts[4] = center + new Vector3(0f, 0f, ORIGIN_MARKER_RADIUS);
             pts[5] = center;
             pts[6] = center + new Vector3(0f, 0f, -ORIGIN_MARKER_RADIUS);
+            lr.SetPositions(pts);
+        }
+
+        private static void SetLinePositions(LineRenderer? lr, Vector3 from, Vector3 to)
+        {
+            if (lr == null) return;
+            lr.positionCount = 2;
+            lr.SetPosition(0, from);
+            lr.SetPosition(1, to);
+        }
+
+        private static void SetTearMarker(LineRenderer? lr, Vector3 point)
+        {
+            if (lr == null) return;
+
+            Vector3 center = point + Vector3.up * TEAR_MARKER_LIFT;
+            var pts = new Vector3[7];
+            pts[0] = center + new Vector3(-TEAR_MARKER_RADIUS, 0f, 0f);
+            pts[1] = center;
+            pts[2] = center + new Vector3(TEAR_MARKER_RADIUS, 0f, 0f);
+            pts[3] = center;
+            pts[4] = center + new Vector3(0f, 0f, TEAR_MARKER_RADIUS);
+            pts[5] = center;
+            pts[6] = center + new Vector3(0f, 0f, -TEAR_MARKER_RADIUS);
             lr.SetPositions(pts);
         }
 

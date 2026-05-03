@@ -19,12 +19,22 @@ namespace ValheimFloorPlan
     public static class TerrainLeveler
     {
         // ── inner pad ─────────────────────────────────────────────────────────
-        private const float LEVEL_RADIUS      = 3.0f;
+        // LEVEL_RADIUS is now read from config (TerrainStampRadius) at runtime.
+        private static float LEVEL_RADIUS => Mathf.Clamp(ValheimFloorPlanPlugin.TerrainStampRadius, 3.0f, 6.0f);
         private const float PRE_SAMPLE_STEP   = 0.5f;  // denser scan catches narrow local highs
         private const float LEVEL_SAMPLE_STEP = 0.5f;  // denser ops reduce edge misses on slopes
+        private const float EDGE_LEVEL_SAMPLE_STEP = 0.25f;
+        private const float EDGE_BAND_WIDTH = 0.6f;
+        private const float EDGE_LEVEL_RADIUS = 1.8f;
+        private const float EDGE_RAISE_EPSILON = 0.03f;
         private const float SPIKE_SCAN_STEP   = 0.5f;
         private const float SPIKE_LEVEL_RADIUS = 1.5f;
         private const float SPIKE_TOLERANCE   = 0.2f;
+        private const float TEAR_REPAIR_SAMPLE_RADIUS = 1.2f;
+        private const float TEAR_REPAIR_MAIN_RADIUS = 1.1f;
+        private const float TEAR_REPAIR_BLEND_RADIUS = 0.7f;
+        private const float TEAR_REPAIR_MAX_RAISE = 0.08f;
+        private const float TEAR_REPAIR_SPIKE_THRESHOLD = 0.28f;
         private const int   INNER_PAD     = 2;      // cells of buffer around plan bounding box
 
         private const float WARN_RAISE   = 6f;   // warn in log above this height range
@@ -61,9 +71,17 @@ namespace ValheimFloorPlan
             float cosR = Mathf.Cos(rotationDeg * Mathf.Deg2Rad);
             float sinR = Mathf.Sin(rotationDeg * Mathf.Deg2Rad);
             bool axisAligned = Mathf.Approximately(rotationDeg % 90f, 0f);
-            float preSampleStep = axisAligned ? PRE_SAMPLE_STEP : 0.25f;
-            float levelSampleStep = axisAligned ? LEVEL_SAMPLE_STEP : 0.25f;
-            float spikeScanStep = axisAligned ? SPIKE_SCAN_STEP : 0.25f;
+
+            // Scale the stamp step proportionally to the configured radius so that
+            // adjacent flat zones always overlap regardless of radius setting.
+            // Ratio 0.17 matches the proven default (radius 3.0 → step 0.51 → clamped to 0.5).
+            // Step only ever gets smaller than the constant (denser), never larger — so
+            // quality can only improve; the only cost is slightly more ops at low radii.
+            float derivedStep = Mathf.Min(LEVEL_SAMPLE_STEP, LEVEL_RADIUS * 0.17f);
+
+            float preSampleStep  = axisAligned ? Mathf.Min(PRE_SAMPLE_STEP,  LEVEL_RADIUS * 0.17f) : 0.25f;
+            float levelSampleStep = axisAligned ? derivedStep : Mathf.Min(0.25f, derivedStep);
+            float spikeScanStep  = axisAligned ? SPIKE_SCAN_STEP : 0.25f;
 
             // Pre-sample: find min and max terrain heights across the full area that can be
             // affected by leveling ops (inner pad + disc falloff radius). If we sample only
@@ -112,10 +130,25 @@ namespace ValheimFloorPlan
 
             int stepsX = Mathf.CeilToInt((innerMaxX - innerMinX) / levelSampleStep);
             int stepsZ = Mathf.CeilToInt((innerMaxZ - innerMinZ) / levelSampleStep);
+            float edgeSampleStep = Mathf.Min(levelSampleStep, EDGE_LEVEL_SAMPLE_STEP);
+            int edgeStepsX = Mathf.CeilToInt((innerMaxX - innerMinX) / edgeSampleStep);
+            int edgeStepsZ = Mathf.CeilToInt((innerMaxZ - innerMinZ) / edgeSampleStep);
+
+            int edgePointsPerPass = 0;
+            for (int ix = 0; ix <= edgeStepsX; ix++)
+            {
+                float lx = (ix == edgeStepsX) ? innerMaxX : innerMinX + ix * edgeSampleStep;
+                for (int iz = 0; iz <= edgeStepsZ; iz++)
+                {
+                    float lz = (iz == edgeStepsZ) ? innerMaxZ : innerMinZ + iz * edgeSampleStep;
+                    if (IsInEdgeBand(lx, lz, innerMinX, innerMaxX, innerMinZ, innerMaxZ, EDGE_BAND_WIDTH))
+                        edgePointsPerPass++;
+                }
+            }
 
             int ops = 0;
             var modified = new HashSet<TerrainComp>();
-            int totalLevelOps = totalPasses * (stepsX + 1) * (stepsZ + 1);
+            int totalLevelOps = totalPasses * (((stepsX + 1) * (stepsZ + 1)) + edgePointsPerPass);
             int nextLevelPct = 10;
 
             ValheimFloorPlanPlugin.Log.LogInfo(
@@ -124,6 +157,10 @@ namespace ValheimFloorPlan
 
             for (int pass = 1; pass <= totalPasses; pass++)
             {
+                // Edge pass must never use a stronger radius than the main pass,
+                // otherwise small configured stamp radii can produce a raised shell.
+                float effectiveEdgeRadius = Mathf.Min(EDGE_LEVEL_RADIUS, LEVEL_RADIUS);
+
                 for (int ix = 0; ix <= stepsX; ix++)
                 {
                     float lx = (ix == stepsX) ? innerMaxX : innerMinX + ix * levelSampleStep;
@@ -134,6 +171,42 @@ namespace ValheimFloorPlan
                         float wx = origin.x + ldx2 * cosR + ldz2 * sinR;
                         float wz = origin.z - ldx2 * sinR + ldz2 * cosR;
                         ApplyLevel(wx, targetY, wz, LEVEL_RADIUS, modified);
+                        ops++;
+                        if (totalLevelOps > 0)
+                        {
+                            int pct = Mathf.FloorToInt((ops * 100f) / totalLevelOps);
+                            if (pct >= nextLevelPct)
+                            {
+                                ShowProgress($"Leveling terrain... {nextLevelPct}%");
+                                nextLevelPct += 10;
+                            }
+                        }
+                        if (ops % OPS_PER_FRAME == 0) yield return null;
+                    }
+                }
+
+                // Refine only near the pad perimeter with a tighter sample step to
+                // reduce V-shaped trenching artifacts at uphill/downhill edges.
+                for (int ix = 0; ix <= edgeStepsX; ix++)
+                {
+                    float lx = (ix == edgeStepsX) ? innerMaxX : innerMinX + ix * edgeSampleStep;
+                    for (int iz = 0; iz <= edgeStepsZ; iz++)
+                    {
+                        float lz = (iz == edgeStepsZ) ? innerMaxZ : innerMinZ + iz * edgeSampleStep;
+                        if (!IsInEdgeBand(lx, lz, innerMinX, innerMaxX, innerMinZ, innerMaxZ, EDGE_BAND_WIDTH))
+                            continue;
+
+                        float ldx2 = lx - origin.x, ldz2 = lz - origin.z;
+                        float wx = origin.x + ldx2 * cosR + ldz2 * sinR;
+                        float wz = origin.z - ldx2 * sinR + ldz2 * cosR;
+
+                        // Edge refinement should fill low pockets; avoid re-leveling
+                        // already-high points which can amplify edge artifacts.
+                        float h = SampleHeight(wx, wz, targetY);
+                        if (h >= targetY - EDGE_RAISE_EPSILON)
+                            continue;
+
+                        ApplyLevel(wx, targetY, wz, effectiveEdgeRadius, modified);
                         ops++;
                         if (totalLevelOps > 0)
                         {
@@ -199,6 +272,77 @@ namespace ValheimFloorPlan
                 $"[TerrainLeveler] Leveling done: {totalPasses} passes, {ops} ops, " +
                 $"{modified.Count} chunks.  Placement wait: {RecommendedPlacementWait:F1}s.");
             ShowProgress("Leveling terrain... done");
+        }
+
+        /// <summary>
+        /// Performs a local blend pass around a user-selected tear point.
+        /// This raises/levels immediate geometry without touching a large area.
+        /// </summary>
+        public static IEnumerator RepairTearAtPoint(Vector3 point)
+        {
+            var modified = new HashSet<TerrainComp>();
+
+            // Use robust neighborhood statistics so a few outlier heights cannot push
+            // the repair target upward into a new spike.
+            float centerY = SampleHeight(point.x, point.z, point.y);
+            var samples = new List<float>(16);
+            var sampleOffsets = new Vector2[]
+            {
+                new Vector2(0f, 0f),
+                new Vector2( TEAR_REPAIR_SAMPLE_RADIUS, 0f),
+                new Vector2(-TEAR_REPAIR_SAMPLE_RADIUS, 0f),
+                new Vector2(0f,  TEAR_REPAIR_SAMPLE_RADIUS),
+                new Vector2(0f, -TEAR_REPAIR_SAMPLE_RADIUS),
+                new Vector2( 0.85f,  0.85f),
+                new Vector2( 0.85f, -0.85f),
+                new Vector2(-0.85f,  0.85f),
+                new Vector2(-0.85f, -0.85f),
+            };
+
+            foreach (var o in sampleOffsets)
+                samples.Add(SampleHeight(point.x + o.x, point.z + o.y, centerY));
+
+            samples.Sort();
+            float medianY = samples.Count > 0 ? samples[samples.Count / 2] : centerY;
+
+            // Prefer lowering/softening over raising: small raise cap avoids creating
+            // the exact rocky peaks this tool is trying to remove.
+            float desiredY = Mathf.Lerp(centerY, medianY, 0.7f);
+            float maxAllowedY = centerY + TEAR_REPAIR_MAX_RAISE;
+            float easedY = Mathf.Min(desiredY, maxAllowedY);
+
+            // If current point already appears spike-like, force a downward correction.
+            if (centerY > medianY + TEAR_REPAIR_SPIKE_THRESHOLD)
+                easedY = Mathf.Min(easedY, medianY + 0.05f);
+
+            var passOffsets = new Vector2[]
+            {
+                new Vector2(0f, 0f),
+                new Vector2(0.55f, 0f),
+                new Vector2(-0.55f, 0f),
+                new Vector2(0f, 0.55f),
+                new Vector2(0f, -0.55f),
+            };
+
+            int opCount = 0;
+            foreach (var o in passOffsets)
+            {
+                ApplyLevel(point.x + o.x, easedY, point.z + o.y, TEAR_REPAIR_MAIN_RADIUS, modified, smooth: true);
+                opCount++;
+                if (opCount % OPS_PER_FRAME == 0) yield return null;
+            }
+
+            yield return null;
+
+            foreach (var o in passOffsets)
+            {
+                ApplySmooth(point.x + o.x, easedY, point.z + o.y, TEAR_REPAIR_BLEND_RADIUS, modified);
+                opCount++;
+                if (opCount % OPS_PER_FRAME == 0) yield return null;
+            }
+
+            ValheimFloorPlanPlugin.Log.LogInfo(
+                $"[TerrainLeveler] Tear repair at {point} -> centerY={centerY:F2}, medianY={medianY:F2}, targetY={easedY:F2}, ops={opCount}, chunks={modified.Count}.");
         }
 
         // ── helpers ──────────────────────────────────────────────────────────
@@ -355,6 +499,45 @@ namespace ValheimFloorPlan
             UnityEngine.Object.Destroy(go);
         }
 
+        private static void ApplySmooth(float x, float y, float z, float radius,
+                                        HashSet<TerrainComp> modified)
+        {
+            var go = new GameObject("VFP_SmoothOp");
+            go.transform.position = new Vector3(x, y, z);
+            var op = go.AddComponent<TerrainOp>();
+            op.m_settings.m_level = false;
+            op.m_settings.m_smooth = true;
+            op.m_settings.m_smoothRadius = radius;
+
+            var probes = new Vector3[]
+            {
+                new Vector3(x,          y, z         ),
+                new Vector3(x - radius, y, z - radius),
+                new Vector3(x + radius, y, z - radius),
+                new Vector3(x - radius, y, z + radius),
+                new Vector3(x + radius, y, z + radius),
+                new Vector3(x - radius, y, z         ),
+                new Vector3(x + radius, y, z         ),
+                new Vector3(x,          y, z - radius),
+                new Vector3(x,          y, z + radius),
+            };
+
+            var chunks = new HashSet<TerrainComp>();
+            foreach (var p in probes)
+            {
+                var tc = TerrainComp.FindTerrainCompiler(p);
+                if (tc != null) chunks.Add(tc);
+            }
+
+            foreach (var tc in chunks)
+            {
+                tc.ApplyOperation(op);
+                modified.Add(tc);
+            }
+
+            UnityEngine.Object.Destroy(go);
+        }
+
         private static float SampleHeight(float x, float z, float referenceY = 0f)
         {
             // Use the terrain heightmap directly so that rocks, cliffs and other
@@ -375,6 +558,17 @@ namespace ValheimFloorPlan
         private static void ShowProgress(string message)
         {
             ValheimFloorPlanPlugin.ShowProgressMessage(message);
+        }
+
+        private static bool IsInEdgeBand(
+            float x, float z,
+            float minX, float maxX, float minZ, float maxZ,
+            float bandWidth)
+        {
+            return (x - minX) <= bandWidth ||
+                   (maxX - x) <= bandWidth ||
+                   (z - minZ) <= bandWidth ||
+                   (maxZ - z) <= bandWidth;
         }
     }
 }
