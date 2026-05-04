@@ -26,6 +26,11 @@ namespace ValheimFloorPlan
         private const float TEAR_RING_LIFT = 0.03f;
         private const int TEAR_RING_SEGMENTS = 28;
         private const float TEAR_POINTER_MAX_DIST = 150f;
+        private const float PREVIEW_EDGE_RISK_SAMPLE_INTERVAL = 0.45f;
+        private const float PREVIEW_EDGE_RISK_HINT_INTERVAL = 2.0f;
+        private const float PREVIEW_EDGE_RISK_HINT_START_DELAY = 2.5f;
+        private const float PREVIEW_RISK_MARKER_RADIUS = 0.45f;
+        private const float PREVIEW_RISK_MARKER_LIFT = 0.18f;
 
         // ZDO key written on every piece we place.  Used by Undo() to find VFP pieces
         // across sessions — any ZNetView with this key set to "1" was placed by this mod.
@@ -51,6 +56,18 @@ namespace ValheimFloorPlan
         private LineRenderer? _previewOriginMarker = null; // yellow — exact preview origin
         private float         _previewRotationDeg = 0f; // clockwise yaw, degrees
         private Vector3       _previewOrigin   = Vector3.zero; // locked at preview start, not updated per-frame
+        private TerrainLeveler.EdgeRiskLevel _previewEdgeRisk = TerrainLeveler.EdgeRiskLevel.Low;
+        private float         _previewEdgeRelief = 0f;
+        private float         _previewEdgeIrregularity = 0f;
+        private float         _previewEdgeMaxStep = 0f;
+        private float         _previewRiskNextSampleAt = 0f;
+        private float         _previewRiskNextHintAt = 0f;
+        private float         _previewRiskHintsEnabledAt = 0f;
+        private bool          _previewRiskDirty = true;
+        private readonly List<Vector3> _previewRiskHotspots = new List<Vector3>();
+        private readonly List<LineRenderer> _previewRiskMarkers = new List<LineRenderer>();
+        private readonly List<Vector3> _previewRiskRenderPoints = new List<Vector3>();
+        private int _previewRiskBottomCount = 0; // how many of _previewRiskRenderPoints are bottom hotspots vs top-edge
 
         // ── tear-repair pointer mode state ───────────────────────────────────
         private bool          _tearRepairActive = false;
@@ -75,7 +92,7 @@ namespace ValheimFloorPlan
         /// <summary>
         /// Loads the floor plan and enters preview mode: a green rectangle follows
         /// the player showing the exact build footprint.
-        /// Left-click confirms the build at the current player position.
+        /// Confirm key confirms the build at the current player position.
         /// Right-click or Escape cancels.
         /// </summary>
         public void StartPreview(string path)
@@ -114,12 +131,21 @@ namespace ValheimFloorPlan
             _previewPadWalls  = MakeWallRing(_previewGo, "VFP_WallsPad",  new Color(1f,  1f,  1f,  0.28f));
             _previewOuterWalls = MakeWallRing(_previewGo, "VFP_WallsOuter", new Color(0.2f, 1f, 0.2f, 0.24f));
             _previewOriginMarker = MakeLine(_previewGo, new Color(0.18f, 0.05f, 0.02f, 0.98f), 0.14f, 7);
+            _previewEdgeRisk = TerrainLeveler.EdgeRiskLevel.Low;
+            _previewEdgeRelief = 0f;
+            _previewEdgeIrregularity = 0f;
+            _previewEdgeMaxStep = 0f;
+            _previewRiskDirty = true;
+            _previewRiskNextSampleAt = 0f;
+            _previewRiskNextHintAt = Time.time + PREVIEW_EDGE_RISK_HINT_START_DELAY;
+            _previewRiskHintsEnabledAt = Time.time + PREVIEW_EDGE_RISK_HINT_START_DELAY;
 
             ValheimFloorPlanPlugin.Log.LogInfo(
                 $"[FloorPlanBuilder] Preview active ({plan.Pieces.Count} pieces, " +
-                $"{plan.Cols}×{plan.Rows} cells). Left-click to build, RMB/ESC to cancel.");
-            Player.m_localPlayer?.Message(MessageHud.MessageType.Center,
-                $"ValheimFloorPlan: {ValheimFloorPlanPlugin.PreviewMoveLeftKey}/{ValheimFloorPlanPlugin.PreviewMoveRightKey}/{ValheimFloorPlanPlugin.PreviewMoveForwardKey}/{ValheimFloorPlanPlugin.PreviewMoveBackwardKey} move | {ValheimFloorPlanPlugin.PreviewRotateLeftKey}/{ValheimFloorPlanPlugin.PreviewRotateRightKey} rotate | {ValheimFloorPlanPlugin.PreviewFineAdjustKey} fine | Left-click to place | RMB/{ValheimFloorPlanPlugin.PreviewCancelKey} cancel");
+                $"{plan.Cols}×{plan.Rows} cells). {ValheimFloorPlanPlugin.PreviewConfirmKey} to build, RMB/ESC to cancel.");
+            ValheimFloorPlanPlugin.ShowWrappedMessage(
+                MessageHud.MessageType.Center,
+                $"ValheimFloorPlan: {ValheimFloorPlanPlugin.PreviewMoveLeftKey}/{ValheimFloorPlanPlugin.PreviewMoveRightKey}/{ValheimFloorPlanPlugin.PreviewMoveForwardKey}/{ValheimFloorPlanPlugin.PreviewMoveBackwardKey} move | {ValheimFloorPlanPlugin.PreviewRotateLeftKey}/{ValheimFloorPlanPlugin.PreviewRotateRightKey} rotate | {ValheimFloorPlanPlugin.PreviewFineAdjustKey} fine | {ValheimFloorPlanPlugin.PreviewConfirmKey} to place | RMB/{ValheimFloorPlanPlugin.PreviewCancelKey} cancel");
         }
 
         private static MeshFilter MakeWallRing(GameObject parent, string name, Color color)
@@ -192,6 +218,17 @@ namespace ValheimFloorPlan
             _previewOriginMarker = null;
             _previewRotationDeg = 0f;
             _previewOrigin      = Vector3.zero;
+            _previewEdgeRisk = TerrainLeveler.EdgeRiskLevel.Low;
+            _previewEdgeRelief = 0f;
+            _previewEdgeIrregularity = 0f;
+            _previewEdgeMaxStep = 0f;
+            _previewRiskDirty = true;
+            _previewRiskNextSampleAt = 0f;
+            _previewRiskNextHintAt = 0f;
+            _previewRiskHintsEnabledAt = 0f;
+            _previewRiskHotspots.Clear();
+            _previewRiskRenderPoints.Clear();
+            _previewRiskMarkers.Clear();
             if (_previewGo != null) { Destroy(_previewGo); _previewGo = null; }
         }
 
@@ -279,6 +316,8 @@ namespace ValheimFloorPlan
             // Keep the rectangle on the locked origin (fixed when preview started).
             UpdatePreviewPosition(_previewOrigin);
 
+            bool previewChanged = false;
+
             bool fineAdjust = IsFineAdjustHeld();
             float rotateStep = fineAdjust
                 ? ValheimFloorPlanPlugin.PreviewFineRotateStepDeg
@@ -291,12 +330,14 @@ namespace ValheimFloorPlan
             if (IsPreviewKeyDown(ValheimFloorPlanPlugin.PreviewRotateLeftKey))
             {
                 _previewRotationDeg = (_previewRotationDeg - rotateStep + 360f) % 360f;
+                previewChanged = true;
                 player.Message(ValheimFloorPlanPlugin.ProgressMessageType,
                     $"ValheimFloorPlan: Rotation {_previewRotationDeg:F0}\u00b0");
             }
             else if (IsPreviewKeyDown(ValheimFloorPlanPlugin.PreviewRotateRightKey))
             {
                 _previewRotationDeg = (_previewRotationDeg + rotateStep) % 360f;
+                previewChanged = true;
                 player.Message(ValheimFloorPlanPlugin.ProgressMessageType,
                     $"ValheimFloorPlan: Rotation {_previewRotationDeg:F0}\u00b0");
             }
@@ -331,9 +372,12 @@ namespace ValheimFloorPlan
             if (nudge != Vector3.zero)
             {
                 _previewOrigin += nudge;
+                previewChanged = true;
                 player.Message(ValheimFloorPlanPlugin.ProgressMessageType,
                     $"ValheimFloorPlan: Origin ({_previewOrigin.x:F1}, {_previewOrigin.z:F1})");
             }
+
+            UpdatePreviewEdgeRisk(player, previewChanged);
 
             // Cancel on right-click or Escape.
             if (UnityEngine.Input.GetMouseButtonDown(1) || IsPreviewKeyDown(ValheimFloorPlanPlugin.PreviewCancelKey))
@@ -343,17 +387,186 @@ namespace ValheimFloorPlan
                 return;
             }
 
-            // Confirm on left-click (skip while any Valheim UI panel has focus).
+            // Confirm with configured preview key (skip while any Valheim UI panel has focus).
             bool uiOpen = Chat.instance != null && Chat.instance.HasFocus();
-            if (UnityEngine.Input.GetMouseButtonDown(0) && !uiOpen)
+            if (IsPreviewKeyDown(ValheimFloorPlanPlugin.PreviewConfirmKey) && !uiOpen)
             {
                 var plan        = _previewPlan;
                 float rotation  = _previewRotationDeg;
                 Vector3 origin  = _previewOrigin;
+                var risk = _previewEdgeRisk;
+                float riskRelief = _previewEdgeRelief;
+                float riskStep = _previewEdgeMaxStep;
+                float riskIrregularity = _previewEdgeIrregularity;
                 CancelPreview();
                 ValheimFloorPlanPlugin.Log.LogInfo(
-                    $"[FloorPlanBuilder] Build confirmed by left-click. Rotation={rotation:F0}\u00b0  origin={origin}");
+                    $"[FloorPlanBuilder] Build confirmed by key {ValheimFloorPlanPlugin.PreviewConfirmKey}. Rotation={rotation:F0}\u00b0  origin={origin}  edgeRisk={risk}  edgeRelief={riskRelief:F2}  irregularity={riskIrregularity:F2}  maxEdgeStep={riskStep:F2}");
                 StartCoroutine(LevelThenPlace(plan, rotation, origin));
+            }
+        }
+
+        private void UpdatePreviewEdgeRisk(Player player, bool previewChanged)
+        {
+            if (_previewPlan == null)
+                return;
+
+            if (previewChanged)
+                _previewRiskDirty = true;
+
+            if (!_previewRiskDirty && Time.time < _previewRiskNextSampleAt)
+                return;
+
+            var previous = _previewEdgeRisk;
+            _previewEdgeRisk = TerrainLeveler.EvaluateEdgeRisk(
+                _previewPlan,
+                _previewOrigin,
+                _previewRotationDeg,
+                out _previewEdgeRelief,
+                out _previewEdgeIrregularity,
+                out _previewEdgeMaxStep,
+                _previewRiskHotspots);
+
+            _previewRiskBottomCount = BuildPreviewRiskRenderPoints(_previewRiskHotspots, _previewRiskRenderPoints);
+            UpdatePreviewRiskMarkers(_previewEdgeRisk, _previewRiskRenderPoints, _previewRiskBottomCount);
+
+            _previewRiskDirty = false;
+            _previewRiskNextSampleAt = Time.time + PREVIEW_EDGE_RISK_SAMPLE_INTERVAL;
+
+            if (Time.time < _previewRiskHintsEnabledAt)
+                return;
+
+            bool shouldHint = previewChanged || _previewEdgeRisk != previous || Time.time >= _previewRiskNextHintAt;
+            if (!shouldHint)
+                return;
+
+            string riskMsg = _previewEdgeRisk switch
+            {
+                TerrainLeveler.EdgeRiskLevel.High =>
+                    $"Edge risk HIGH: uneven boundary terrain may cause tears/spikes. Try nudging or rotating before build. step={_previewEdgeMaxStep:F2}m, relief={_previewEdgeRelief:F1}m",
+                TerrainLeveler.EdgeRiskLevel.Medium =>
+                    $"Edge risk MEDIUM: some boundary irregularity detected. Small origin/rotation adjustments may improve results. step={_previewEdgeMaxStep:F2}m, relief={_previewEdgeRelief:F1}m",
+                _ =>
+                    $"Edge risk LOW: boundary terrain looks stable. step={_previewEdgeMaxStep:F2}m, relief={_previewEdgeRelief:F1}m",
+            };
+
+            ValheimFloorPlanPlugin.ShowWrappedMessage(
+                ValheimFloorPlanPlugin.ProgressMessageType,
+                $"ValheimFloorPlan: {riskMsg}");
+            _previewRiskNextHintAt = Time.time + PREVIEW_EDGE_RISK_HINT_INTERVAL;
+        }
+
+        // Returns the number of bottom hotspot points added (the rest are top-edge markers).
+        private int BuildPreviewRiskRenderPoints(List<Vector3> hotspots, List<Vector3> output)
+        {
+            output.Clear();
+            if (_previewPlan == null)
+                return 0;
+
+            if (hotspots.Count == 0)
+                return 0;
+
+            // Original hotspot markers (terrain-level, raycasted in UpdatePreviewRiskMarkers).
+            for (int i = 0; i < hotspots.Count; i++)
+                output.Add(hotspots[i]);
+            int bottomCount = output.Count;
+
+            // Fixed markers along the top edge at the height of the green outer face top.
+            TerrainLeveler.GetLeveledAreaBounds(_previewPlan, _previewOrigin,
+                out float lvlMinX, out float lvlMaxX, out float lvlMinZ, out float lvlMaxZ);
+
+            float rad = _previewRotationDeg * Mathf.Deg2Rad;
+            float cos = Mathf.Cos(rad);
+            float sin = Mathf.Sin(rad);
+
+            // Raycast the 4 rotated corners to find the highest terrain Y (mirrors SetWallRingRectangle).
+            float[] cxs = new float[] { lvlMinX, lvlMaxX, lvlMaxX, lvlMinX };
+            float[] czs = new float[] { lvlMinZ, lvlMinZ, lvlMaxZ, lvlMaxZ };
+            float terrainHigh = float.MinValue;
+            const int terrainLayer = 1 << 11;
+            float refY = _previewOrigin.y;
+            for (int c = 0; c < 4; c++)
+            {
+                float dx = cxs[c] - _previewOrigin.x;
+                float dz = czs[c] - _previewOrigin.z;
+                float wx = _previewOrigin.x + dx * cos + dz * sin;
+                float wz = _previewOrigin.z - dx * sin + dz * cos;
+                if (Physics.Raycast(new Vector3(wx, refY + 300f, wz), Vector3.down, out var hit, 600f, terrainLayer))
+                    if (hit.point.y > terrainHigh) terrainHigh = hit.point.y;
+            }
+            const float topLift = 0.30f;
+            float topY = (terrainHigh == float.MinValue ? refY : terrainHigh) + topLift;
+
+            float topDz = lvlMaxZ - _previewOrigin.z;
+            float[] topFracs = new float[] { 0.25f, 0.5f, 0.75f };
+            for (int f = 0; f < topFracs.Length; f++)
+            {
+                float localX = Mathf.Lerp(lvlMinX, lvlMaxX, topFracs[f]);
+                float topDx = localX - _previewOrigin.x;
+                float topWx = _previewOrigin.x + topDx * cos + topDz * sin;
+                float topWz = _previewOrigin.z - topDx * sin + topDz * cos;
+                output.Add(new Vector3(topWx, topY, topWz));
+            }
+
+            return bottomCount;
+        }
+
+        private void UpdatePreviewRiskMarkers(TerrainLeveler.EdgeRiskLevel risk, List<Vector3> hotspots, int bottomCount)
+        {
+            int desired = (risk == TerrainLeveler.EdgeRiskLevel.Low) ? 0 : Mathf.Min(hotspots.Count, 24);
+            EnsureRiskMarkerCount(desired);
+
+            for (int i = 0; i < _previewRiskMarkers.Count; i++)
+            {
+                var marker = _previewRiskMarkers[i];
+                if (i >= desired)
+                {
+                    marker.enabled = false;
+                    continue;
+                }
+
+                marker.enabled = true;
+                marker.startColor = risk == TerrainLeveler.EdgeRiskLevel.High
+                    ? new Color(1f, 0.22f, 0.12f, 0.95f)
+                    : new Color(1f, 0.72f, 0.18f, 0.92f);
+                marker.endColor = marker.startColor;
+
+                Vector3 p = hotspots[i];
+                float y;
+                if (i < bottomCount)
+                {
+                    // Bottom hotspot: raycast to terrain.
+                    y = p.y;
+                    if (Physics.Raycast(new Vector3(p.x, p.y + 300f, p.z), Vector3.down, out var hit, 600f, 1 << 11))
+                        y = hit.point.y;
+                    y += PREVIEW_RISK_MARKER_LIFT;
+                }
+                else
+                {
+                    // Top-edge marker: Y was already computed at the green face top.
+                    y = p.y;
+                }
+
+                Vector3 center = new Vector3(p.x, y, p.z);
+                float r = PREVIEW_RISK_MARKER_RADIUS;
+                marker.positionCount = 5;
+                marker.SetPosition(0, center + new Vector3(-r, 0f, 0f));
+                marker.SetPosition(1, center + new Vector3(0f, 0f, r));
+                marker.SetPosition(2, center + new Vector3(r, 0f, 0f));
+                marker.SetPosition(3, center + new Vector3(0f, 0f, -r));
+                marker.SetPosition(4, center + new Vector3(-r, 0f, 0f));
+            }
+        }
+
+        private void EnsureRiskMarkerCount(int count)
+        {
+            if (_previewGo == null)
+                return;
+
+            while (_previewRiskMarkers.Count < count)
+            {
+                var lr = MakeLine(_previewGo, new Color(1f, 0.72f, 0.18f, 0.92f), 0.06f, 5);
+                lr.loop = false;
+                _previewRiskMarkers.Add(lr);
             }
         }
 

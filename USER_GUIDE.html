@@ -171,7 +171,7 @@
         <li>Set <code>FloorPlanFile</code> to your .vfp file in config.</li>
         <li>Enter your world and press <code>F8</code> to open preview.</li>
         <li>Move/rotate preview until placement looks right.</li>
-        <li>Left-click to confirm build.</li>
+        <li>Press <code>E</code> (default confirm key) to confirm build.</li>
         <li>Use <code>F9</code> to undo if needed.</li>
       </ol>
     </section>
@@ -206,13 +206,36 @@
           <tr><td><code>FloorPlanFile</code></td><td>empty</td><td>Full path to the .vfp file to build.</td></tr>
           <tr><td><code>BuildHotkey</code></td><td><code>F8</code></td><td>Opens placement preview.</td></tr>
           <tr><td><code>UndoHotkey</code></td><td><code>F9</code></td><td>Removes nearby VFP pieces and restores terrain snapshot.</td></tr>
+          <tr><td><code>TearRepairHotkey</code></td><td><code>F10</code></td><td>Toggles tear-repair pointer mode.</td></tr>
           <tr><td><code>BuildOriginForwardOffset</code></td><td>12</td><td>Initial preview origin in front of player (10-20).</td></tr>
+          <tr><td><code>ProgressMessagePosition</code></td><td>CenterLeft</td><td>HUD slot used for status text (CenterLeft maps to Center).</td></tr>
           <tr><td><code>TerrainLevelPasses</code></td><td>2</td><td>Main terrain leveling pass count (1-5).</td></tr>
           <tr><td><code>TerrainSpikeCleanupPasses</code></td><td>2</td><td>Post-leveling cleanup pass count (1-5).</td></tr>
+          <tr><td><code>TerrainStampRadius</code></td><td>3.0</td><td>Radius (meters) of each leveling disc stamp and preview outer wall reach (3.0-6.0).</td></tr>
+          <tr><td><code>TerrainSkipSatisfiedCenterStamps</code></td><td>true</td><td>Skips center stamps already at/above target terrain height.</td></tr>
+          <tr><td><code>TerrainUseStagedRaise</code></td><td>false</td><td>Experimental staged raise mode.</td></tr>
+          <tr><td><code>TerrainRaiseStepHeight</code></td><td>0.5</td><td>Max raise per stage when staged mode is enabled (0.15-1.5).</td></tr>
+          <tr><td><code>TerrainMaxRaiseStages</code></td><td>1</td><td>Max number of raise stages when staged mode is enabled (1-16).</td></tr>
           <tr><td><code>ExternalWallHeight</code></td><td>1</td><td>Stacks external Wall/Pillar objects to this many levels (1-4).</td></tr>
           <tr><td><code>WallPillarMaterial</code></td><td>Stone</td><td>Choose Stone or Wood prefabs for Wall/Pillar pieces.</td></tr>
         </tbody>
       </table>
+
+      <h3>Preview Input Settings</h3>
+      <ul>
+        <li><code>MoveForwardKey</code> / <code>MoveBackwardKey</code> / <code>MoveLeftKey</code> / <code>MoveRightKey</code> (defaults: arrow keys)</li>
+        <li><code>RotateLeftKey</code> / <code>RotateRightKey</code> (defaults: <code>Q</code> / <code>R</code>)</li>
+        <li><code>ConfirmKey</code> (default <code>E</code>)</li>
+        <li><code>CancelKey</code> (default <code>Esc</code>, right-click also cancels)</li>
+        <li><code>FineAdjustKey</code> (default <code>LeftShift</code>)</li>
+        <li><code>MoveStep</code>, <code>FineMoveStep</code>, <code>RotateStepDegrees</code>, <code>FineRotateStepDegrees</code></li>
+      </ul>
+
+      <h3>Tear Repair Input Settings</h3>
+      <ul>
+        <li><code>TearRepairApplyKey</code> (default <code>E</code>)</li>
+        <li><code>TearRepairCancelKey</code> (default <code>Esc</code>, right-click also exits)</li>
+      </ul>
 
       <h3>Optional .vfp wall-face field</h3>
       <ul>
@@ -228,11 +251,24 @@
         <li>Build preview: <code>F8</code></li>
         <li>Undo: <code>F9</code></li>
         <li>Move preview: <code>UpArrow / DownArrow / LeftArrow / RightArrow</code></li>
-        <li>Rotate preview: <code>Q / E</code></li>
+        <li>Rotate preview: <code>Q / R</code></li>
+        <li>Confirm build: <code>E</code></li>
         <li>Fine adjust: hold <code>LeftShift</code></li>
         <li>Cancel preview: <code>Esc</code> or right-click</li>
-        <li>Confirm build: left-click</li>
+        <li>Tear repair mode: <code>F10</code></li>
+        <li>Tear repair apply: <code>E</code></li>
+        <li>Tear repair cancel: <code>Esc</code> or right-click</li>
       </ul>
+    </section>
+
+    <section class="card">
+      <h2>Terrain Risk Markers</h2>
+      <p>In preview mode, orange risk markers appear for <code>MEDIUM</code> and <code>HIGH</code> terrain edge risk:</p>
+      <ul>
+        <li>Terrain-level markers show sampled hotspot locations near problematic edge terrain.</li>
+        <li>Top-edge markers (3 fixed points) appear on the top rim of the green outer wall for better visibility from downhill camera angles.</li>
+      </ul>
+      <p>Risk text reports <code>step</code> and <code>relief</code> metrics to help decide if you should nudge/rotate before building.</p>
     </section>
 
     <section class="card">
@@ -251,10 +287,11 @@
       <h2>Undo Behavior</h2>
       <ul>
         <li>Removes VFP-tagged pieces within about 75m of player.</li>
-        <li>Restores terrain from captured snapshot.</li>
+        <li>Restores terrain from the latest captured snapshot in the current session.</li>
+        <li>Terrain visuals may not update immediately after undo; move to another area and come back to refresh chunk visuals.</li>
       </ul>
       <div class="warning">
-        Piece removal can work across sessions. Terrain restore depends on a valid captured snapshot from the current run.
+        Piece removal can work across sessions. Terrain restore is session-bound and depends on a valid snapshot captured during the current run.
       </div>
     </section>
 
@@ -286,6 +323,13 @@
       <ul>
         <li>Let the full build sequence finish.</li>
         <li>Increase terrain pass settings on difficult ground.</li>
+      </ul>
+
+      <h3>Undo did not visibly restore terrain</h3>
+      <ul>
+        <li>Undo restores only the latest snapshot captured in the current session.</li>
+        <li>If snapshot capture failed, piece removal may still work while terrain restore does not.</li>
+        <li>Terrain visuals can refresh late; move away from the area and return.</li>
       </ul>
     </section>
   </main>

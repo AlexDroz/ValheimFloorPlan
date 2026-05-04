@@ -23,6 +23,10 @@ namespace ValheimFloorPlan
         internal static int TerrainLevelPasses { get; private set; } = 2;
         internal static int TerrainSpikeCleanupPasses { get; private set; } = 2;
         internal static float TerrainStampRadius { get; private set; } = 3.0f;
+        internal static bool TerrainUseStagedRaise { get; private set; } = false;
+        internal static float TerrainRaiseStepHeight { get; private set; } = 0.5f;
+        internal static int TerrainMaxRaiseStages { get; private set; } = 1;
+        internal static bool TerrainSkipSatisfiedCenterStamps { get; private set; } = true;
         internal static int ExternalWallHeight { get; private set; } = 1;
         internal static StructuralMaterial WallPillarMaterial { get; private set; } = StructuralMaterial.Stone;
         internal static float BuildOriginForwardOffset { get; private set; } = 12f;
@@ -34,8 +38,9 @@ namespace ValheimFloorPlan
         internal static KeyCode PreviewMoveBackwardKey { get; private set; } = KeyCode.DownArrow;
         internal static KeyCode PreviewMoveLeftKey { get; private set; } = KeyCode.LeftArrow;
         internal static KeyCode PreviewMoveRightKey { get; private set; } = KeyCode.RightArrow;
+        internal static KeyCode PreviewConfirmKey { get; private set; } = KeyCode.E;
         internal static KeyCode PreviewRotateLeftKey { get; private set; } = KeyCode.Q;
-        internal static KeyCode PreviewRotateRightKey { get; private set; } = KeyCode.E;
+        internal static KeyCode PreviewRotateRightKey { get; private set; } = KeyCode.R;
         internal static KeyCode PreviewCancelKey { get; private set; } = KeyCode.Escape;
         internal static KeyCode PreviewFineAdjustKey { get; private set; } = KeyCode.LeftShift;
         internal static KeyCode TearRepairApplyKey { get; private set; } = KeyCode.E;
@@ -48,6 +53,10 @@ namespace ValheimFloorPlan
         private ConfigEntry<int> _terrainLevelPasses = null!;
         private ConfigEntry<int> _terrainSpikeCleanupPasses = null!;
         private ConfigEntry<float> _terrainStampRadius = null!;
+        private ConfigEntry<bool> _terrainUseStagedRaise = null!;
+        private ConfigEntry<float> _terrainRaiseStepHeight = null!;
+        private ConfigEntry<int> _terrainMaxRaiseStages = null!;
+        private ConfigEntry<bool> _terrainSkipSatisfiedCenterStamps = null!;
         private ConfigEntry<int> _externalWallHeight = null!;
         private ConfigEntry<string> _wallPillarMaterial = null!;
         private ConfigEntry<float> _buildOriginForwardOffset = null!;
@@ -59,6 +68,7 @@ namespace ValheimFloorPlan
         private ConfigEntry<KeyCode> _previewMoveBackwardKey = null!;
         private ConfigEntry<KeyCode> _previewMoveLeftKey = null!;
         private ConfigEntry<KeyCode> _previewMoveRightKey = null!;
+        private ConfigEntry<KeyCode> _previewConfirmKey = null!;
         private ConfigEntry<KeyCode> _previewRotateLeftKey = null!;
         private ConfigEntry<KeyCode> _previewRotateRightKey = null!;
         private ConfigEntry<KeyCode> _previewCancelKey = null!;
@@ -120,6 +130,38 @@ namespace ValheimFloorPlan
             _terrainStampRadius.SettingChanged += (_, _) =>
                 TerrainStampRadius = Mathf.Clamp(_terrainStampRadius.Value, 3.0f, 6.0f);
             TerrainStampRadius = Mathf.Clamp(_terrainStampRadius.Value, 3.0f, 6.0f);
+
+            _terrainUseStagedRaise = Config.Bind(
+                "Terrain", "TerrainUseStagedRaise", false,
+                "When enabled, leveling raises terrain in multiple vertical stages instead of a single full-height jump. Experimental: may help on some slopes but can worsen spikes on irregular edges.");
+            _terrainUseStagedRaise.SettingChanged += (_, _) =>
+                TerrainUseStagedRaise = _terrainUseStagedRaise.Value;
+            TerrainUseStagedRaise = _terrainUseStagedRaise.Value;
+
+            _terrainRaiseStepHeight = Config.Bind(
+                "Terrain", "TerrainRaiseStepHeight", 0.5f,
+                new ConfigDescription(
+                    "Maximum vertical raise per stage in metres when TerrainUseStagedRaise is enabled. Smaller values create more stages and gentler terrain transitions.",
+                    new AcceptableValueRange<float>(0.15f, 1.5f)));
+            _terrainRaiseStepHeight.SettingChanged += (_, _) =>
+                TerrainRaiseStepHeight = Mathf.Clamp(_terrainRaiseStepHeight.Value, 0.15f, 1.5f);
+            TerrainRaiseStepHeight = Mathf.Clamp(_terrainRaiseStepHeight.Value, 0.15f, 1.5f);
+
+            _terrainMaxRaiseStages = Config.Bind(
+                "Terrain", "TerrainMaxRaiseStages", 1,
+                new ConfigDescription(
+                    "Upper limit on the number of vertical raise stages when TerrainUseStagedRaise is enabled.",
+                    new AcceptableValueRange<int>(1, 16)));
+            _terrainMaxRaiseStages.SettingChanged += (_, _) =>
+                TerrainMaxRaiseStages = Mathf.Clamp(_terrainMaxRaiseStages.Value, 1, 16);
+            TerrainMaxRaiseStages = Mathf.Clamp(_terrainMaxRaiseStages.Value, 1, 16);
+
+            _terrainSkipSatisfiedCenterStamps = Config.Bind(
+                "Terrain", "TerrainSkipSatisfiedCenterStamps", true,
+                "When enabled, center leveling stamps are skipped if sampled terrain is already at/above target. Disable for exact legacy behavior (always stamp every center point each pass).");
+            _terrainSkipSatisfiedCenterStamps.SettingChanged += (_, _) =>
+                TerrainSkipSatisfiedCenterStamps = _terrainSkipSatisfiedCenterStamps.Value;
+            TerrainSkipSatisfiedCenterStamps = _terrainSkipSatisfiedCenterStamps.Value;
 
             _externalWallHeight = Config.Bind(
                 "Building", "ExternalWallHeight", 1,
@@ -196,11 +238,14 @@ namespace ValheimFloorPlan
             _previewMoveRightKey = Config.Bind(
                 "Preview", "MoveRightKey", KeyCode.RightArrow,
                 "Preview nudge key for moving the origin right relative to the camera.");
+            _previewConfirmKey = Config.Bind(
+                "Preview", "ConfirmKey", KeyCode.E,
+                "Preview key that confirms build placement at the current preview position.");
             _previewRotateLeftKey = Config.Bind(
                 "Preview", "RotateLeftKey", KeyCode.Q,
                 "Preview rotation key for rotating counter-clockwise.");
             _previewRotateRightKey = Config.Bind(
-                "Preview", "RotateRightKey", KeyCode.E,
+                "Preview", "RotateRightKey", KeyCode.R,
                 "Preview rotation key for rotating clockwise.");
             _previewCancelKey = Config.Bind(
                 "Preview", "CancelKey", KeyCode.Escape,
@@ -219,6 +264,7 @@ namespace ValheimFloorPlan
             _previewMoveBackwardKey.SettingChanged += (_, _) => PreviewMoveBackwardKey = _previewMoveBackwardKey.Value;
             _previewMoveLeftKey.SettingChanged += (_, _) => PreviewMoveLeftKey = _previewMoveLeftKey.Value;
             _previewMoveRightKey.SettingChanged += (_, _) => PreviewMoveRightKey = _previewMoveRightKey.Value;
+            _previewConfirmKey.SettingChanged += (_, _) => PreviewConfirmKey = _previewConfirmKey.Value;
             _previewRotateLeftKey.SettingChanged += (_, _) => PreviewRotateLeftKey = _previewRotateLeftKey.Value;
             _previewRotateRightKey.SettingChanged += (_, _) => PreviewRotateRightKey = _previewRotateRightKey.Value;
             _previewCancelKey.SettingChanged += (_, _) => PreviewCancelKey = _previewCancelKey.Value;
@@ -230,6 +276,7 @@ namespace ValheimFloorPlan
             PreviewMoveBackwardKey = _previewMoveBackwardKey.Value;
             PreviewMoveLeftKey = _previewMoveLeftKey.Value;
             PreviewMoveRightKey = _previewMoveRightKey.Value;
+            PreviewConfirmKey = _previewConfirmKey.Value;
             PreviewRotateLeftKey = _previewRotateLeftKey.Value;
             PreviewRotateRightKey = _previewRotateRightKey.Value;
             PreviewCancelKey = _previewCancelKey.Value;
@@ -240,7 +287,7 @@ namespace ValheimFloorPlan
             gameObject.AddComponent<FloorPlanBuilder>();
 
             Log.LogInfo($"{PluginName} v{PluginVersion} loaded! " +
-                $"Build: {_buildHotkey.Value}  Undo: {_undoHotkey.Value}  Progress HUD: {ProgressMessageType}  Terrain passes: {TerrainLevelPasses}  Spike cleanup passes: {TerrainSpikeCleanupPasses}  External wall height: {ExternalWallHeight}  Wall/Pillar material: {WallPillarMaterial}  Origin offset: {BuildOriginForwardOffset:F1}m  Preview move: {PreviewMoveStep:F2}/{PreviewFineMoveStep:F2}m  Preview rotate: {PreviewRotateStepDeg:F0}/{PreviewFineRotateStepDeg:F0}°");
+                $"Build: {_buildHotkey.Value}  Undo: {_undoHotkey.Value}  Progress HUD: {ProgressMessageType}  Terrain passes: {TerrainLevelPasses}  Spike cleanup passes: {TerrainSpikeCleanupPasses}  Staged raise: {TerrainUseStagedRaise} ({TerrainRaiseStepHeight:F2}m, max {TerrainMaxRaiseStages})  Skip satisfied center stamps: {TerrainSkipSatisfiedCenterStamps}  External wall height: {ExternalWallHeight}  Wall/Pillar material: {WallPillarMaterial}  Origin offset: {BuildOriginForwardOffset:F1}m  Preview move: {PreviewMoveStep:F2}/{PreviewFineMoveStep:F2}m  Preview rotate: {PreviewRotateStepDeg:F0}/{PreviewFineRotateStepDeg:F0}°");
         }
 
         private void Update()
@@ -267,7 +314,59 @@ namespace ValheimFloorPlan
 
         internal static void ShowProgressMessage(string message)
         {
-            Player.m_localPlayer?.Message(ProgressMessageType, $"ValheimFloorPlan: {message}");
+            ShowWrappedMessage(ProgressMessageType, $"ValheimFloorPlan: {message}");
+        }
+
+        internal static void ShowWrappedMessage(MessageHud.MessageType messageType, string text, int maxLineLength = 72)
+        {
+            var wrapped = WrapHudText(text, maxLineLength);
+            var lines = wrapped.Split('\n');
+            var player = Player.m_localPlayer;
+            if (player == null)
+                return;
+
+            for (int i = 0; i < lines.Length; i++)
+            {
+                string line = lines[i].Trim();
+                if (line.Length == 0)
+                    continue;
+                player.Message(messageType, line);
+            }
+        }
+
+        internal static string WrapHudText(string text, int maxLineLength = 72)
+        {
+            if (string.IsNullOrEmpty(text) || maxLineLength < 16)
+                return text;
+
+            var src = text.Replace("\r", string.Empty).Replace("\n", " ");
+            var words = src.Split(new[] { ' ' }, System.StringSplitOptions.RemoveEmptyEntries);
+            if (words.Length == 0)
+                return src;
+
+            var sb = new System.Text.StringBuilder(src.Length + 16);
+            int lineLen = 0;
+            for (int i = 0; i < words.Length; i++)
+            {
+                string w = words[i];
+                int addLen = (lineLen == 0 ? 0 : 1) + w.Length;
+
+                if (lineLen > 0 && lineLen + addLen > maxLineLength)
+                {
+                    sb.Append('\n');
+                    lineLen = 0;
+                }
+                else if (lineLen > 0)
+                {
+                    sb.Append(' ');
+                    lineLen++;
+                }
+
+                sb.Append(w);
+                lineLen += w.Length;
+            }
+
+            return sb.ToString();
         }
 
         private static MessageHud.MessageType ParseProgressMessageType(string value)

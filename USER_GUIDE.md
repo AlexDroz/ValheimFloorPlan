@@ -7,7 +7,7 @@ From a player perspective, the flow is simple:
 1. Choose a `.vfp` file in config.
 2. Press the build hotkey to open preview.
 3. Move/rotate preview until it looks right.
-4. Left-click to build.
+4. Press the preview confirm key to build (default `E`).
 5. Press undo hotkey to remove placed pieces and restore terrain snapshot.
 
 ## Requirements
@@ -34,11 +34,30 @@ Important settings:
 - `FloorPlanFile`: Full path to your `.vfp` file.
 - `BuildHotkey`: Starts preview mode (default `F8`).
 - `UndoHotkey`: Removes nearby VFP pieces and restores terrain snapshot (default `F9`).
+- `TearRepairHotkey`: Toggles tear-repair pointer mode after a build (default `F10`).
 - `BuildOriginForwardOffset`: Initial preview origin in front of your character (default `12`, range `10-20`).
+- `ProgressMessagePosition`: HUD slot for status text (default `CenterLeft`, mapped to `Center`).
 - `TerrainLevelPasses`: Main leveling pass count (default `2`, range `1-5`).
 - `TerrainSpikeCleanupPasses`: Cleanup pass count after leveling (default `2`, range `1-5`).
+- `TerrainStampRadius`: Radius (meters) of each leveling disc stamp and preview outer wall width (default `3.0`, range `3.0-6.0`).
+- `TerrainSkipSatisfiedCenterStamps`: Skips center stamps already at/above target terrain height (default `true`).
+- `TerrainUseStagedRaise`: Experimental staged vertical raise mode (default `false`).
+- `TerrainRaiseStepHeight`: Max raise per stage when staged raise is enabled (default `0.5`, range `0.15-1.5`).
+- `TerrainMaxRaiseStages`: Max number of raise stages when staged raise is enabled (default `1`, range `1-16`).
 - `ExternalWallHeight`: Stacks external `Wall` and `Pillar` objects to this many levels (default `1`, range `1-4`).
 - `WallPillarMaterial`: Choose `Stone` or `Wood` for `Wall` and `Pillar` types (default `Stone`).
+
+Preview input settings (all configurable):
+- `MoveForwardKey` / `MoveBackwardKey` / `MoveLeftKey` / `MoveRightKey` (defaults: arrow keys)
+- `RotateLeftKey` / `RotateRightKey` (defaults: `Q` / `R`)
+- `ConfirmKey` (default `E`)
+- `CancelKey` (default `Escape`, right-click also cancels)
+- `FineAdjustKey` (default `LeftShift`)
+- `MoveStep`, `FineMoveStep`, `RotateStepDegrees`, `FineRotateStepDegrees`
+
+Tear-repair input settings:
+- `TearRepairApplyKey` (default `E`)
+- `TearRepairCancelKey` (default `Escape`, right-click also cancels)
 
 Optional `.vfp` wall-face field:
 - Piece lines can include a sixth field: `piece,col,row,type,rotation,wallFace`
@@ -54,17 +73,17 @@ Preview controls are also configurable in the same file.
 4. Press `F8` to start preview.
 5. Adjust placement:
    - Arrow keys move preview origin.
-   - `Q` / `E` rotate.
+   - `Q` / `R` rotate.
    - Hold `LeftShift` for fine movement/rotation.
    - `Esc` or right-click cancels preview.
-6. Left-click to confirm and start build.
+6. Press `E` to confirm and start build.
 7. Wait for terrain prep and piece placement to complete.
 
 ## Typical In-Game Workflow
 1. Scout and clear your area.
 2. Open preview with `F8`.
 3. Nudge/rotate until the footprint is exactly where you want it.
-4. Confirm with left-click.
+4. Confirm with the preview confirm key (default `E`).
 5. Let the mod:
    - Snapshot terrain
    - Clear major rock-like blockers
@@ -78,10 +97,30 @@ Preview controls are also configurable in the same file.
 - Build Preview: `F8`
 - Undo: `F9`
 - Move Preview: `UpArrow`, `DownArrow`, `LeftArrow`, `RightArrow`
-- Rotate Preview: `Q` / `E`
+- Rotate Preview: `Q` / `R`
+- Confirm Build: `E`
 - Fine Adjust Modifier: `LeftShift`
 - Cancel Preview: `Esc` or right-click
-- Confirm Build: left-click
+- Tear Repair Mode: `F10`
+- Tear Repair Apply: `E`
+- Tear Repair Cancel: `Esc` or right-click
+
+## Terrain Risk Preview Markers
+While in preview, the mod evaluates edge terrain risk and can show orange risk markers when risk is `MEDIUM` or `HIGH`:
+- Terrain-level markers: hotspot positions near troublesome edge terrain.
+- Top-edge markers: three fixed markers on the top rim of the green outer preview wall so risk is visible from downhill camera angles.
+
+Risk text includes:
+- `step`: strongest local cross-edge height jump.
+- `relief`: total edge height range around the footprint.
+
+Practical note:
+- Marker/hint visibility updates while you nudge/rotate preview; there is a short delay before repeated hint spam to keep HUD readable.
+
+## Tear Repair Mode
+Press `F10` to toggle tear-repair mode after building:
+- Aim at a tear/spike area and press `E` to apply repair.
+- Press `Esc` or right-click to exit repair mode.
 
 ## Undo Behavior and Limits
 Undo does two things:
@@ -90,8 +129,9 @@ Undo does two things:
 
 Important notes:
 - Piece removal works across sessions because pieces are tagged in ZDO data.
-- Terrain restore requires a snapshot from the current run/session.
+- Terrain restore is session-bound: it requires a snapshot captured in the current game session.
 - Terrain restore is based on the most recently captured snapshot.
+- Terrain restore can be visually delayed. If the ground still looks unchanged right after undo, move away from the area and return so the terrain chunk visuals refresh.
 
 ## Performance and Quality Tuning
 If builds are slow:
@@ -125,16 +165,19 @@ Suggested starting presets:
 
 ### Undo did not restore expected terrain
 - Undo restores the latest captured snapshot only.
+- Terrain restore only works for snapshots captured in the current session.
 - If snapshot capture failed, piece removal may still work while terrain restore does not.
+- Terrain visuals may not refresh instantly; move to another area, then come back to force a visible refresh.
 
 ## FAQ
 ### Can I rotate the whole plan before building?
-Yes. Use `Q` / `E` in preview mode.
+Yes. Use `Q` / `R` in preview mode.
 
 ### Can I fine-adjust placement?
 Yes. Hold `LeftShift` while moving/rotating.
 
 ## Best Practices
-- Always verify preview alignment before left-click confirm.
+- Always verify preview alignment and risk markers before confirming (`E`).
 - Keep one backup world save while testing new pass settings.
 - Start with balanced pass values, then tune based on terrain complexity.
+- Keep `TerrainSkipSatisfiedCenterStamps=true` as a first-choice setting for rough terrain edge stability.

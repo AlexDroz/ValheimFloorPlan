@@ -24,13 +24,20 @@ On startup (`Awake`), the plugin registers BepInEx configuration entries for fil
 - **`FloorPlanFile`** — full path to the `.vfp` file to load.
 - **`BuildHotkey`** (default `F8`) — starts placement preview for the configured `.vfp`.
 - **`UndoHotkey`** (default `F9`) — removes all placed pieces and restores terrain.
+- **`TearRepairHotkey`** (default `F10`) — toggles terrain tear-repair pointer mode.
 - **`TerrainLevelPasses`** (default `2`, range `1–5`) — number of leveling passes run on the build pad.
 - **`TerrainSpikeCleanupPasses`** (default `2`, range `1–5`) — number of post-leveling spike cleanup scans.
+- **`TerrainStampRadius`** (default `3.0 m`, range `3.0–6.0`) — radius of each terrain stamp disc and outer preview footprint reach.
+- **`TerrainSkipSatisfiedCenterStamps`** (default `true`) — skips center stamps when sampled terrain is already at/above target.
+- **`TerrainUseStagedRaise`** (default `false`) — experimental multi-stage raise mode.
+- **`TerrainRaiseStepHeight`** (default `0.5 m`, range `0.15–1.5`) — max vertical raise per stage when staged mode is enabled.
+- **`TerrainMaxRaiseStages`** (default `1`, range `1–16`) — cap on number of raise stages.
 - **`ExternalWallHeight`** (default `1`, range `1–4`) — stacks external `Wall`/`Pillar` pieces to this many levels.
 - **`WallPillarMaterial`** (`Stone` or `Wood`, default `Stone`) — chooses wall/pillar prefab set.
 - **`BuildOriginForwardOffset`** (default `12 m`, range `10–20`) — initial preview/build origin in front of the player.
 - **`ProgressMessagePosition`** — HUD slot used for progress messages.
-- **Preview movement/rotation settings and keys** — step sizes, fine-adjust key, movement keys, rotation keys, and cancel key.
+- **Preview movement/rotation settings and keys** — step sizes, fine-adjust key, movement keys, rotation keys (`Q`/`R` by default), confirm key (`E` by default), and cancel key.
+- **Repair keys** — apply (`E` by default) and cancel (`Escape` by default, right-click also exits).
 
 `Update()` polls those hotkeys every frame and calls `FloorPlanBuilder.StartPreview` or `FloorPlanBuilder.Undo` accordingly.
 
@@ -78,7 +85,17 @@ The grid origin (col=0, row=0) maps to the selected preview origin (default: pla
 
 ## Step 4 — The Build Sequence (Coroutine)
 
-When `F8` is pressed, `FloorPlanBuilder.StartPreview` enters placement preview mode. The initial preview origin is the player's position plus `BuildOriginForwardOffset` in the facing direction. In preview, you can nudge or rotate the plan, then confirm with left-click to launch `LevelThenPlace`. All heavy steps are spread across Unity frames to avoid freezing the game.
+When `F8` is pressed, `FloorPlanBuilder.StartPreview` enters placement preview mode. The initial preview origin is the player's position plus `BuildOriginForwardOffset` in the facing direction. In preview, you can nudge or rotate the plan, then confirm with the configured preview confirm key (default `E`) to launch `LevelThenPlace`. All heavy steps are spread across Unity frames to avoid freezing the game.
+
+During preview, `EvaluateEdgeRisk` runs on a timed cadence and computes:
+- Risk level (`Low`, `Medium`, `High`)
+- Edge relief
+- Edge irregularity
+- Max cross-edge step
+
+If risk is `Medium` or `High`, risk markers are rendered in two sets:
+- Terrain hotspot markers at sampled edge trouble locations
+- Three fixed top-edge markers along the outer preview wall rim for visibility from downhill camera angles
 
 ### 4a. Snapshot terrain
 Before any changes, `TerrainSnapshot.Capture` samples a generous bounding area around the leveled footprint and clones the raw `m_levelDelta` / `m_modifiedHeight` arrays from every `TerrainComp` chunk in the region via reflection. This snapshot is what `Undo` uses to restore the ground later.

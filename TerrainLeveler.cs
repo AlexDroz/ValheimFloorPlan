@@ -18,6 +18,25 @@ namespace ValheimFloorPlan
     /// </summary>
     public static class TerrainLeveler
     {
+        public enum EdgeRiskLevel
+        {
+            Low,
+            Medium,
+            High,
+        }
+
+        private struct EdgeRiskHotspot
+        {
+            public Vector3 Position;
+            public float Score;
+
+            public EdgeRiskHotspot(Vector3 position, float score)
+            {
+                Position = position;
+                Score = score;
+            }
+        }
+
         // ── inner pad ─────────────────────────────────────────────────────────
         // LEVEL_RADIUS is now read from config (TerrainStampRadius) at runtime.
         private static float LEVEL_RADIUS => Mathf.Clamp(ValheimFloorPlanPlugin.TerrainStampRadius, 3.0f, 6.0f);
@@ -27,6 +46,7 @@ namespace ValheimFloorPlan
         private const float EDGE_BAND_WIDTH = 0.6f;
         private const float EDGE_LEVEL_RADIUS = 1.8f;
         private const float EDGE_RAISE_EPSILON = 0.03f;
+        private const float STAGE_RAISE_EPSILON = 0.02f;
         private const float SPIKE_SCAN_STEP   = 0.5f;
         private const float SPIKE_LEVEL_RADIUS = 1.5f;
         private const float SPIKE_TOLERANCE   = 0.2f;
@@ -144,6 +164,15 @@ namespace ValheimFloorPlan
                 $"  inner(local)=[{innerMinX:F1}..{innerMaxX:F1}] x [{innerMinZ:F1}..{innerMaxZ:F1}]");
 
             int totalPasses = Mathf.Clamp(ValheimFloorPlanPlugin.TerrainLevelPasses, 1, 5);
+            bool stagedRaise = ValheimFloorPlanPlugin.TerrainUseStagedRaise;
+            float raiseStepHeight = Mathf.Clamp(ValheimFloorPlanPlugin.TerrainRaiseStepHeight, 0.15f, 1.5f);
+            int maxRaiseStages = Mathf.Clamp(ValheimFloorPlanPlugin.TerrainMaxRaiseStages, 1, 16);
+            bool skipSatisfiedCenterStamps = ValheimFloorPlanPlugin.TerrainSkipSatisfiedCenterStamps;
+            int stageCount = 1;
+            if (stagedRaise && range > STAGE_RAISE_EPSILON)
+                stageCount = Mathf.Clamp(Mathf.CeilToInt(range / raiseStepHeight), 1, maxRaiseStages);
+
+            float stageHeight = stageCount > 0 ? range / stageCount : range;
 
             int stepsX = Mathf.CeilToInt((innerMaxX - innerMinX) / levelSampleStep);
             int stepsZ = Mathf.CeilToInt((innerMaxZ - innerMinZ) / levelSampleStep);
@@ -165,77 +194,94 @@ namespace ValheimFloorPlan
 
             int ops = 0;
             var modified = new HashSet<TerrainComp>();
-            int totalLevelOps = totalPasses * (((stepsX + 1) * (stepsZ + 1)) + edgePointsPerPass);
+            int totalLevelOps = stageCount * totalPasses * (((stepsX + 1) * (stepsZ + 1)) + edgePointsPerPass);
             int nextLevelPct = 10;
 
             ValheimFloorPlanPlugin.Log.LogInfo(
-                $"[TerrainLeveler] Running {totalPasses} leveling passes (configured, range={range:F1}m).");
-            ShowProgress($"Leveling terrain... 0% ({totalPasses} pass(es))");
+                $"[TerrainLeveler] Running {totalPasses} leveling pass(es) across {stageCount} raise stage(s) " +
+                $"(range={range:F1}m, staged={stagedRaise}, stageStep={raiseStepHeight:F2}m).");
+            ShowProgress($"Leveling terrain... 0% ({totalPasses} pass(es), {stageCount} stage(s))");
 
-            for (int pass = 1; pass <= totalPasses; pass++)
+            for (int stage = 1; stage <= stageCount; stage++)
             {
-                float effectiveEdgeRadius = Mathf.Min(EDGE_LEVEL_RADIUS, LEVEL_RADIUS);
+                float stageTargetY = stage == stageCount
+                    ? targetY
+                    : Mathf.Min(targetY, minY + (stageHeight * stage));
 
-                for (int ix = 0; ix <= stepsX; ix++)
+                for (int pass = 1; pass <= totalPasses; pass++)
                 {
-                    float lx = (ix == stepsX) ? innerMaxX : innerMinX + ix * levelSampleStep;
-                    for (int iz = 0; iz <= stepsZ; iz++)
+                    float effectiveEdgeRadius = Mathf.Min(EDGE_LEVEL_RADIUS, LEVEL_RADIUS);
+
+                    for (int ix = 0; ix <= stepsX; ix++)
                     {
-                        float lz = (iz == stepsZ) ? innerMaxZ : innerMinZ + iz * levelSampleStep;
-                        float ldx2 = lx - origin.x;
-                        float ldz2 = lz - origin.z;
-                        float wx = origin.x + ldx2 * cosR + ldz2 * sinR;
-                        float wz = origin.z - ldx2 * sinR + ldz2 * cosR;
-                        ApplyLevel(wx, targetY, wz, LEVEL_RADIUS, modified);
-                        ops++;
-                        if (totalLevelOps > 0)
+                        float lx = (ix == stepsX) ? innerMaxX : innerMinX + ix * levelSampleStep;
+                        for (int iz = 0; iz <= stepsZ; iz++)
                         {
-                            int pct = Mathf.FloorToInt((ops * 100f) / totalLevelOps);
-                            if (pct >= nextLevelPct)
+                            float lz = (iz == stepsZ) ? innerMaxZ : innerMinZ + iz * levelSampleStep;
+                            float ldx2 = lx - origin.x;
+                            float ldz2 = lz - origin.z;
+                            float wx = origin.x + ldx2 * cosR + ldz2 * sinR;
+                            float wz = origin.z - ldx2 * sinR + ldz2 * cosR;
+
+                            float h = SampleHeight(wx, wz, stageTargetY);
+                            if (!skipSatisfiedCenterStamps || h < stageTargetY - STAGE_RAISE_EPSILON)
                             {
-                                ShowProgress($"Leveling terrain... {nextLevelPct}%");
-                                nextLevelPct += 10;
+                                ApplyLevel(wx, stageTargetY, wz, LEVEL_RADIUS, modified);
                             }
+
+                            ops++;
+                            if (totalLevelOps > 0)
+                            {
+                                int pct = Mathf.FloorToInt((ops * 100f) / totalLevelOps);
+                                if (pct >= nextLevelPct)
+                                {
+                                    ShowProgress($"Leveling terrain... {nextLevelPct}%");
+                                    nextLevelPct += 10;
+                                }
+                            }
+                            if (ops % OPS_PER_FRAME == 0) yield return null;
                         }
-                        if (ops % OPS_PER_FRAME == 0) yield return null;
                     }
+
+                    for (int ix = 0; ix <= edgeStepsX; ix++)
+                    {
+                        float lx = (ix == edgeStepsX) ? innerMaxX : innerMinX + ix * edgeSampleStep;
+                        for (int iz = 0; iz <= edgeStepsZ; iz++)
+                        {
+                            float lz = (iz == edgeStepsZ) ? innerMaxZ : innerMinZ + iz * edgeSampleStep;
+                            if (!IsInEdgeBand(lx, lz, innerMinX, innerMaxX, innerMinZ, innerMaxZ, EDGE_BAND_WIDTH))
+                                continue;
+
+                            float ldx2 = lx - origin.x;
+                            float ldz2 = lz - origin.z;
+                            float wx = origin.x + ldx2 * cosR + ldz2 * sinR;
+                            float wz = origin.z - ldx2 * sinR + ldz2 * cosR;
+
+                            float h = SampleHeight(wx, wz, stageTargetY);
+                            if (h >= stageTargetY - EDGE_RAISE_EPSILON)
+                                continue;
+
+                            ApplyLevel(wx, stageTargetY, wz, effectiveEdgeRadius, modified);
+                            ops++;
+                            if (totalLevelOps > 0)
+                            {
+                                int pct = Mathf.FloorToInt((ops * 100f) / totalLevelOps);
+                                if (pct >= nextLevelPct)
+                                {
+                                    ShowProgress($"Leveling terrain... {nextLevelPct}%");
+                                    nextLevelPct += 10;
+                                }
+                            }
+                            if (ops % OPS_PER_FRAME == 0) yield return null;
+                        }
+                    }
+
+                    if (pass < totalPasses)
+                        yield return new WaitForSeconds(0.1f);
                 }
 
-                for (int ix = 0; ix <= edgeStepsX; ix++)
-                {
-                    float lx = (ix == edgeStepsX) ? innerMaxX : innerMinX + ix * edgeSampleStep;
-                    for (int iz = 0; iz <= edgeStepsZ; iz++)
-                    {
-                        float lz = (iz == edgeStepsZ) ? innerMaxZ : innerMinZ + iz * edgeSampleStep;
-                        if (!IsInEdgeBand(lx, lz, innerMinX, innerMaxX, innerMinZ, innerMaxZ, EDGE_BAND_WIDTH))
-                            continue;
-
-                        float ldx2 = lx - origin.x;
-                        float ldz2 = lz - origin.z;
-                        float wx = origin.x + ldx2 * cosR + ldz2 * sinR;
-                        float wz = origin.z - ldx2 * sinR + ldz2 * cosR;
-
-                        float h = SampleHeight(wx, wz, targetY);
-                        if (h >= targetY - EDGE_RAISE_EPSILON)
-                            continue;
-
-                        ApplyLevel(wx, targetY, wz, effectiveEdgeRadius, modified);
-                        ops++;
-                        if (totalLevelOps > 0)
-                        {
-                            int pct = Mathf.FloorToInt((ops * 100f) / totalLevelOps);
-                            if (pct >= nextLevelPct)
-                            {
-                                ShowProgress($"Leveling terrain... {nextLevelPct}%");
-                                nextLevelPct += 10;
-                            }
-                        }
-                        if (ops % OPS_PER_FRAME == 0) yield return null;
-                    }
-                }
-
-                if (pass < totalPasses)
-                    yield return new WaitForSeconds(0.1f);
+                if (stage < stageCount)
+                    yield return new WaitForSeconds(0.08f);
             }
 
             // Spike suppression: scan the extended area in local space, rotate, check/fix.
@@ -409,6 +455,151 @@ namespace ValheimFloorPlan
         }
 
         // ── helpers ──────────────────────────────────────────────────────────
+
+        /// <summary>
+        /// Rates terrain edge quality around the modified footprint before building.
+        /// Used by preview mode to warn when edge irregularity is likely to cause tears/spikes.
+        /// </summary>
+        public static EdgeRiskLevel EvaluateEdgeRisk(
+            FloorPlan plan,
+            Vector3 origin,
+            float rotationDeg,
+            out float edgeRelief,
+            out float irregularity,
+            out float maxEdgeStep,
+            List<Vector3>? hotspotPoints = null)
+        {
+            GetBounds(plan, origin, INNER_PAD, 0f,
+                out float innerMinX, out float innerMaxX,
+                out float innerMinZ, out float innerMaxZ);
+
+            float outerMinX = innerMinX - LEVEL_RADIUS;
+            float outerMaxX = innerMaxX + LEVEL_RADIUS;
+            float outerMinZ = innerMinZ - LEVEL_RADIUS;
+            float outerMaxZ = innerMaxZ + LEVEL_RADIUS;
+
+            float cosR = Mathf.Cos(rotationDeg * Mathf.Deg2Rad);
+            float sinR = Mathf.Sin(rotationDeg * Mathf.Deg2Rad);
+
+            float edgeMinY = float.MaxValue;
+            float edgeMaxY = float.MinValue;
+            float roughAccum = 0f;
+            int roughCount = 0;
+            float localMaxEdgeStep = 0f;
+            List<EdgeRiskHotspot>? hotspots = hotspotPoints != null ? new List<EdgeRiskHotspot>(64) : null;
+
+            const float edgeSampleStep = 0.75f;
+            const float crossProbeDist = 0.8f;
+
+            SampleEdgeRiskLine(outerMinX, outerMinZ, outerMinX, outerMaxZ, 1f, 0f);   // west
+            SampleEdgeRiskLine(outerMaxX, outerMinZ, outerMaxX, outerMaxZ, -1f, 0f);  // east
+            SampleEdgeRiskLine(outerMinX, outerMinZ, outerMaxX, outerMinZ, 0f, 1f);   // south
+            SampleEdgeRiskLine(outerMinX, outerMaxZ, outerMaxX, outerMaxZ, 0f, -1f);  // north
+
+            if (edgeMaxY == float.MinValue || edgeMinY == float.MaxValue || roughCount == 0)
+            {
+                edgeRelief = 0f;
+                irregularity = 0f;
+                maxEdgeStep = 0f;
+                return EdgeRiskLevel.Low;
+            }
+
+            edgeRelief = edgeMaxY - edgeMinY;
+            irregularity = roughAccum / roughCount;
+            maxEdgeStep = localMaxEdgeStep;
+
+            if (hotspotPoints != null)
+            {
+                hotspotPoints.Clear();
+                if (hotspots != null && hotspots.Count > 0)
+                {
+                    hotspots.Sort((a, b) => b.Score.CompareTo(a.Score));
+                    const float minSpacing = 1.6f;
+                    const int maxHotspots = 12;
+
+                    for (int i = 0; i < hotspots.Count && hotspotPoints.Count < maxHotspots; i++)
+                    {
+                        Vector3 p = hotspots[i].Position;
+                        bool tooClose = false;
+                        for (int j = 0; j < hotspotPoints.Count; j++)
+                        {
+                            Vector3 q = hotspotPoints[j];
+                            float dx = p.x - q.x;
+                            float dz = p.z - q.z;
+                            if ((dx * dx + dz * dz) < (minSpacing * minSpacing))
+                            {
+                                tooClose = true;
+                                break;
+                            }
+                        }
+
+                        if (!tooClose)
+                            hotspotPoints.Add(p);
+                    }
+                }
+            }
+
+            if (maxEdgeStep >= 1.4f || irregularity >= 0.55f || edgeRelief >= 5.0f)
+                return EdgeRiskLevel.High;
+            if (maxEdgeStep >= 0.9f || irregularity >= 0.32f || edgeRelief >= 3.0f)
+                return EdgeRiskLevel.Medium;
+            return EdgeRiskLevel.Low;
+
+            void SampleEdgeRiskLine(float x0, float z0, float x1, float z1, float inNx, float inNz)
+            {
+                float dx = x1 - x0;
+                float dz = z1 - z0;
+                float len = Mathf.Sqrt(dx * dx + dz * dz);
+                int steps = Mathf.Max(1, Mathf.CeilToInt(len / edgeSampleStep));
+
+                for (int i = 0; i <= steps; i++)
+                {
+                    float t = i / (float)steps;
+                    float lx = Mathf.Lerp(x0, x1, t);
+                    float lz = Mathf.Lerp(z0, z1, t);
+
+                    float ex = lx - origin.x;
+                    float ez = lz - origin.z;
+                    float wx = origin.x + ex * cosR + ez * sinR;
+                    float wz = origin.z - ex * sinR + ez * cosR;
+
+                    float inLx = lx + inNx * crossProbeDist;
+                    float inLz = lz + inNz * crossProbeDist;
+                    float inDx = inLx - origin.x;
+                    float inDz = inLz - origin.z;
+                    float inWx = origin.x + inDx * cosR + inDz * sinR;
+                    float inWz = origin.z - inDx * sinR + inDz * cosR;
+
+                    float outLx = lx - inNx * crossProbeDist;
+                    float outLz = lz - inNz * crossProbeDist;
+                    float outDx = outLx - origin.x;
+                    float outDz = outLz - origin.z;
+                    float outWx = origin.x + outDx * cosR + outDz * sinR;
+                    float outWz = origin.z - outDx * sinR + outDz * cosR;
+
+                    float hEdge = SampleHeight(wx, wz, origin.y);
+                    float hIn = SampleHeight(inWx, inWz, hEdge);
+                    float hOut = SampleHeight(outWx, outWz, hEdge);
+
+                    if (hEdge < edgeMinY) edgeMinY = hEdge;
+                    if (hEdge > edgeMaxY) edgeMaxY = hEdge;
+
+                    float step = Mathf.Abs(hIn - hOut);
+                    if (step > localMaxEdgeStep) localMaxEdgeStep = step;
+
+                    float localRough = Mathf.Abs(hEdge - (hIn + hOut) * 0.5f);
+                    roughAccum += localRough;
+                    roughCount++;
+
+                    if (hotspots != null)
+                    {
+                        float score = step + localRough * 1.35f;
+                        if (score >= 0.62f && (step >= 0.5f || localRough >= 0.24f))
+                            hotspots.Add(new EdgeRiskHotspot(new Vector3(wx, hEdge, wz), score));
+                    }
+                }
+            }
+        }
 
         /// <summary>
         /// Returns the inner pad bounding rectangle (the area actually leveled).
