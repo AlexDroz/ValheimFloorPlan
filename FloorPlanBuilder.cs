@@ -22,6 +22,9 @@ namespace ValheimFloorPlan
         private const float ORIGIN_MARKER_LIFT = 0.45f;
         private const float TEAR_MARKER_RADIUS = 0.6f;
         private const float TEAR_MARKER_LIFT = 0.12f;
+        private const float TEAR_RING_RADIUS = 0.9f;
+        private const float TEAR_RING_LIFT = 0.03f;
+        private const int TEAR_RING_SEGMENTS = 28;
         private const float TEAR_POINTER_MAX_DIST = 150f;
 
         // ZDO key written on every piece we place.  Used by Undo() to find VFP pieces
@@ -53,10 +56,14 @@ namespace ValheimFloorPlan
         private bool          _tearRepairActive = false;
         private bool          _tearRepairBusy = false;
         private bool          _tearRepairHasHit = false;
+        private bool          _tearRepairCanApply = false;
+        private string        _tearRepairRejectReason = string.Empty;
         private Vector3       _tearRepairHitPoint = Vector3.zero;
+        private float         _tearRepairNextHintAt = 0f;
         private GameObject?   _tearRepairGo = null;
         private LineRenderer? _tearRepairRay = null;
         private LineRenderer? _tearRepairMarker = null;
+        private LineRenderer? _tearRepairRing = null;
 
         private void Awake()
         {
@@ -222,14 +229,19 @@ namespace ValheimFloorPlan
             _tearRepairActive = true;
             _tearRepairBusy = false;
             _tearRepairHasHit = false;
+            _tearRepairCanApply = false;
+            _tearRepairRejectReason = string.Empty;
             _tearRepairHitPoint = Vector3.zero;
+            _tearRepairNextHintAt = Time.time + 0.5f;
 
             _tearRepairGo = new GameObject("VFP_TearRepair");
             _tearRepairRay = MakeLine(_tearRepairGo, new Color(1f, 0.65f, 0.12f, 0.95f), 0.045f, 2);
             _tearRepairMarker = MakeLine(_tearRepairGo, new Color(1f, 0.25f, 0.08f, 0.95f), 0.095f, 7);
+            _tearRepairRing = MakeLine(_tearRepairGo, new Color(1f, 0.22f, 0.05f, 0.95f), 0.065f, TEAR_RING_SEGMENTS + 1);
+            _tearRepairRing.loop = true;
 
             Player.m_localPlayer?.Message(MessageHud.MessageType.Center,
-                $"ValheimFloorPlan: Tear repair ON. Point with mouse + Left-click to blend. RMB/{ValheimFloorPlanPlugin.TearRepairCancelKey} exits.");
+                $"ValheimFloorPlan: Tear repair ON. Aim with mouse. Green marker = valid target. Press {ValheimFloorPlanPlugin.TearRepairApplyKey} to fix. Red marker = invalid target. RMB/{ValheimFloorPlanPlugin.TearRepairCancelKey} exits.");
         }
 
         private void DeactivateTearRepairMode(bool showMessage)
@@ -237,9 +249,13 @@ namespace ValheimFloorPlan
             _tearRepairActive = false;
             _tearRepairBusy = false;
             _tearRepairHasHit = false;
+            _tearRepairCanApply = false;
+            _tearRepairRejectReason = string.Empty;
             _tearRepairHitPoint = Vector3.zero;
+            _tearRepairNextHintAt = 0f;
             _tearRepairRay = null;
             _tearRepairMarker = null;
+            _tearRepairRing = null;
             if (_tearRepairGo != null)
             {
                 Destroy(_tearRepairGo);
@@ -362,6 +378,11 @@ namespace ValheimFloorPlan
             if (cam == null)
             {
                 _tearRepairHasHit = false;
+                _tearRepairCanApply = false;
+                _tearRepairRejectReason = "Camera not available.";
+                HideTearMarker(_tearRepairMarker, pointerHint: player.transform.position + player.transform.forward * 2f);
+                HideTearRing(_tearRepairRing, pointerHint: player.transform.position + player.transform.forward * 2f);
+                SetIndicatorColor(_tearRepairMarker, _tearRepairRing, _tearRepairRay, valid: false);
                 return;
             }
 
@@ -376,11 +397,43 @@ namespace ValheimFloorPlan
             if (_tearRepairHasHit)
             {
                 _tearRepairHitPoint = hit.point;
+                _tearRepairCanApply = TerrainLeveler.IsRepairTargetValid(_tearRepairHitPoint, out _tearRepairRejectReason);
                 SetTearMarker(_tearRepairMarker, _tearRepairHitPoint);
+                SetTearRing(_tearRepairRing, _tearRepairHitPoint);
+                SetIndicatorColor(_tearRepairMarker, _tearRepairRing, _tearRepairRay, valid: _tearRepairCanApply);
+
+                if (!_tearRepairBusy && Time.time >= _tearRepairNextHintAt)
+                {
+                    if (_tearRepairCanApply)
+                    {
+                        ValheimFloorPlanPlugin.ShowProgressMessage(
+                            $"Target locked. Press {ValheimFloorPlanPlugin.TearRepairApplyKey} to repair. RMB/{ValheimFloorPlanPlugin.TearRepairCancelKey} to exit.");
+                    }
+                    else
+                    {
+                        ValheimFloorPlanPlugin.ShowProgressMessage(
+                            $"Invalid target: {_tearRepairRejectReason}");
+                    }
+                    _tearRepairNextHintAt = Time.time + 2.0f;
+                }
+            }
+            else
+            {
+                _tearRepairCanApply = false;
+                _tearRepairRejectReason = "No terrain under pointer.";
+                HideTearMarker(_tearRepairMarker, lineEnd);
+                HideTearRing(_tearRepairRing, lineEnd);
+                SetIndicatorColor(_tearRepairMarker, _tearRepairRing, _tearRepairRay, valid: false);
             }
 
-            if (!_tearRepairBusy && _tearRepairHasHit && !uiOpen && UnityEngine.Input.GetMouseButtonDown(0))
-                StartCoroutine(RepairSelectedTear());
+            if (!_tearRepairBusy && !uiOpen && IsPreviewKeyDown(ValheimFloorPlanPlugin.TearRepairApplyKey))
+            {
+                if (_tearRepairHasHit && _tearRepairCanApply)
+                    StartCoroutine(RepairSelectedTear());
+                else
+                    player.Message(ValheimFloorPlanPlugin.ProgressMessageType,
+                        $"ValheimFloorPlan: {_tearRepairRejectReason}");
+            }
         }
 
         private IEnumerator RepairSelectedTear()
@@ -389,7 +442,7 @@ namespace ValheimFloorPlan
             Vector3 target = _tearRepairHitPoint;
 
             ValheimFloorPlanPlugin.ShowProgressMessage(
-                $"Repairing tear at ({target.x:F1}, {target.z:F1})...");
+                $"Repairing terrain edge at ({target.x:F1}, {target.z:F1})...");
             yield return StartCoroutine(TerrainLeveler.RepairTearAtPoint(target));
             ValheimFloorPlanPlugin.ShowProgressMessage("Tear repair complete.");
 
@@ -572,6 +625,72 @@ namespace ValheimFloorPlan
             pts[5] = center;
             pts[6] = center + new Vector3(0f, 0f, -TEAR_MARKER_RADIUS);
             lr.SetPositions(pts);
+        }
+
+        private static void SetTearRing(LineRenderer? lr, Vector3 point)
+        {
+            if (lr == null) return;
+
+            lr.positionCount = TEAR_RING_SEGMENTS + 1;
+            Vector3 center = point + Vector3.up * TEAR_RING_LIFT;
+            for (int i = 0; i <= TEAR_RING_SEGMENTS; i++)
+            {
+                float t = (i / (float)TEAR_RING_SEGMENTS) * Mathf.PI * 2f;
+                float x = Mathf.Cos(t) * TEAR_RING_RADIUS;
+                float z = Mathf.Sin(t) * TEAR_RING_RADIUS;
+                lr.SetPosition(i, center + new Vector3(x, 0f, z));
+            }
+        }
+
+        private static void HideTearMarker(LineRenderer? lr, Vector3 pointerHint)
+        {
+            if (lr == null) return;
+            Vector3 p = pointerHint + Vector3.up * 0.02f;
+            var pts = new Vector3[7];
+            for (int i = 0; i < pts.Length; i++)
+                pts[i] = p;
+            lr.SetPositions(pts);
+        }
+
+        private static void HideTearRing(LineRenderer? lr, Vector3 pointerHint)
+        {
+            if (lr == null) return;
+            Vector3 p = pointerHint + Vector3.up * 0.02f;
+            lr.positionCount = TEAR_RING_SEGMENTS + 1;
+            for (int i = 0; i <= TEAR_RING_SEGMENTS; i++)
+                lr.SetPosition(i, p);
+        }
+
+        private static void SetIndicatorColor(
+            LineRenderer? marker,
+            LineRenderer? ring,
+            LineRenderer? ray,
+            bool valid)
+        {
+            Color color = valid
+                ? new Color(0.18f, 1f, 0.26f, 0.95f)
+                : new Color(1f, 0.22f, 0.05f, 0.95f);
+
+            if (marker != null)
+            {
+                marker.startColor = color;
+                marker.endColor = color;
+            }
+
+            if (ring != null)
+            {
+                ring.startColor = color;
+                ring.endColor = color;
+            }
+
+            if (ray != null)
+            {
+                Color rayColor = valid
+                    ? new Color(0.95f, 0.95f, 0.3f, 0.9f)
+                    : new Color(1f, 0.45f, 0.2f, 0.9f);
+                ray.startColor = rayColor;
+                ray.endColor = rayColor;
+            }
         }
 
         /// <summary>

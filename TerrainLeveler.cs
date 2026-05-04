@@ -33,8 +33,17 @@ namespace ValheimFloorPlan
         private const float TEAR_REPAIR_SAMPLE_RADIUS = 1.2f;
         private const float TEAR_REPAIR_MAIN_RADIUS = 1.1f;
         private const float TEAR_REPAIR_BLEND_RADIUS = 0.7f;
-        private const float TEAR_REPAIR_MAX_RAISE = 0.08f;
+        private const float TEAR_REPAIR_SECOND_BLEND_RADIUS = 1.05f;
+        private const float TEAR_REPAIR_MAX_LOWER = 0.45f;
         private const float TEAR_REPAIR_SPIKE_THRESHOLD = 0.28f;
+        private const float TEAR_REPAIR_CUT_RADIUS = 0.42f;
+        private const float TEAR_REPAIR_RAISE_TOLERANCE = 0.01f;
+        private const float TEAR_REPAIR_MIN_RELIEF = 0.08f;
+        private const float TEAR_REPAIR_EDGE_RADIUS = 0.48f;
+        private const float TEAR_REPAIR_EDGE_LENGTH = 1.25f;
+        private const float TEAR_REPAIR_EDGE_STEP = 0.32f;
+        private const float TEAR_REPAIR_EDGE_MAX_RAISE = 0.14f;
+        private const float TEAR_REPAIR_EDGE_MEDIAN_HEADROOM = 0.08f;
         private const int   INNER_PAD     = 2;      // cells of buffer around plan bounding box
 
         private const float WARN_RAISE   = 6f;   // warn in log above this height range
@@ -102,7 +111,8 @@ namespace ValheimFloorPlan
                 for (int iz = 0; iz <= preStepsZ; iz++)
                 {
                     float lz = (iz == preStepsZ) ? sampleMaxZ : sampleMinZ + iz * preSampleStep;
-                    float ldx = lx - origin.x, ldz = lz - origin.z;
+                    float ldx = lx - origin.x;
+                    float ldz = lz - origin.z;
                     float wx = origin.x + ldx * cosR + ldz * sinR;
                     float wz = origin.z - ldx * sinR + ldz * cosR;
                     float h = SampleHeight(wx, wz, origin.y);
@@ -110,16 +120,23 @@ namespace ValheimFloorPlan
                     if (h < minY) minY = h;
                 }
             }
-            if (maxY == float.MinValue) { maxY = origin.y; minY = origin.y; }
 
-            float range   = maxY - minY;
+            if (maxY == float.MinValue)
+            {
+                maxY = origin.y;
+                minY = origin.y;
+            }
+
+            float range = maxY - minY;
             float targetY = maxY;
-            TargetLevelY  = targetY;
+            TargetLevelY = targetY;
 
             if (range > WARN_RAISE)
+            {
                 ValheimFloorPlanPlugin.Log.LogWarning(
                     $"[TerrainLeveler] Footprint height range {range:F1}m — steep ground," +
                     " cliff-edge tears may appear on the downhill side.");
+            }
 
             ValheimFloorPlanPlugin.Log.LogInfo(
                 $"[TerrainLeveler] Raising pad to Y={targetY:F2}  minY={minY:F2}  range={range:F1}m" +
@@ -157,8 +174,6 @@ namespace ValheimFloorPlan
 
             for (int pass = 1; pass <= totalPasses; pass++)
             {
-                // Edge pass must never use a stronger radius than the main pass,
-                // otherwise small configured stamp radii can produce a raised shell.
                 float effectiveEdgeRadius = Mathf.Min(EDGE_LEVEL_RADIUS, LEVEL_RADIUS);
 
                 for (int ix = 0; ix <= stepsX; ix++)
@@ -167,7 +182,8 @@ namespace ValheimFloorPlan
                     for (int iz = 0; iz <= stepsZ; iz++)
                     {
                         float lz = (iz == stepsZ) ? innerMaxZ : innerMinZ + iz * levelSampleStep;
-                        float ldx2 = lx - origin.x, ldz2 = lz - origin.z;
+                        float ldx2 = lx - origin.x;
+                        float ldz2 = lz - origin.z;
                         float wx = origin.x + ldx2 * cosR + ldz2 * sinR;
                         float wz = origin.z - ldx2 * sinR + ldz2 * cosR;
                         ApplyLevel(wx, targetY, wz, LEVEL_RADIUS, modified);
@@ -185,8 +201,6 @@ namespace ValheimFloorPlan
                     }
                 }
 
-                // Refine only near the pad perimeter with a tighter sample step to
-                // reduce V-shaped trenching artifacts at uphill/downhill edges.
                 for (int ix = 0; ix <= edgeStepsX; ix++)
                 {
                     float lx = (ix == edgeStepsX) ? innerMaxX : innerMinX + ix * edgeSampleStep;
@@ -196,12 +210,11 @@ namespace ValheimFloorPlan
                         if (!IsInEdgeBand(lx, lz, innerMinX, innerMaxX, innerMinZ, innerMaxZ, EDGE_BAND_WIDTH))
                             continue;
 
-                        float ldx2 = lx - origin.x, ldz2 = lz - origin.z;
+                        float ldx2 = lx - origin.x;
+                        float ldz2 = lz - origin.z;
                         float wx = origin.x + ldx2 * cosR + ldz2 * sinR;
                         float wz = origin.z - ldx2 * sinR + ldz2 * cosR;
 
-                        // Edge refinement should fill low pockets; avoid re-leveling
-                        // already-high points which can amplify edge artifacts.
                         float h = SampleHeight(wx, wz, targetY);
                         if (h >= targetY - EDGE_RAISE_EPSILON)
                             continue;
@@ -275,45 +288,54 @@ namespace ValheimFloorPlan
         }
 
         /// <summary>
-        /// Performs a local blend pass around a user-selected tear point.
-        /// This raises/levels immediate geometry without touching a large area.
+        /// Checks whether a selected point has a safe tear-like slope profile.
+        /// Used by UI to drive valid/invalid target indicator state.
+        /// </summary>
+        public static bool IsRepairTargetValid(Vector3 point, out string reason)
+        {
+            float centerY = SampleHeight(point.x, point.z, point.y);
+            var samples = CollectRepairSamples(point, centerY, out _, out _, out _);
+            if (samples.Count == 0)
+            {
+                reason = "Unable to sample terrain.";
+                return false;
+            }
+
+            samples.Sort();
+            float minY = samples[0];
+            float maxY = samples[samples.Count - 1];
+            float relief = maxY - minY;
+
+            // Accept any slope including steep/near-vertical faces — those are the actual tear targets.
+            // Only reject completely flat terrain where there is nothing to smooth.
+            if (relief < TEAR_REPAIR_MIN_RELIEF)
+            {
+                reason = "Area is too flat — no tear detected here.";
+                return false;
+            }
+
+            reason = string.Empty;
+            return true;
+        }
+
+        /// <summary>
+        /// Repairs torn trench faces around a selected point.
+        /// Includes a controlled edge-anchored bridge pass for cases where one side has no backing terrain.
         /// </summary>
         public static IEnumerator RepairTearAtPoint(Vector3 point)
         {
             var modified = new HashSet<TerrainComp>();
 
-            // Use robust neighborhood statistics so a few outlier heights cannot push
-            // the repair target upward into a new spike.
             float centerY = SampleHeight(point.x, point.z, point.y);
-            var samples = new List<float>(16);
-            var sampleOffsets = new Vector2[]
-            {
-                new Vector2(0f, 0f),
-                new Vector2( TEAR_REPAIR_SAMPLE_RADIUS, 0f),
-                new Vector2(-TEAR_REPAIR_SAMPLE_RADIUS, 0f),
-                new Vector2(0f,  TEAR_REPAIR_SAMPLE_RADIUS),
-                new Vector2(0f, -TEAR_REPAIR_SAMPLE_RADIUS),
-                new Vector2( 0.85f,  0.85f),
-                new Vector2( 0.85f, -0.85f),
-                new Vector2(-0.85f,  0.85f),
-                new Vector2(-0.85f, -0.85f),
-            };
-
-            foreach (var o in sampleOffsets)
-                samples.Add(SampleHeight(point.x + o.x, point.z + o.y, centerY));
-
+            Vector2 slopeDir;
+            float ridgeY;
+            float troughY;
+            var samples = CollectRepairSamples(point, centerY, out slopeDir, out ridgeY, out troughY);
             samples.Sort();
+
             float medianY = samples.Count > 0 ? samples[samples.Count / 2] : centerY;
-
-            // Prefer lowering/softening over raising: small raise cap avoids creating
-            // the exact rocky peaks this tool is trying to remove.
-            float desiredY = Mathf.Lerp(centerY, medianY, 0.7f);
-            float maxAllowedY = centerY + TEAR_REPAIR_MAX_RAISE;
-            float easedY = Mathf.Min(desiredY, maxAllowedY);
-
-            // If current point already appears spike-like, force a downward correction.
-            if (centerY > medianY + TEAR_REPAIR_SPIKE_THRESHOLD)
-                easedY = Mathf.Min(easedY, medianY + 0.05f);
+            float lowerTargetY = Mathf.Min(centerY, medianY + 0.03f);
+            lowerTargetY = Mathf.Max(centerY - TEAR_REPAIR_MAX_LOWER, lowerTargetY);
 
             var passOffsets = new Vector2[]
             {
@@ -325,9 +347,10 @@ namespace ValheimFloorPlan
             };
 
             int opCount = 0;
+
             foreach (var o in passOffsets)
             {
-                ApplyLevel(point.x + o.x, easedY, point.z + o.y, TEAR_REPAIR_MAIN_RADIUS, modified, smooth: true);
+                ApplySmooth(point.x + o.x, lowerTargetY, point.z + o.y, TEAR_REPAIR_MAIN_RADIUS, modified);
                 opCount++;
                 if (opCount % OPS_PER_FRAME == 0) yield return null;
             }
@@ -336,13 +359,53 @@ namespace ValheimFloorPlan
 
             foreach (var o in passOffsets)
             {
-                ApplySmooth(point.x + o.x, easedY, point.z + o.y, TEAR_REPAIR_BLEND_RADIUS, modified);
+                ApplySmooth(point.x + o.x, lowerTargetY, point.z + o.y, TEAR_REPAIR_BLEND_RADIUS, modified);
+                opCount++;
+                if (opCount % OPS_PER_FRAME == 0) yield return null;
+            }
+
+            yield return null;
+
+            int bridgeOps = ApplyEdgeBridge(point, lowerTargetY, slopeDir, ridgeY, troughY, modified);
+            opCount += bridgeOps;
+
+            if (opCount % OPS_PER_FRAME == 0) yield return null;
+
+            yield return null;
+
+            int cutOps = 0;
+            foreach (var o in passOffsets)
+            {
+                float sx = point.x + o.x;
+                float sz = point.z + o.y;
+                float currentY = SampleHeight(sx, sz, lowerTargetY);
+                float localMedianY = GetLocalMedianHeight(sx, sz, currentY, 0.6f);
+                if (currentY <= localMedianY + TEAR_REPAIR_SPIKE_THRESHOLD)
+                    continue;
+
+                float cutY = Mathf.Min(currentY - 0.03f, localMedianY + 0.02f);
+                cutY = Mathf.Max(lowerTargetY, cutY);
+
+                if (!CanLowerWithoutRaise(sx, sz, cutY, TEAR_REPAIR_CUT_RADIUS, currentY))
+                    continue;
+
+                ApplyLevel(sx, cutY, sz, TEAR_REPAIR_CUT_RADIUS, modified, smooth: true);
+                cutOps++;
+                opCount++;
+                if (opCount % OPS_PER_FRAME == 0) yield return null;
+            }
+
+            yield return null;
+
+            foreach (var o in passOffsets)
+            {
+                ApplySmooth(point.x + o.x, lowerTargetY, point.z + o.y, TEAR_REPAIR_SECOND_BLEND_RADIUS, modified);
                 opCount++;
                 if (opCount % OPS_PER_FRAME == 0) yield return null;
             }
 
             ValheimFloorPlanPlugin.Log.LogInfo(
-                $"[TerrainLeveler] Tear repair at {point} -> centerY={centerY:F2}, medianY={medianY:F2}, targetY={easedY:F2}, ops={opCount}, chunks={modified.Count}.");
+                $"[TerrainLeveler] Tear repair at {point} -> centerY={centerY:F2}, medianY={medianY:F2}, lowerTargetY={lowerTargetY:F2}, bridgeOps={bridgeOps}, cutOps={cutOps}, ops={opCount}, chunks={modified.Count}.");
         }
 
         // ── helpers ──────────────────────────────────────────────────────────
@@ -553,6 +616,146 @@ namespace ValheimFloorPlan
                     Vector3.down, out var hit, 500f, 1 << 11))
                 return hit.point.y;
             return referenceY;
+        }
+
+        private static List<float> CollectRepairSamples(
+            Vector3 point,
+            float referenceY,
+            out Vector2 slopeDir,
+            out float ridgeY,
+            out float troughY)
+        {
+            var samples = new List<float>(16);
+            var sampleOffsets = new Vector2[]
+            {
+                new Vector2(0f, 0f),
+                new Vector2( TEAR_REPAIR_SAMPLE_RADIUS, 0f),
+                new Vector2(-TEAR_REPAIR_SAMPLE_RADIUS, 0f),
+                new Vector2(0f,  TEAR_REPAIR_SAMPLE_RADIUS),
+                new Vector2(0f, -TEAR_REPAIR_SAMPLE_RADIUS),
+                new Vector2( 0.85f,  0.85f),
+                new Vector2( 0.85f, -0.85f),
+                new Vector2(-0.85f,  0.85f),
+                new Vector2(-0.85f, -0.85f),
+            };
+
+            slopeDir = Vector2.zero;
+            ridgeY = float.MinValue;
+            troughY = float.MaxValue;
+            Vector2 ridgeOffset = Vector2.zero;
+            Vector2 troughOffset = Vector2.zero;
+
+            foreach (var o in sampleOffsets)
+            {
+                float h = SampleHeight(point.x + o.x, point.z + o.y, referenceY);
+                samples.Add(h);
+
+                if (h > ridgeY)
+                {
+                    ridgeY = h;
+                    ridgeOffset = o;
+                }
+
+                if (h < troughY)
+                {
+                    troughY = h;
+                    troughOffset = o;
+                }
+            }
+
+            Vector2 delta = troughOffset - ridgeOffset;
+            if (delta.sqrMagnitude > 0.0001f)
+                slopeDir = delta.normalized;
+            else
+                slopeDir = Vector2.right;
+
+            return samples;
+        }
+
+        private static int ApplyEdgeBridge(
+            Vector3 point,
+            float anchorY,
+            Vector2 slopeDir,
+            float ridgeY,
+            float troughY,
+            HashSet<TerrainComp> modified)
+        {
+            float relief = Mathf.Max(0f, ridgeY - troughY);
+            if (relief < TEAR_REPAIR_MIN_RELIEF)
+                return 0;
+
+            float fillDepth = Mathf.Clamp(relief * 0.45f, 0.14f, 0.55f);
+            float endY = anchorY - fillDepth;
+            int steps = Mathf.Clamp(Mathf.CeilToInt(TEAR_REPAIR_EDGE_LENGTH / TEAR_REPAIR_EDGE_STEP), 2, 6);
+            int ops = 0;
+
+            for (int i = 0; i <= steps; i++)
+            {
+                float t = i / (float)steps;
+                float distance = t * TEAR_REPAIR_EDGE_LENGTH;
+                float px = point.x + slopeDir.x * distance;
+                float pz = point.z + slopeDir.y * distance;
+
+                float targetY = Mathf.Lerp(anchorY, endY, t);
+                float currentY = SampleHeight(px, pz, anchorY);
+                float localMedianY = GetLocalMedianHeight(px, pz, currentY, 0.45f);
+
+                // Hard anti-spike clamps: never rise far above local terrain consensus.
+                float maxRaiseY = currentY + TEAR_REPAIR_EDGE_MAX_RAISE;
+                float maxMedianY = localMedianY + TEAR_REPAIR_EDGE_MEDIAN_HEADROOM;
+                targetY = Mathf.Min(targetY, maxRaiseY);
+                targetY = Mathf.Min(targetY, maxMedianY);
+                targetY = Mathf.Min(targetY, anchorY + 0.04f);
+
+                float radius = Mathf.Lerp(TEAR_REPAIR_EDGE_RADIUS * 0.85f, TEAR_REPAIR_EDGE_RADIUS, t);
+                ApplyLevel(px, targetY, pz, radius, modified, smooth: true);
+                ops++;
+            }
+
+            return ops;
+        }
+
+        private static float GetLocalMedianHeight(float x, float z, float referenceY, float radius)
+        {
+            var vals = new List<float>(9)
+            {
+                SampleHeight(x, z, referenceY),
+                SampleHeight(x + radius, z, referenceY),
+                SampleHeight(x - radius, z, referenceY),
+                SampleHeight(x, z + radius, referenceY),
+                SampleHeight(x, z - radius, referenceY),
+                SampleHeight(x + radius, z + radius, referenceY),
+                SampleHeight(x + radius, z - radius, referenceY),
+                SampleHeight(x - radius, z + radius, referenceY),
+                SampleHeight(x - radius, z - radius, referenceY),
+            };
+            vals.Sort();
+            return vals[vals.Count / 2];
+        }
+
+        private static bool CanLowerWithoutRaise(float x, float z, float targetY, float radius, float referenceY)
+        {
+            var probes = new Vector2[]
+            {
+                new Vector2(0f, 0f),
+                new Vector2(-radius, -radius),
+                new Vector2( radius, -radius),
+                new Vector2(-radius,  radius),
+                new Vector2( radius,  radius),
+                new Vector2(-radius, 0f),
+                new Vector2( radius, 0f),
+                new Vector2(0f, -radius),
+                new Vector2(0f,  radius),
+            };
+
+            for (int i = 0; i < probes.Length; i++)
+            {
+                float h = SampleHeight(x + probes[i].x, z + probes[i].y, referenceY);
+                if (targetY > h + TEAR_REPAIR_RAISE_TOLERANCE)
+                    return false;
+            }
+
+            return true;
         }
 
         private static void ShowProgress(string message)

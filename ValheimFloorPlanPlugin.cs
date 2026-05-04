@@ -38,6 +38,7 @@ namespace ValheimFloorPlan
         internal static KeyCode PreviewRotateRightKey { get; private set; } = KeyCode.E;
         internal static KeyCode PreviewCancelKey { get; private set; } = KeyCode.Escape;
         internal static KeyCode PreviewFineAdjustKey { get; private set; } = KeyCode.LeftShift;
+        internal static KeyCode TearRepairApplyKey { get; private set; } = KeyCode.E;
         internal static KeyCode TearRepairCancelKey { get; private set; } = KeyCode.Escape;
 
         private ConfigEntry<string> _vfpFilePath = null!;
@@ -63,6 +64,7 @@ namespace ValheimFloorPlan
         private ConfigEntry<KeyCode> _previewCancelKey = null!;
         private ConfigEntry<KeyCode> _previewFineAdjustKey = null!;
         private ConfigEntry<KeyboardShortcut> _tearRepairHotkey = null!;
+        private ConfigEntry<KeyCode> _tearRepairApplyKey = null!;
         private ConfigEntry<KeyCode> _tearRepairCancelKey = null!;
 
         private void Awake()
@@ -206,6 +208,9 @@ namespace ValheimFloorPlan
             _previewFineAdjustKey = Config.Bind(
                 "Preview", "FineAdjustKey", KeyCode.LeftShift,
                 "Hold this key for fine movement and fine rotation while previewing.");
+            _tearRepairApplyKey = Config.Bind(
+                "Repair", "TearRepairApplyKey", KeyCode.E,
+                "Key to apply tear repair at the currently pointed terrain position.");
             _tearRepairCancelKey = Config.Bind(
                 "Repair", "TearRepairCancelKey", KeyCode.Escape,
                 "Keyboard key that exits tear-repair pointer mode. Right-click also exits.");
@@ -218,6 +223,7 @@ namespace ValheimFloorPlan
             _previewRotateRightKey.SettingChanged += (_, _) => PreviewRotateRightKey = _previewRotateRightKey.Value;
             _previewCancelKey.SettingChanged += (_, _) => PreviewCancelKey = _previewCancelKey.Value;
             _previewFineAdjustKey.SettingChanged += (_, _) => PreviewFineAdjustKey = _previewFineAdjustKey.Value;
+            _tearRepairApplyKey.SettingChanged += (_, _) => TearRepairApplyKey = _tearRepairApplyKey.Value;
             _tearRepairCancelKey.SettingChanged += (_, _) => TearRepairCancelKey = _tearRepairCancelKey.Value;
 
             PreviewMoveForwardKey = _previewMoveForwardKey.Value;
@@ -228,6 +234,7 @@ namespace ValheimFloorPlan
             PreviewRotateRightKey = _previewRotateRightKey.Value;
             PreviewCancelKey = _previewCancelKey.Value;
             PreviewFineAdjustKey = _previewFineAdjustKey.Value;
+            TearRepairApplyKey = _tearRepairApplyKey.Value;
             TearRepairCancelKey = _tearRepairCancelKey.Value;
 
             gameObject.AddComponent<FloorPlanBuilder>();
