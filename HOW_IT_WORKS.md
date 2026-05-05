@@ -25,6 +25,7 @@ On startup (`Awake`), the plugin registers BepInEx configuration entries for fil
 - **`BuildHotkey`** (default `F8`) — starts placement preview for the configured `.vfp`.
 - **`UndoHotkey`** (default `F9`) — removes all placed pieces and restores terrain.
 - **`TearRepairHotkey`** (default `F10`) — toggles terrain tear-repair pointer mode.
+- **`TerrainClipHotkey`** (default `F11`) — toggles terrain clip disc mode.
 - **`TerrainLevelPasses`** (default `2`, range `1–5`) — number of leveling passes run on the build pad.
 - **`TerrainSpikeCleanupPasses`** (default `2`, range `1–5`) — number of post-leveling spike cleanup scans.
 - **`TerrainStampRadius`** (default `3.0 m`, range `3.0–6.0`) — radius of each terrain stamp disc and outer preview footprint reach.
@@ -38,6 +39,7 @@ On startup (`Awake`), the plugin registers BepInEx configuration entries for fil
 - **`ProgressMessagePosition`** — HUD slot used for progress messages.
 - **Preview movement/rotation settings and keys** — step sizes, fine-adjust key, movement keys, rotation keys (`Q`/`R` by default), confirm key (`E` by default), and cancel key.
 - **Repair keys** — apply (`E` by default) and cancel (`Escape` by default, right-click also exits).
+- **Clip settings** — forward offset, default radius, radius step, height step, apply key (`E` by default), and cancel key (`Escape` by default, right-click also exits).
 
 `Update()` polls those hotkeys every frame and calls `FloorPlanBuilder.StartPreview` or `FloorPlanBuilder.Undo` accordingly.
 
@@ -97,8 +99,16 @@ If risk is `Medium` or `High`, risk markers are rendered in two sets:
 - Terrain hotspot markers at sampled edge trouble locations
 - Three fixed top-edge markers along the outer preview wall rim for visibility from downhill camera angles
 
+Separate from build preview, `FloorPlanBuilder` also exposes two terrain-only tools:
+- Tear repair mode (`F10`) for targeted post-build tear smoothing
+- Terrain clip mode (`F11`) for lowering terrain inside a movable flat circular disc
+
+Terrain clip mode follows the player at a configured forward offset, uses left/right arrows to resize the disc, up/down arrows to change clip height, and applies a lowering-only clip when the user presses `E`.
+
 ### 4a. Snapshot terrain
 Before any changes, `TerrainSnapshot.Capture` samples a generous bounding area around the leveled footprint and clones the raw `m_levelDelta` / `m_modifiedHeight` arrays from every `TerrainComp` chunk in the region via reflection. This snapshot is what `Undo` uses to restore the ground later.
+
+Terrain clip mode also captures a fresh snapshot around the clip disc immediately before applying terrain ops, so the current-session undo path can restore the most recent clip area.
 
 ### 4b. Clear blockers in the leveled area
 Before leveling, `ClearRocksInPad` removes rock-like blockers (for example `MineRock` / `MineRock5`) intersecting the leveled footprint. It combines collider overlap scans with renderer-bounds fallback so protruding meshes are caught even when pivots sit outside bounds.

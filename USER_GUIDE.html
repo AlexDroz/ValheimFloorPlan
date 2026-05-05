@@ -207,6 +207,7 @@
           <tr><td><code>BuildHotkey</code></td><td><code>F8</code></td><td>Opens placement preview.</td></tr>
           <tr><td><code>UndoHotkey</code></td><td><code>F9</code></td><td>Removes nearby VFP pieces and restores terrain snapshot.</td></tr>
           <tr><td><code>TearRepairHotkey</code></td><td><code>F10</code></td><td>Toggles tear-repair pointer mode.</td></tr>
+          <tr><td><code>TerrainClipHotkey</code></td><td><code>F11</code></td><td>Toggles terrain clip disc mode.</td></tr>
           <tr><td><code>BuildOriginForwardOffset</code></td><td>12</td><td>Initial preview origin in front of player (10-20).</td></tr>
           <tr><td><code>ProgressMessagePosition</code></td><td>CenterLeft</td><td>HUD slot used for status text (CenterLeft maps to Center).</td></tr>
           <tr><td><code>TerrainLevelPasses</code></td><td>2</td><td>Main terrain leveling pass count (1-5).</td></tr>
@@ -237,6 +238,19 @@
         <li><code>TearRepairCancelKey</code> (default <code>Esc</code>, right-click also exits)</li>
       </ul>
 
+      <h3>Terrain Clip Settings</h3>
+      <ul>
+        <li><code>TerrainClipForwardOffset</code> (default <code>10</code>)</li>
+        <li><code>TerrainClipDefaultRadius</code> (default <code>3</code>)</li>
+        <li><code>TerrainClipRadiusStep</code> (default <code>0.5</code>)</li>
+        <li><code>TerrainClipHeightStep</code> (default <code>0.5</code>)</li>
+        <li><code>TerrainClipMoveForwardKey</code> / <code>TerrainClipMoveBackwardKey</code> / <code>TerrainClipMoveLeftKey</code> / <code>TerrainClipMoveRightKey</code> (defaults: arrow keys)</li>
+        <li><code>TerrainClipRaiseHeightKey</code> / <code>TerrainClipLowerHeightKey</code> (defaults: <code>H</code> / <code>L</code>)</li>
+        <li><code>TerrainClipIncreaseDiameterKey</code> / <code>TerrainClipDecreaseDiameterKey</code> (defaults: <code>Equals (+)</code> / <code>Minus (-)</code>)</li>
+        <li><code>TerrainClipApplyKey</code> (default <code>E</code>)</li>
+        <li><code>TerrainClipCancelKey</code> (default <code>Esc</code>, right-click also exits)</li>
+      </ul>
+
       <h3>Optional .vfp wall-face field</h3>
       <ul>
         <li>Use: <code>piece,col,row,type,rotation,wallFace</code></li>
@@ -258,6 +272,25 @@
         <li>Tear repair mode: <code>F10</code></li>
         <li>Tear repair apply: <code>E</code></li>
         <li>Tear repair cancel: <code>Esc</code> or right-click</li>
+        <li>Terrain clip mode: <code>F11</code></li>
+        <li>Terrain clip move: <code>UpArrow / DownArrow / LeftArrow / RightArrow</code></li>
+        <li>Terrain clip diameter: <code>+ / -</code></li>
+        <li>Terrain clip height: <code>H / L</code></li>
+        <li>Terrain clip apply: <code>E</code></li>
+        <li>Terrain clip cancel: <code>Esc</code> or right-click</li>
+      </ul>
+    </section>
+
+    <section class="card">
+      <h2>Terrain Clip Mode</h2>
+      <ul>
+        <li>Press <code>F11</code> to toggle a flat circular clip disc in front of the player.</li>
+        <li>The disc starts in front of the player, then stays where you move it.</li>
+        <li><code>UpArrow / DownArrow / LeftArrow / RightArrow</code> move the disc position.</li>
+        <li><code>+ / -</code> shrink or enlarge the disc diameter.</li>
+        <li><code>H / L</code> raise or lower the disc height.</li>
+        <li>Press <code>E</code> to clip terrain inside the disc down to the disc height.</li>
+        <li>The clip tool is lowering-only and will not raise low ground.</li>
       </ul>
     </section>
 
@@ -289,6 +322,7 @@
         <li>Removes VFP-tagged pieces within about 75m of player.</li>
         <li>Restores terrain from the latest captured snapshot in the current session.</li>
         <li>Terrain visuals may not update immediately after undo; move to another area and come back to refresh chunk visuals.</li>
+        <li>Terrain clip captures its own fresh snapshot before applying, so the most recent clip can also be restored in the current session.</li>
       </ul>
       <div class="warning">
         Piece removal can work across sessions. Terrain restore is session-bound and depends on a valid snapshot captured during the current run.

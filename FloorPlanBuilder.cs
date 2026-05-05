@@ -26,6 +26,9 @@ namespace ValheimFloorPlan
         private const float TEAR_RING_LIFT = 0.03f;
         private const int TEAR_RING_SEGMENTS = 28;
         private const float TEAR_POINTER_MAX_DIST = 150f;
+        private const int CLIP_DISC_SEGMENTS = 40;
+        private const float CLIP_DISC_LIFT = 0.05f;
+        private const float CLIP_RING_LIFT = 0.07f;
         private const float PREVIEW_EDGE_RISK_SAMPLE_INTERVAL = 0.45f;
         private const float PREVIEW_EDGE_RISK_HINT_INTERVAL = 2.0f;
         private const float PREVIEW_EDGE_RISK_HINT_START_DELAY = 2.5f;
@@ -82,6 +85,17 @@ namespace ValheimFloorPlan
         private LineRenderer? _tearRepairMarker = null;
         private LineRenderer? _tearRepairRing = null;
 
+        // ── terrain-clip disc mode state ────────────────────────────────────
+        private bool          _terrainClipActive = false;
+        private bool          _terrainClipBusy = false;
+        private Vector3       _terrainClipCenter = Vector3.zero;
+        private float         _terrainClipHeight = 0f;
+        private float         _terrainClipRadius = 3f;
+        private float         _terrainClipNextHintAt = 0f;
+        private GameObject?   _terrainClipGo = null;
+        private MeshFilter?   _terrainClipDisc = null;
+        private LineRenderer? _terrainClipRing = null;
+
         private void Awake()
         {
             Instance = this;
@@ -99,6 +113,9 @@ namespace ValheimFloorPlan
         {
             if (_tearRepairActive)
                 DeactivateTearRepairMode(showMessage: false);
+
+            if (_terrainClipActive)
+                DeactivateTerrainClipMode(showMessage: false);
 
             if (_previewActive)
                 CancelPreview();
@@ -239,6 +256,9 @@ namespace ValheimFloorPlan
 
             if (_tearRepairActive)
                 UpdateTearRepairMode();
+
+            if (_terrainClipActive)
+                UpdateTerrainClipMode();
         }
 
         /// <summary>
@@ -253,10 +273,35 @@ namespace ValheimFloorPlan
                 return;
             }
 
+            if (_terrainClipActive)
+            {
+                Player.m_localPlayer?.Message(MessageHud.MessageType.Center,
+                    "ValheimFloorPlan: Cancel terrain clip before using tear repair.");
+                return;
+            }
+
             if (_tearRepairActive)
                 DeactivateTearRepairMode(showMessage: true);
             else
                 ActivateTearRepairMode();
+        }
+
+        public void ToggleTerrainClipMode()
+        {
+            if (_previewActive)
+            {
+                Player.m_localPlayer?.Message(MessageHud.MessageType.Center,
+                    "ValheimFloorPlan: Cancel preview before using terrain clip.");
+                return;
+            }
+
+            if (_tearRepairActive)
+                DeactivateTearRepairMode(showMessage: false);
+
+            if (_terrainClipActive)
+                DeactivateTerrainClipMode(showMessage: true);
+            else
+                ActivateTerrainClipMode();
         }
 
         private void ActivateTearRepairMode()
@@ -303,6 +348,57 @@ namespace ValheimFloorPlan
             {
                 Player.m_localPlayer?.Message(MessageHud.MessageType.Center,
                     "ValheimFloorPlan: Tear repair OFF.");
+            }
+        }
+
+        private void ActivateTerrainClipMode()
+        {
+            if (_terrainClipActive)
+                return;
+
+            var player = Player.m_localPlayer;
+            if (player == null)
+                return;
+
+            _terrainClipActive = true;
+            _terrainClipBusy = false;
+            _terrainClipRadius = Mathf.Clamp(ValheimFloorPlanPlugin.TerrainClipDefaultRadius, 1f, 12f);
+            _terrainClipCenter = GetTerrainClipCenter(player);
+            _terrainClipHeight = TerrainLeveler.SampleTerrainHeight(
+                _terrainClipCenter.x, _terrainClipCenter.z, player.transform.position.y);
+            _terrainClipNextHintAt = Time.time + 0.5f;
+
+            _terrainClipGo = new GameObject("VFP_TerrainClip");
+            _terrainClipDisc = MakeFlatDisc(_terrainClipGo, "VFP_TerrainClipDisc",
+                new Color(0.15f, 0.85f, 1f, 0.18f), CLIP_DISC_SEGMENTS);
+            _terrainClipRing = MakeLine(_terrainClipGo, new Color(0.2f, 0.95f, 1f, 0.95f), 0.07f, CLIP_DISC_SEGMENTS + 1);
+            _terrainClipRing.loop = true;
+            UpdateTerrainClipVisuals();
+
+            Player.m_localPlayer?.Message(MessageHud.MessageType.Center,
+                $"ValheimFloorPlan: Terrain repair disc ON (experimental). {ValheimFloorPlanPlugin.TerrainClipMoveLeftKey}/{ValheimFloorPlanPlugin.TerrainClipMoveRightKey}/{ValheimFloorPlanPlugin.TerrainClipMoveForwardKey}/{ValheimFloorPlanPlugin.TerrainClipMoveBackwardKey} move | {ValheimFloorPlanPlugin.TerrainClipRaiseHeightKey}/{ValheimFloorPlanPlugin.TerrainClipLowerHeightKey} height cap | {ValheimFloorPlanPlugin.TerrainClipIncreaseDiameterKey}/{ValheimFloorPlanPlugin.TerrainClipDecreaseDiameterKey} diameter | {ValheimFloorPlanPlugin.TerrainClipApplyKey} apply | RMB/{ValheimFloorPlanPlugin.TerrainClipCancelKey} cancel");
+        }
+
+        private void DeactivateTerrainClipMode(bool showMessage)
+        {
+            _terrainClipActive = false;
+            _terrainClipBusy = false;
+            _terrainClipCenter = Vector3.zero;
+            _terrainClipHeight = 0f;
+            _terrainClipRadius = Mathf.Clamp(ValheimFloorPlanPlugin.TerrainClipDefaultRadius, 1f, 12f);
+            _terrainClipNextHintAt = 0f;
+            _terrainClipDisc = null;
+            _terrainClipRing = null;
+            if (_terrainClipGo != null)
+            {
+                Destroy(_terrainClipGo);
+                _terrainClipGo = null;
+            }
+
+            if (showMessage)
+            {
+                Player.m_localPlayer?.Message(MessageHud.MessageType.Center,
+                    "ValheimFloorPlan: Terrain clip OFF.");
             }
         }
 
@@ -649,6 +745,125 @@ namespace ValheimFloorPlan
             }
         }
 
+        private void UpdateTerrainClipMode()
+        {
+            var player = Player.m_localPlayer;
+            if (player == null)
+            {
+                DeactivateTerrainClipMode(showMessage: false);
+                return;
+            }
+
+            bool uiOpen = Chat.instance != null && Chat.instance.HasFocus();
+
+            if (UnityEngine.Input.GetMouseButtonDown(1) || IsPreviewKeyDown(ValheimFloorPlanPlugin.TerrainClipCancelKey))
+            {
+                DeactivateTerrainClipMode(showMessage: true);
+                return;
+            }
+
+            if (!_terrainClipBusy && !uiOpen)
+            {
+                bool changed = false;
+
+                bool fineAdjust = IsFineAdjustHeld();
+                float moveStep = fineAdjust
+                    ? ValheimFloorPlanPlugin.PreviewFineMoveStep
+                    : ValheimFloorPlanPlugin.PreviewMoveStep;
+
+                Vector3 moveForward = Vector3.forward;
+                Vector3 moveRight = Vector3.right;
+                Camera movementCamera = Camera.main;
+                if (movementCamera != null)
+                {
+                    moveForward = movementCamera.transform.forward;
+                    moveForward.y = 0f;
+                    if (moveForward.sqrMagnitude > 0.0001f)
+                    {
+                        moveForward.Normalize();
+                        moveRight = new Vector3(moveForward.z, 0f, -moveForward.x);
+                    }
+                }
+
+                Vector3 nudge = Vector3.zero;
+                if (IsPreviewKeyDown(ValheimFloorPlanPlugin.TerrainClipMoveForwardKey))      nudge = moveForward * moveStep;
+                else if (IsPreviewKeyDown(ValheimFloorPlanPlugin.TerrainClipMoveBackwardKey)) nudge = -moveForward * moveStep;
+                else if (IsPreviewKeyDown(ValheimFloorPlanPlugin.TerrainClipMoveRightKey))    nudge = moveRight * moveStep;
+                else if (IsPreviewKeyDown(ValheimFloorPlanPlugin.TerrainClipMoveLeftKey))     nudge = -moveRight * moveStep;
+
+                if (nudge != Vector3.zero)
+                {
+                    _terrainClipCenter += nudge;
+                    changed = true;
+                }
+
+                if (IsTerrainClipDecreaseDiameterKeyDown())
+                {
+                    _terrainClipRadius = Mathf.Clamp(
+                        _terrainClipRadius - ValheimFloorPlanPlugin.TerrainClipRadiusStep, 1f, 12f);
+                    changed = true;
+                }
+                else if (IsTerrainClipIncreaseDiameterKeyDown())
+                {
+                    _terrainClipRadius = Mathf.Clamp(
+                        _terrainClipRadius + ValheimFloorPlanPlugin.TerrainClipRadiusStep, 1f, 12f);
+                    changed = true;
+                }
+
+                if (IsPreviewKeyDown(ValheimFloorPlanPlugin.TerrainClipRaiseHeightKey))
+                {
+                    _terrainClipHeight += ValheimFloorPlanPlugin.TerrainClipHeightStep;
+                    changed = true;
+                }
+                else if (IsPreviewKeyDown(ValheimFloorPlanPlugin.TerrainClipLowerHeightKey))
+                {
+                    _terrainClipHeight -= ValheimFloorPlanPlugin.TerrainClipHeightStep;
+                    changed = true;
+                }
+
+                if (changed)
+                {
+                    player.Message(ValheimFloorPlanPlugin.ProgressMessageType,
+                        $"ValheimFloorPlan: Clip diameter {(_terrainClipRadius * 2f):F1}m, height {_terrainClipHeight:F1}m");
+                }
+            }
+
+            UpdateTerrainClipVisuals();
+
+            if (!_terrainClipBusy && Time.time >= _terrainClipNextHintAt)
+            {
+                ValheimFloorPlanPlugin.ShowProgressMessage(
+                    $"Terrain repair disc (experimental): pos ({_terrainClipCenter.x:F1}, {_terrainClipCenter.z:F1}), diameter {(_terrainClipRadius * 2f):F1}m, height cap {_terrainClipHeight:F1}m. Move: {ValheimFloorPlanPlugin.TerrainClipMoveLeftKey}/{ValheimFloorPlanPlugin.TerrainClipMoveRightKey}/{ValheimFloorPlanPlugin.TerrainClipMoveForwardKey}/{ValheimFloorPlanPlugin.TerrainClipMoveBackwardKey}. Height: {ValheimFloorPlanPlugin.TerrainClipRaiseHeightKey}/{ValheimFloorPlanPlugin.TerrainClipLowerHeightKey}. Size: {ValheimFloorPlanPlugin.TerrainClipIncreaseDiameterKey}/{ValheimFloorPlanPlugin.TerrainClipDecreaseDiameterKey}. Apply: {ValheimFloorPlanPlugin.TerrainClipApplyKey}.");
+                _terrainClipNextHintAt = Time.time + 2.5f;
+            }
+
+            if (!_terrainClipBusy && !uiOpen && IsPreviewKeyDown(ValheimFloorPlanPlugin.TerrainClipApplyKey))
+                StartCoroutine(ApplyTerrainClip());
+        }
+
+        private IEnumerator ApplyTerrainClip()
+        {
+            _terrainClipBusy = true;
+
+            Vector3 center = _terrainClipCenter;
+            float radius = _terrainClipRadius;
+            float targetY = _terrainClipHeight;
+
+            TerrainSnapshot.Capture(
+                center.x - radius - 2f,
+                center.x + radius + 2f,
+                center.z - radius - 2f,
+                center.z + radius + 2f,
+                targetY);
+
+            ValheimFloorPlanPlugin.ShowProgressMessage(
+                $"Repairing terrain (height cap Y={targetY:F1}m) within {radius * 2f:F1}m diameter...");
+            yield return StartCoroutine(TerrainLeveler.ClipTerrainCircle(center, targetY, radius));
+            ValheimFloorPlanPlugin.ShowProgressMessage("Terrain repair pass complete.");
+
+            _terrainClipBusy = false;
+        }
+
         private IEnumerator RepairSelectedTear()
         {
             _tearRepairBusy = true;
@@ -664,8 +879,18 @@ namespace ValheimFloorPlan
 
         private static Vector3 GetBuildOrigin(Player player)
         {
+            return GetForwardOffsetOrigin(player, ValheimFloorPlanPlugin.BuildOriginForwardOffset);
+        }
+
+        private static Vector3 GetTerrainClipCenter(Player player)
+        {
+            return GetForwardOffsetOrigin(player, ValheimFloorPlanPlugin.TerrainClipForwardOffset);
+        }
+
+        private static Vector3 GetForwardOffsetOrigin(Player player, float forwardOffset)
+        {
             Vector3 origin = player.transform.position;
-            float forwardOffset = Mathf.Max(0f, ValheimFloorPlanPlugin.BuildOriginForwardOffset);
+            forwardOffset = Mathf.Max(0f, forwardOffset);
             if (forwardOffset <= 0f) return origin;
 
             Vector3 forward = player.transform.forward;
@@ -680,6 +905,16 @@ namespace ValheimFloorPlan
         private static bool IsPreviewKeyDown(KeyCode key)
         {
             return key != KeyCode.None && UnityEngine.Input.GetKeyDown(key);
+        }
+
+        private static bool IsTerrainClipIncreaseDiameterKeyDown()
+        {
+            return IsPreviewKeyDown(ValheimFloorPlanPlugin.TerrainClipIncreaseDiameterKey);
+        }
+
+        private static bool IsTerrainClipDecreaseDiameterKeyDown()
+        {
+            return IsPreviewKeyDown(ValheimFloorPlanPlugin.TerrainClipDecreaseDiameterKey);
         }
 
         private static bool IsFineAdjustHeld()
@@ -822,6 +1057,70 @@ namespace ValheimFloorPlan
             lr.positionCount = 2;
             lr.SetPosition(0, from);
             lr.SetPosition(1, to);
+        }
+
+        private static MeshFilter MakeFlatDisc(GameObject parent, string name, Color color, int segments)
+        {
+            var child = new GameObject(name);
+            child.transform.SetParent(parent.transform, false);
+
+            var mf = child.AddComponent<MeshFilter>();
+            var mr = child.AddComponent<MeshRenderer>();
+            mr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            mr.receiveShadows = false;
+
+            var mat = new Material(Shader.Find("Sprites/Default"));
+            mat.color = color;
+            mr.sharedMaterial = mat;
+
+            var mesh = new Mesh { name = name + "_Mesh" };
+            var verts = new Vector3[segments + 1];
+            var tris = new int[segments * 3];
+            verts[0] = Vector3.zero;
+
+            for (int i = 0; i < segments; i++)
+            {
+                float t = (i / (float)segments) * Mathf.PI * 2f;
+                verts[i + 1] = new Vector3(Mathf.Cos(t), 0f, Mathf.Sin(t));
+
+                int next = (i + 1) % segments;
+                int tri = i * 3;
+                tris[tri + 0] = 0;
+                tris[tri + 1] = i + 1;
+                tris[tri + 2] = next + 1;
+            }
+
+            mesh.vertices = verts;
+            mesh.triangles = tris;
+            mesh.RecalculateBounds();
+            mesh.RecalculateNormals();
+            mf.sharedMesh = mesh;
+            return mf;
+        }
+
+        private void UpdateTerrainClipVisuals()
+        {
+            if (_terrainClipDisc != null)
+            {
+                _terrainClipDisc.transform.position = new Vector3(
+                    _terrainClipCenter.x,
+                    _terrainClipHeight + CLIP_DISC_LIFT,
+                    _terrainClipCenter.z);
+                _terrainClipDisc.transform.localScale = new Vector3(_terrainClipRadius, 1f, _terrainClipRadius);
+            }
+
+            if (_terrainClipRing != null)
+            {
+                _terrainClipRing.positionCount = CLIP_DISC_SEGMENTS + 1;
+                Vector3 center = new Vector3(_terrainClipCenter.x, _terrainClipHeight + CLIP_RING_LIFT, _terrainClipCenter.z);
+                for (int i = 0; i <= CLIP_DISC_SEGMENTS; i++)
+                {
+                    float t = (i / (float)CLIP_DISC_SEGMENTS) * Mathf.PI * 2f;
+                    float x = Mathf.Cos(t) * _terrainClipRadius;
+                    float z = Mathf.Sin(t) * _terrainClipRadius;
+                    _terrainClipRing.SetPosition(i, center + new Vector3(x, 0f, z));
+                }
+            }
         }
 
         private static void SetTearMarker(LineRenderer? lr, Vector3 point)

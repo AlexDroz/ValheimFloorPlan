@@ -45,6 +45,20 @@ namespace ValheimFloorPlan
         internal static KeyCode PreviewFineAdjustKey { get; private set; } = KeyCode.LeftShift;
         internal static KeyCode TearRepairApplyKey { get; private set; } = KeyCode.E;
         internal static KeyCode TearRepairCancelKey { get; private set; } = KeyCode.Escape;
+        internal static float TerrainClipForwardOffset { get; private set; } = 10f;
+        internal static float TerrainClipDefaultRadius { get; private set; } = 3f;
+        internal static float TerrainClipRadiusStep { get; private set; } = 0.5f;
+        internal static float TerrainClipHeightStep { get; private set; } = 0.5f;
+        internal static KeyCode TerrainClipMoveForwardKey { get; private set; } = KeyCode.UpArrow;
+        internal static KeyCode TerrainClipMoveBackwardKey { get; private set; } = KeyCode.DownArrow;
+        internal static KeyCode TerrainClipMoveLeftKey { get; private set; } = KeyCode.LeftArrow;
+        internal static KeyCode TerrainClipMoveRightKey { get; private set; } = KeyCode.RightArrow;
+        internal static KeyCode TerrainClipRaiseHeightKey { get; private set; } = KeyCode.H;
+        internal static KeyCode TerrainClipLowerHeightKey { get; private set; } = KeyCode.L;
+        internal static KeyCode TerrainClipIncreaseDiameterKey { get; private set; } = KeyCode.Equals;
+        internal static KeyCode TerrainClipDecreaseDiameterKey { get; private set; } = KeyCode.Minus;
+        internal static KeyCode TerrainClipApplyKey { get; private set; } = KeyCode.E;
+        internal static KeyCode TerrainClipCancelKey { get; private set; } = KeyCode.Escape;
 
         private ConfigEntry<string> _vfpFilePath = null!;
         private ConfigEntry<KeyboardShortcut> _buildHotkey = null!;
@@ -76,6 +90,21 @@ namespace ValheimFloorPlan
         private ConfigEntry<KeyboardShortcut> _tearRepairHotkey = null!;
         private ConfigEntry<KeyCode> _tearRepairApplyKey = null!;
         private ConfigEntry<KeyCode> _tearRepairCancelKey = null!;
+        private ConfigEntry<KeyboardShortcut> _terrainClipHotkey = null!;
+        private ConfigEntry<float> _terrainClipForwardOffset = null!;
+        private ConfigEntry<float> _terrainClipDefaultRadius = null!;
+        private ConfigEntry<float> _terrainClipRadiusStep = null!;
+        private ConfigEntry<float> _terrainClipHeightStep = null!;
+        private ConfigEntry<KeyCode> _terrainClipMoveForwardKey = null!;
+        private ConfigEntry<KeyCode> _terrainClipMoveBackwardKey = null!;
+        private ConfigEntry<KeyCode> _terrainClipMoveLeftKey = null!;
+        private ConfigEntry<KeyCode> _terrainClipMoveRightKey = null!;
+        private ConfigEntry<KeyCode> _terrainClipRaiseHeightKey = null!;
+        private ConfigEntry<KeyCode> _terrainClipLowerHeightKey = null!;
+        private ConfigEntry<KeyCode> _terrainClipIncreaseDiameterKey = null!;
+        private ConfigEntry<KeyCode> _terrainClipDecreaseDiameterKey = null!;
+        private ConfigEntry<KeyCode> _terrainClipApplyKey = null!;
+        private ConfigEntry<KeyCode> _terrainClipCancelKey = null!;
 
         private void Awake()
         {
@@ -96,6 +125,10 @@ namespace ValheimFloorPlan
             _tearRepairHotkey = Config.Bind(
                 "General", "TearRepairHotkey", new KeyboardShortcut(KeyCode.F10),
                 "Hotkey to toggle tear-repair pointer mode for fixing terrain tears after building.");
+
+            _terrainClipHotkey = Config.Bind(
+                "General", "TerrainClipHotkey", new KeyboardShortcut(KeyCode.F11),
+                "Hotkey to toggle experimental terrain repair disc mode. Uses a conservative spike-shave pass under a selected height cap.");
 
             _progressMessagePosition = Config.Bind(
                 "General", "ProgressMessagePosition", "CenterLeft",
@@ -260,6 +293,74 @@ namespace ValheimFloorPlan
                 "Repair", "TearRepairCancelKey", KeyCode.Escape,
                 "Keyboard key that exits tear-repair pointer mode. Right-click also exits.");
 
+            _terrainClipForwardOffset = Config.Bind(
+                "Clip", "TerrainClipForwardOffset", 10f,
+                new ConfigDescription(
+                    "How far in front of the player the terrain clip disc preview is shown, in meters.",
+                    new AcceptableValueRange<float>(2f, 20f)));
+            _terrainClipForwardOffset.SettingChanged += (_, _) =>
+                TerrainClipForwardOffset = Mathf.Clamp(_terrainClipForwardOffset.Value, 2f, 20f);
+            TerrainClipForwardOffset = Mathf.Clamp(_terrainClipForwardOffset.Value, 2f, 20f);
+
+            _terrainClipDefaultRadius = Config.Bind(
+                "Clip", "TerrainClipDefaultRadius", 3f,
+                new ConfigDescription(
+                    "Default radius of the terrain clip disc, in meters.",
+                    new AcceptableValueRange<float>(1f, 12f)));
+            _terrainClipDefaultRadius.SettingChanged += (_, _) =>
+                TerrainClipDefaultRadius = Mathf.Clamp(_terrainClipDefaultRadius.Value, 1f, 12f);
+            TerrainClipDefaultRadius = Mathf.Clamp(_terrainClipDefaultRadius.Value, 1f, 12f);
+
+            _terrainClipRadiusStep = Config.Bind(
+                "Clip", "TerrainClipRadiusStep", 0.5f,
+                new ConfigDescription(
+                    "How much the terrain clip disc radius changes per left/right key press, in meters.",
+                    new AcceptableValueRange<float>(0.1f, 3f)));
+            _terrainClipRadiusStep.SettingChanged += (_, _) =>
+                TerrainClipRadiusStep = Mathf.Clamp(_terrainClipRadiusStep.Value, 0.1f, 3f);
+            TerrainClipRadiusStep = Mathf.Clamp(_terrainClipRadiusStep.Value, 0.1f, 3f);
+
+            _terrainClipHeightStep = Config.Bind(
+                "Clip", "TerrainClipHeightStep", 0.5f,
+                new ConfigDescription(
+                    "How much the terrain clip disc height changes per key press, in meters.",
+                    new AcceptableValueRange<float>(0.1f, 3f)));
+            _terrainClipHeightStep.SettingChanged += (_, _) =>
+                TerrainClipHeightStep = Mathf.Clamp(_terrainClipHeightStep.Value, 0.1f, 3f);
+            TerrainClipHeightStep = Mathf.Clamp(_terrainClipHeightStep.Value, 0.1f, 3f);
+
+            _terrainClipMoveForwardKey = Config.Bind(
+                "Clip", "TerrainClipMoveForwardKey", KeyCode.UpArrow,
+                "Terrain clip nudge key: move disc forward relative to camera.");
+            _terrainClipMoveBackwardKey = Config.Bind(
+                "Clip", "TerrainClipMoveBackwardKey", KeyCode.DownArrow,
+                "Terrain clip nudge key: move disc backward relative to camera.");
+            _terrainClipMoveLeftKey = Config.Bind(
+                "Clip", "TerrainClipMoveLeftKey", KeyCode.LeftArrow,
+                "Terrain clip nudge key: move disc left relative to camera.");
+            _terrainClipMoveRightKey = Config.Bind(
+                "Clip", "TerrainClipMoveRightKey", KeyCode.RightArrow,
+                "Terrain clip nudge key: move disc right relative to camera.");
+            _terrainClipRaiseHeightKey = Config.Bind(
+                "Clip", "TerrainClipRaiseHeightKey", KeyCode.H,
+                "Terrain clip key: raise disc height.");
+            _terrainClipLowerHeightKey = Config.Bind(
+                "Clip", "TerrainClipLowerHeightKey", KeyCode.L,
+                "Terrain clip key: lower disc height.");
+            _terrainClipIncreaseDiameterKey = Config.Bind(
+                "Clip", "TerrainClipIncreaseDiameterKey", KeyCode.Equals,
+                "Terrain clip key: increase disc diameter.");
+            _terrainClipDecreaseDiameterKey = Config.Bind(
+                "Clip", "TerrainClipDecreaseDiameterKey", KeyCode.Minus,
+                "Terrain clip key: decrease disc diameter.");
+
+            _terrainClipApplyKey = Config.Bind(
+                "Clip", "TerrainClipApplyKey", KeyCode.E,
+                "Key that applies the terrain clip at the current disc height and radius.");
+            _terrainClipCancelKey = Config.Bind(
+                "Clip", "TerrainClipCancelKey", KeyCode.Escape,
+                "Keyboard key that exits terrain clip mode. Right-click also exits.");
+
             _previewMoveForwardKey.SettingChanged += (_, _) => PreviewMoveForwardKey = _previewMoveForwardKey.Value;
             _previewMoveBackwardKey.SettingChanged += (_, _) => PreviewMoveBackwardKey = _previewMoveBackwardKey.Value;
             _previewMoveLeftKey.SettingChanged += (_, _) => PreviewMoveLeftKey = _previewMoveLeftKey.Value;
@@ -271,6 +372,16 @@ namespace ValheimFloorPlan
             _previewFineAdjustKey.SettingChanged += (_, _) => PreviewFineAdjustKey = _previewFineAdjustKey.Value;
             _tearRepairApplyKey.SettingChanged += (_, _) => TearRepairApplyKey = _tearRepairApplyKey.Value;
             _tearRepairCancelKey.SettingChanged += (_, _) => TearRepairCancelKey = _tearRepairCancelKey.Value;
+            _terrainClipMoveForwardKey.SettingChanged += (_, _) => TerrainClipMoveForwardKey = _terrainClipMoveForwardKey.Value;
+            _terrainClipMoveBackwardKey.SettingChanged += (_, _) => TerrainClipMoveBackwardKey = _terrainClipMoveBackwardKey.Value;
+            _terrainClipMoveLeftKey.SettingChanged += (_, _) => TerrainClipMoveLeftKey = _terrainClipMoveLeftKey.Value;
+            _terrainClipMoveRightKey.SettingChanged += (_, _) => TerrainClipMoveRightKey = _terrainClipMoveRightKey.Value;
+            _terrainClipRaiseHeightKey.SettingChanged += (_, _) => TerrainClipRaiseHeightKey = _terrainClipRaiseHeightKey.Value;
+            _terrainClipLowerHeightKey.SettingChanged += (_, _) => TerrainClipLowerHeightKey = _terrainClipLowerHeightKey.Value;
+            _terrainClipIncreaseDiameterKey.SettingChanged += (_, _) => TerrainClipIncreaseDiameterKey = _terrainClipIncreaseDiameterKey.Value;
+            _terrainClipDecreaseDiameterKey.SettingChanged += (_, _) => TerrainClipDecreaseDiameterKey = _terrainClipDecreaseDiameterKey.Value;
+            _terrainClipApplyKey.SettingChanged += (_, _) => TerrainClipApplyKey = _terrainClipApplyKey.Value;
+            _terrainClipCancelKey.SettingChanged += (_, _) => TerrainClipCancelKey = _terrainClipCancelKey.Value;
 
             PreviewMoveForwardKey = _previewMoveForwardKey.Value;
             PreviewMoveBackwardKey = _previewMoveBackwardKey.Value;
@@ -283,6 +394,16 @@ namespace ValheimFloorPlan
             PreviewFineAdjustKey = _previewFineAdjustKey.Value;
             TearRepairApplyKey = _tearRepairApplyKey.Value;
             TearRepairCancelKey = _tearRepairCancelKey.Value;
+            TerrainClipMoveForwardKey = _terrainClipMoveForwardKey.Value;
+            TerrainClipMoveBackwardKey = _terrainClipMoveBackwardKey.Value;
+            TerrainClipMoveLeftKey = _terrainClipMoveLeftKey.Value;
+            TerrainClipMoveRightKey = _terrainClipMoveRightKey.Value;
+            TerrainClipRaiseHeightKey = _terrainClipRaiseHeightKey.Value;
+            TerrainClipLowerHeightKey = _terrainClipLowerHeightKey.Value;
+            TerrainClipIncreaseDiameterKey = _terrainClipIncreaseDiameterKey.Value;
+            TerrainClipDecreaseDiameterKey = _terrainClipDecreaseDiameterKey.Value;
+            TerrainClipApplyKey = _terrainClipApplyKey.Value;
+            TerrainClipCancelKey = _terrainClipCancelKey.Value;
 
             gameObject.AddComponent<FloorPlanBuilder>();
 
@@ -310,6 +431,9 @@ namespace ValheimFloorPlan
 
             if (_tearRepairHotkey.Value.IsDown())
                 FloorPlanBuilder.Instance.ToggleTearRepairMode();
+
+            if (_terrainClipHotkey.Value.IsDown())
+                FloorPlanBuilder.Instance.ToggleTerrainClipMode();
         }
 
         internal static void ShowProgressMessage(string message)

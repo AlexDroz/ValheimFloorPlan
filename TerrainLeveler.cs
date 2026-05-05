@@ -64,6 +64,7 @@ namespace ValheimFloorPlan
         private const float TEAR_REPAIR_EDGE_STEP = 0.32f;
         private const float TEAR_REPAIR_EDGE_MAX_RAISE = 0.14f;
         private const float TEAR_REPAIR_EDGE_MEDIAN_HEADROOM = 0.08f;
+        private const float TERRAIN_CLIP_HEIGHT_TOLERANCE = 0.02f;
         private const int   INNER_PAD     = 2;      // cells of buffer around plan bounding box
 
         private const float WARN_RAISE   = 6f;   // warn in log above this height range
@@ -454,6 +455,134 @@ namespace ValheimFloorPlan
                 $"[TerrainLeveler] Tear repair at {point} -> centerY={centerY:F2}, medianY={medianY:F2}, lowerTargetY={lowerTargetY:F2}, bridgeOps={bridgeOps}, cutOps={cutOps}, ops={opCount}, chunks={modified.Count}.");
         }
 
+        public static IEnumerator ClipTerrainCircle(Vector3 center, float targetY, float radius)
+        {
+            radius = Mathf.Clamp(radius, 1f, 12f);
+
+            // Practical repair mode for Valheim terrain mechanics:
+            // prioritize local smoothing of high outliers over hard flattening,
+            // because broad level stamps can create rebound spikes at falloff edges.
+            float digRadius = Mathf.Clamp(radius * 0.12f, 0.34f, 0.9f);
+            float step = Mathf.Clamp(digRadius * 0.85f, 0.3f, 0.85f);
+            float medianProbeRadius = Mathf.Clamp(radius * 0.14f, 0.45f, 1.25f);
+            const float localMedianHeadroom = 0.06f;
+            const float highOutlierThreshold = 0.14f;
+            float r2 = radius * radius;
+            const int repairPasses = 3;
+
+            int totalSamples = 0;
+            for (float x = center.x - radius; x <= center.x + radius + 0.01f; x += step)
+                for (float z = center.z - radius; z <= center.z + radius + 0.01f; z += step)
+                {
+                    float dx = x - center.x;
+                    float dz = z - center.z;
+                    if ((dx * dx + dz * dz) <= r2)
+                        totalSamples++;
+                }
+
+            if (totalSamples == 0)
+                yield break;
+
+            ShowProgress("Repairing terrain... 0%");
+
+            var modified = new HashSet<TerrainComp>();
+            int processed = 0;
+            int lowerOps = 0;
+            int candidateOps = 0;
+            int skippedByNoRaise = 0;
+            int skippedBySpacing = 0;
+            int nextPct = 20;
+
+            for (int pass = 0; pass < repairPasses; pass++)
+            {
+                float passDigRadius = pass == 0 ? digRadius : Mathf.Max(0.28f, digRadius * 0.82f);
+                float passStep = pass == 0 ? step : Mathf.Max(0.28f, step * 0.9f);
+                float minStampSpacing = Mathf.Max(0.62f, passDigRadius * 1.8f);
+                float minStampSpacingSqr = minStampSpacing * minStampSpacing;
+                var passStampCenters = new List<Vector2>(128);
+
+                for (float x = center.x - radius; x <= center.x + radius + 0.01f; x += passStep)
+                {
+                    for (float z = center.z - radius; z <= center.z + radius + 0.01f; z += passStep)
+                    {
+                        float dx = x - center.x;
+                        float dz = z - center.z;
+                        if ((dx * dx + dz * dz) > r2)
+                            continue;
+
+                        float currentY = SampleHeight(x, z, targetY);
+                        float localMedianY = GetLocalMedianHeight(x, z, currentY, medianProbeRadius);
+                        float desiredY = Mathf.Min(targetY, localMedianY + localMedianHeadroom);
+                        float outlier = currentY - localMedianY;
+                        bool aboveCap = currentY > targetY + TERRAIN_CLIP_HEIGHT_TOLERANCE;
+                        bool highOutlier = currentY > desiredY + TERRAIN_CLIP_HEIGHT_TOLERANCE && outlier > highOutlierThreshold;
+
+                        if (aboveCap || highOutlier)
+                        {
+                            bool tooCloseToExisting = false;
+                            for (int i = 0; i < passStampCenters.Count; i++)
+                            {
+                                Vector2 p = passStampCenters[i];
+                                float px = x - p.x;
+                                float pz = z - p.y;
+                                if ((px * px + pz * pz) < minStampSpacingSqr)
+                                {
+                                    tooCloseToExisting = true;
+                                    break;
+                                }
+                            }
+
+                            if (tooCloseToExisting)
+                            {
+                                skippedBySpacing++;
+                                continue;
+                            }
+
+                            candidateOps++;
+
+                            // Pickaxe-style directional dig stamp (downward modification),
+                            // only when nearby probes guarantee we won't force uplift.
+                            float guardRadius = Mathf.Clamp(passDigRadius * 0.6f, 0.24f, passDigRadius);
+                            if (CanLowerWithoutRaise(x, z, desiredY, guardRadius, currentY, raiseTolerance: 0.08f))
+                            {
+                                ApplySpikeCollapse(x, z, currentY, desiredY, localMedianY, passDigRadius, modified);
+                                lowerOps++;
+                                passStampCenters.Add(new Vector2(x, z));
+                            }
+                            else
+                                skippedByNoRaise++;
+                        }
+
+                        // Progress is based on first pass coverage; later passes are refinement.
+                        if (pass == 0)
+                        {
+                            processed++;
+                            int pct = Mathf.FloorToInt((processed * 100f) / totalSamples);
+                            if (pct >= nextPct)
+                            {
+                                ShowProgress($"Repairing terrain... {nextPct}%");
+                                nextPct += 20;
+                            }
+                        }
+
+                        if ((processed + lowerOps) % OPS_PER_FRAME == 0)
+                            yield return null;
+                    }
+                }
+
+                yield return null;
+            }
+
+            ShowProgress(lowerOps > 0 ? "Repairing terrain... done" : "Repairing terrain... no repairs needed");
+            ValheimFloorPlanPlugin.Log.LogInfo(
+                $"[TerrainLeveler] Terrain repair-disc at {center} -> targetY={targetY:F2}, radius={radius:F2}, digRadius={digRadius:F2}, probeRadius={medianProbeRadius:F2}, passes={repairPasses}, candidates={candidateOps}, skippedBySpacing={skippedBySpacing}, skippedByNoRaise={skippedByNoRaise}, lowerOps={lowerOps}, chunks={modified.Count}.");
+        }
+
+        public static float SampleTerrainHeight(float x, float z, float referenceY = 0f)
+        {
+            return SampleHeight(x, z, referenceY);
+        }
+
         // ── helpers ──────────────────────────────────────────────────────────
 
         /// <summary>
@@ -792,6 +921,32 @@ namespace ValheimFloorPlan
             UnityEngine.Object.Destroy(go);
         }
 
+        private static void ApplySpikeCollapse(
+            float x,
+            float z,
+            float currentY,
+            float desiredY,
+            float localMedianY,
+            float radius,
+            HashSet<TerrainComp> modified)
+        {
+            // Broad smoothing first: this collapses needle artifacts into surrounding terrain.
+            float smoothRadius = Mathf.Clamp(radius * 3.1f, 1.1f, 2.6f);
+            ApplySmooth(x, currentY, z, smoothRadius, modified);
+
+            // Only apply explicit lowering for stronger outliers, and do it with a wide stamp.
+            float outlier = currentY - localMedianY;
+            bool strongOutlier = outlier > 0.32f || currentY > desiredY + 0.25f;
+            if (!strongOutlier)
+                return;
+
+            float targetY = Mathf.Min(desiredY, localMedianY + 0.06f);
+            targetY = Mathf.Min(targetY, currentY - 0.05f);
+
+            float lowerRadius = Mathf.Clamp(radius * 2.35f, 0.95f, 2.1f);
+            ApplyLevel(x, targetY, z, lowerRadius, modified, smooth: true);
+        }
+
         private static float SampleHeight(float x, float z, float referenceY = 0f)
         {
             // Use the terrain heightmap directly so that rocks, cliffs and other
@@ -924,7 +1079,13 @@ namespace ValheimFloorPlan
             return vals[vals.Count / 2];
         }
 
-        private static bool CanLowerWithoutRaise(float x, float z, float targetY, float radius, float referenceY)
+        private static bool CanLowerWithoutRaise(
+            float x,
+            float z,
+            float targetY,
+            float radius,
+            float referenceY,
+            float raiseTolerance = TEAR_REPAIR_RAISE_TOLERANCE)
         {
             var probes = new Vector2[]
             {
@@ -942,7 +1103,7 @@ namespace ValheimFloorPlan
             for (int i = 0; i < probes.Length; i++)
             {
                 float h = SampleHeight(x + probes[i].x, z + probes[i].y, referenceY);
-                if (targetY > h + TEAR_REPAIR_RAISE_TOLERANCE)
+                if (targetY > h + raiseTolerance)
                     return false;
             }
 
