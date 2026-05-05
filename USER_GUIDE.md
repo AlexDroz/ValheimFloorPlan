@@ -34,8 +34,6 @@ Important settings:
 - `FloorPlanFile`: Full path to your `.vfp` file.
 - `BuildHotkey`: Starts preview mode (default `F8`).
 - `UndoHotkey`: Removes nearby VFP pieces and restores terrain snapshot (default `F9`).
-- `TearRepairHotkey`: Toggles tear-repair pointer mode after a build (default `F10`).
-- `TerrainClipHotkey`: Toggles terrain clip disc mode (default `F11`).
 - `BuildOriginForwardOffset`: Initial preview origin in front of your character (default `12`, range `10-20`).
 - `ProgressMessagePosition`: HUD slot for status text (default `CenterLeft`, mapped to `Center`).
 - `TerrainLevelPasses`: Main leveling pass count (default `2`, range `1-5`).
@@ -56,20 +54,6 @@ Preview input settings (all configurable):
 - `FineAdjustKey` (default `LeftShift`)
 - `MoveStep`, `FineMoveStep`, `RotateStepDegrees`, `FineRotateStepDegrees`
 
-Tear-repair input settings:
-- `TearRepairApplyKey` (default `E`)
-- `TearRepairCancelKey` (default `Escape`, right-click also cancels)
-
-Terrain-clip settings:
-- `TerrainClipForwardOffset` (default `10`, range `2-20`)
-- `TerrainClipDefaultRadius` (default `3`, range `1-12`)
-- `TerrainClipRadiusStep` (default `0.5`, range `0.1-3`)
-- `TerrainClipHeightStep` (default `0.5`, range `0.1-3`)
-- `TerrainClipMoveForwardKey` / `TerrainClipMoveBackwardKey` / `TerrainClipMoveLeftKey` / `TerrainClipMoveRightKey` (defaults: arrow keys)
-- `TerrainClipRaiseHeightKey` / `TerrainClipLowerHeightKey` (defaults: `H` / `L`)
-- `TerrainClipIncreaseDiameterKey` / `TerrainClipDecreaseDiameterKey` (defaults: `Equals` (`+`) / `Minus` (`-`))
-- `TerrainClipApplyKey` (default `E`)
-- `TerrainClipCancelKey` (default `Escape`, right-click also cancels)
 
 Optional `.vfp` wall-face field:
 - Piece lines can include a sixth field: `piece,col,row,type,rotation,wallFace`
@@ -113,15 +97,6 @@ Preview controls are also configurable in the same file.
 - Confirm Build: `E`
 - Fine Adjust Modifier: `LeftShift`
 - Cancel Preview: `Esc` or right-click
-- Tear Repair Mode: `F10`
-- Tear Repair Apply: `E`
-- Tear Repair Cancel: `Esc` or right-click
-- Terrain Clip Mode: `F11`
-- Terrain Clip Move: `UpArrow`, `DownArrow`, `LeftArrow`, `RightArrow`
-- Terrain Clip Diameter: `+` / `-`
-- Terrain Clip Height: `H` / `L`
-- Terrain Clip Apply: `E`
-- Terrain Clip Cancel: `Esc` or right-click
 
 ## Terrain Risk Preview Markers
 While in preview, the mod evaluates edge terrain risk and can show orange risk markers when risk is `MEDIUM` or `HIGH`:
@@ -135,19 +110,7 @@ Risk text includes:
 Practical note:
 - Marker/hint visibility updates while you nudge/rotate preview; there is a short delay before repeated hint spam to keep HUD readable.
 
-## Tear Repair Mode
-Press `F10` to toggle tear-repair mode after building:
-- Aim at a tear/spike area and press `E` to apply repair.
-- Press `Esc` or right-click to exit repair mode.
 
-## Terrain Clip Mode
-Press `F11` to toggle terrain clip mode:
-- A flat circular disc appears in front of the player at start, then stays where you place it.
-- Arrow keys move the disc position (preview-style nudge movement).
-- `+` / `-` increase or decrease the disc diameter.
-- `H` / `L` raise or lower the disc height.
-- Press `E` to clip terrain inside the disc down to the disc height.
-- Press `Esc` or right-click to exit clip mode.
 
 Important notes:
 - The clip tool is lowering-only. It will not raise low ground to meet the disc.
