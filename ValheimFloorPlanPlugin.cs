@@ -20,6 +20,7 @@ namespace ValheimFloorPlan
 
         internal static ManualLogSource Log = null!;
         internal static MessageHud.MessageType ProgressMessageType { get; private set; } = MessageHud.MessageType.Center;
+        internal static MessageHud.MessageType WarningMessageType { get; private set; } = MessageHud.MessageType.TopLeft;
         internal static int TerrainLevelPasses { get; private set; } = 2;
         internal static int TerrainSpikeCleanupPasses { get; private set; } = 2;
         internal static float TerrainStampRadius { get; private set; } = 3.0f;
@@ -48,6 +49,7 @@ namespace ValheimFloorPlan
         private ConfigEntry<KeyboardShortcut> _buildHotkey = null!;
         private ConfigEntry<KeyboardShortcut> _undoHotkey = null!;
         private ConfigEntry<string> _progressMessagePosition = null!;
+        private ConfigEntry<string> _warningMessagePosition = null!;
         private ConfigEntry<int> _terrainLevelPasses = null!;
         private ConfigEntry<int> _terrainSpikeCleanupPasses = null!;
         private ConfigEntry<float> _terrainStampRadius = null!;
@@ -94,6 +96,13 @@ namespace ValheimFloorPlan
             _progressMessagePosition.SettingChanged += (_, _) =>
                 ProgressMessageType = ParseProgressMessageType(_progressMessagePosition.Value);
             ProgressMessageType = ParseProgressMessageType(_progressMessagePosition.Value);
+
+            _warningMessagePosition = Config.Bind(
+                "General", "WarningMessagePosition", "TopLeft",
+                "HUD slot for slope/build warning messages. Uses Valheim MessageHud positions. Examples: Center, TopLeft, TopRight. 'CenterLeft' is accepted as an alias and maps to Center.");
+            _warningMessagePosition.SettingChanged += (_, _) =>
+                WarningMessageType = ParseProgressMessageType(_warningMessagePosition.Value);
+            WarningMessageType = ParseProgressMessageType(_warningMessagePosition.Value);
 
             _terrainLevelPasses = Config.Bind(
                 "Terrain", "TerrainLevelPasses", 2,
@@ -298,18 +307,13 @@ namespace ValheimFloorPlan
         internal static void ShowWrappedMessage(MessageHud.MessageType messageType, string text, int maxLineLength = 72)
         {
             var wrapped = WrapHudText(text, maxLineLength);
-            var lines = wrapped.Split('\n');
             var player = Player.m_localPlayer;
             if (player == null)
                 return;
 
-            for (int i = 0; i < lines.Length; i++)
-            {
-                string line = lines[i].Trim();
-                if (line.Length == 0)
-                    continue;
-                player.Message(messageType, line);
-            }
+            // Send the entire wrapped text (including newlines) as a single message
+            // so the HUD displays all lines at once instead of overwriting them.
+            player.Message(messageType, wrapped);
         }
 
         internal static string WrapHudText(string text, int maxLineLength = 72)

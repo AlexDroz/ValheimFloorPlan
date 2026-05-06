@@ -157,6 +157,11 @@ namespace ValheimFloorPlan
                 ValheimFloorPlanPlugin.Log.LogWarning(
                     $"[TerrainLeveler] Footprint height range {range:F1}m — steep ground," +
                     " cliff-edge tears may appear on the downhill side.");
+
+                ValheimFloorPlanPlugin.ShowWrappedMessage(
+                    ValheimFloorPlanPlugin.WarningMessageType,
+                    $"ValheimFloorPlan: Steep terrain warning. Height range is {range:F1}m. " +
+                    "Terracing or downhill tears may occur.");
             }
 
             ValheimFloorPlanPlugin.Log.LogInfo(
@@ -196,7 +201,10 @@ namespace ValheimFloorPlan
             int ops = 0;
             var modified = new HashSet<TerrainComp>();
             int totalLevelOps = stageCount * totalPasses * (((stepsX + 1) * (stepsZ + 1)) + edgePointsPerPass);
-            int nextLevelPct = 10;
+            int nextLevelPct = 5;
+            float nextLevelHeartbeatAt = Time.time + 1.5f;
+            int spinnerIndex = 0;
+            string[] spinnerFrames = new[] { "|", "/", "-", "\\" };
 
             ValheimFloorPlanPlugin.Log.LogInfo(
                 $"[TerrainLeveler] Running {totalPasses} leveling pass(es) across {stageCount} raise stage(s) " +
@@ -234,10 +242,28 @@ namespace ValheimFloorPlan
                             if (totalLevelOps > 0)
                             {
                                 int pct = Mathf.FloorToInt((ops * 100f) / totalLevelOps);
+                                bool emitProgress = false;
+
                                 if (pct >= nextLevelPct)
                                 {
-                                    ShowProgress($"Leveling terrain... {nextLevelPct}%");
-                                    nextLevelPct += 10;
+                                    while (nextLevelPct <= pct)
+                                        nextLevelPct += 5;
+                                    emitProgress = true;
+                                }
+
+                                if (Time.time >= nextLevelHeartbeatAt)
+                                {
+                                    nextLevelHeartbeatAt = Time.time + 1.5f;
+                                    spinnerIndex = (spinnerIndex + 1) % spinnerFrames.Length;
+                                    emitProgress = true;
+                                }
+
+                                if (emitProgress)
+                                {
+                                    int shownPct = Mathf.Clamp(pct, 0, 99);
+                                    ShowProgress(
+                                        $"Leveling terrain... {shownPct}% {spinnerFrames[spinnerIndex]} " +
+                                        $"(stage {stage}/{stageCount}, pass {pass}/{totalPasses})");
                                 }
                             }
                             if (ops % OPS_PER_FRAME == 0) yield return null;
@@ -267,10 +293,28 @@ namespace ValheimFloorPlan
                             if (totalLevelOps > 0)
                             {
                                 int pct = Mathf.FloorToInt((ops * 100f) / totalLevelOps);
+                                bool emitProgress = false;
+
                                 if (pct >= nextLevelPct)
                                 {
-                                    ShowProgress($"Leveling terrain... {nextLevelPct}%");
-                                    nextLevelPct += 10;
+                                    while (nextLevelPct <= pct)
+                                        nextLevelPct += 5;
+                                    emitProgress = true;
+                                }
+
+                                if (Time.time >= nextLevelHeartbeatAt)
+                                {
+                                    nextLevelHeartbeatAt = Time.time + 1.5f;
+                                    spinnerIndex = (spinnerIndex + 1) % spinnerFrames.Length;
+                                    emitProgress = true;
+                                }
+
+                                if (emitProgress)
+                                {
+                                    int shownPct = Mathf.Clamp(pct, 0, 99);
+                                    ShowProgress(
+                                        $"Leveling terrain... {shownPct}% {spinnerFrames[spinnerIndex]} " +
+                                        $"(stage {stage}/{stageCount}, pass {pass}/{totalPasses})");
                                 }
                             }
                             if (ops % OPS_PER_FRAME == 0) yield return null;
@@ -290,6 +334,7 @@ namespace ValheimFloorPlan
             int spikeOps = 0;
             int spikeStepsX = Mathf.CeilToInt((sampleMaxX - sampleMinX) / spikeScanStep);
             int spikeStepsZ = Mathf.CeilToInt((sampleMaxZ - sampleMinZ) / spikeScanStep);
+            float nextCleanupProgressAt = Time.time + 1.5f;
             for (int pass = 1; pass <= spikePasses; pass++)
             {
                 for (int ix = 0; ix <= spikeStepsX; ix++)
@@ -307,6 +352,12 @@ namespace ValheimFloorPlan
                             ApplyLevel(wx, targetY, wz, SPIKE_LEVEL_RADIUS, modified);
                             spikeOps++;
                             if (spikeOps % OPS_PER_FRAME == 0) yield return null;
+                        }
+
+                        if (Time.time >= nextCleanupProgressAt)
+                        {
+                            nextCleanupProgressAt = Time.time + 1.5f;
+                            ShowProgress($"Leveling terrain... cleanup (pass {pass}/{spikePasses})");
                         }
                     }
                 }
@@ -876,6 +927,7 @@ namespace ValheimFloorPlan
             }
             foreach (var tc in chunks)
             {
+                TerrainSnapshot.EnsureCaptured(tc);
                 tc.ApplyOperation(op);
                 modified.Add(tc);
             }
@@ -914,6 +966,7 @@ namespace ValheimFloorPlan
 
             foreach (var tc in chunks)
             {
+                TerrainSnapshot.EnsureCaptured(tc);
                 tc.ApplyOperation(op);
                 modified.Add(tc);
             }

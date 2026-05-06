@@ -23,12 +23,24 @@ namespace ValheimFloorPlan
         private const float PREVIEW_EDGE_RISK_SAMPLE_INTERVAL = 0.45f;
         private const float PREVIEW_EDGE_RISK_HINT_INTERVAL = 2.0f;
         private const float PREVIEW_EDGE_RISK_HINT_START_DELAY = 2.5f;
+        private const float PREVIEW_STEEP_RELIEF_WARN = 6.0f;
         private const float PREVIEW_RISK_MARKER_RADIUS = 0.45f;
         private const float PREVIEW_RISK_MARKER_LIFT = 0.18f;
 
         // ZDO key written on every piece we place.  Used by Undo() to find VFP pieces
         // across sessions — any ZNetView with this key set to "1" was placed by this mod.
         public const string VFP_TAG = "vfp_build";
+
+        // Undo confirmation state: tracks pending confirmation with timeout.
+        private float _undoConfirmationExpireAt = 0f; // When the confirmation window closes (0 = no pending confirmation)
+        private int _undoConfirmationPieceCount = 0; // Pieces to remove
+        private int _undoConfirmationTerrainChunks = 0; // Terrain chunks to restore
+        private Coroutine _undoCountdownCoroutine = null!; // Active countdown coroutine
+        private Coroutine _undoRefreshCoroutine = null!; // Active post-undo terrain refresh coroutine
+
+        private const float UNDO_REFRESH_RADIUS = 120f;
+        private const float UNDO_REFRESH_DURATION = 2.5f;
+        private const float UNDO_REFRESH_INTERVAL = 0.25f;
 
         // Search radius (metres) around the player when scanning for VFP pieces.
         // A 30x30 plan has a diagonal of ~42m; 75m gives a safe margin for larger plans.
@@ -316,6 +328,17 @@ namespace ValheimFloorPlan
                 float riskRelief = _previewEdgeRelief;
                 float riskStep = _previewEdgeMaxStep;
                 float riskIrregularity = _previewEdgeIrregularity;
+
+                bool steepRelief = riskRelief >= PREVIEW_STEEP_RELIEF_WARN;
+                if (risk == TerrainLeveler.EdgeRiskLevel.High || steepRelief)
+                {
+                    ValheimFloorPlanPlugin.ShowWrappedMessage(
+                        ValheimFloorPlanPlugin.WarningMessageType,
+                        $"ValheimFloorPlan: Final warning before build. " +
+                        $"Edge risk={risk}, relief={riskRelief:F1}m, step={riskStep:F2}m. " +
+                        "Terracing or downhill tears may occur.");
+                }
+
                 CancelPreview();
                 ValheimFloorPlanPlugin.Log.LogInfo(
                     $"[FloorPlanBuilder] Build confirmed by key {ValheimFloorPlanPlugin.PreviewConfirmKey}. Rotation={rotation:F0}\u00b0  origin={origin}  edgeRisk={risk}  edgeRelief={riskRelief:F2}  irregularity={riskIrregularity:F2}  maxEdgeStep={riskStep:F2}");
@@ -350,26 +373,26 @@ namespace ValheimFloorPlan
             _previewRiskDirty = false;
             _previewRiskNextSampleAt = Time.time + PREVIEW_EDGE_RISK_SAMPLE_INTERVAL;
 
-            if (Time.time < _previewRiskHintsEnabledAt)
+            bool urgentRisk = _previewEdgeRisk != TerrainLeveler.EdgeRiskLevel.Low;
+            if (Time.time < _previewRiskHintsEnabledAt && !urgentRisk)
                 return;
 
             bool shouldHint = previewChanged || _previewEdgeRisk != previous || Time.time >= _previewRiskNextHintAt;
             if (!shouldHint)
                 return;
 
-            string riskMsg = _previewEdgeRisk switch
+            if (_previewEdgeRisk == TerrainLeveler.EdgeRiskLevel.High ||
+                _previewEdgeRisk == TerrainLeveler.EdgeRiskLevel.Medium)
             {
-                TerrainLeveler.EdgeRiskLevel.High =>
-                    $"Edge risk HIGH: uneven boundary terrain may cause tears/spikes. Try nudging or rotating before build. step={_previewEdgeMaxStep:F2}m, relief={_previewEdgeRelief:F1}m",
-                TerrainLeveler.EdgeRiskLevel.Medium =>
-                    $"Edge risk MEDIUM: some boundary irregularity detected. Small origin/rotation adjustments may improve results. step={_previewEdgeMaxStep:F2}m, relief={_previewEdgeRelief:F1}m",
-                _ =>
-                    $"Edge risk LOW: boundary terrain looks stable. step={_previewEdgeMaxStep:F2}m, relief={_previewEdgeRelief:F1}m",
-            };
+                string riskMsg = _previewEdgeRisk == TerrainLeveler.EdgeRiskLevel.High
+                    ? $"Edge risk HIGH: uneven boundary terrain may cause tears/spikes. Try nudging or rotating before build. step={_previewEdgeMaxStep:F2}m, relief={_previewEdgeRelief:F1}m"
+                    : $"Edge risk MEDIUM: some boundary irregularity detected. Small origin/rotation adjustments may improve results. step={_previewEdgeMaxStep:F2}m, relief={_previewEdgeRelief:F1}m";
 
-            ValheimFloorPlanPlugin.ShowWrappedMessage(
-                ValheimFloorPlanPlugin.ProgressMessageType,
-                $"ValheimFloorPlan: {riskMsg}");
+                // Use a dedicated HUD lane so warnings are not replaced by origin/rotation status text.
+                ValheimFloorPlanPlugin.ShowWrappedMessage(
+                    ValheimFloorPlanPlugin.WarningMessageType,
+                    $"ValheimFloorPlan: {riskMsg}");
+            }
             _previewRiskNextHintAt = Time.time + PREVIEW_EDGE_RISK_HINT_INTERVAL;
         }
 
@@ -656,9 +679,10 @@ namespace ValheimFloorPlan
         }
 
         /// <summary>
-        /// Removes all VFP-tagged pieces within UNDO_RADIUS of the player and restores
-        /// terrain from the in-memory snapshot (if available).  Works across sessions
-        /// because the VFP_TAG is persisted in each piece's ZDO.
+        /// Undo is a two-step confirmation:
+        /// - First call: Show a preview of what will be removed/restored, then wait for confirmation.
+        /// - Second call (within 5 seconds): Actually perform the undo.
+        /// This prevents accidental undos and shows the user exactly what will happen.
         /// </summary>
         public void Undo()
         {
@@ -669,6 +693,73 @@ namespace ValheimFloorPlan
                 return;
             }
 
+            // Check if a confirmation is pending and still valid.
+            bool confirmationPending = _undoConfirmationExpireAt > Time.time;
+
+            if (confirmationPending)
+            {
+                // Confirmation was already shown and is still valid — perform the undo.
+                _undoConfirmationExpireAt = 0f; // Clear the pending state.
+                if (_undoCountdownCoroutine != null)
+                    StopCoroutine(_undoCountdownCoroutine);
+                _undoCountdownCoroutine = null!;
+                PerformUndo(player);
+            }
+            else
+            {
+                // No pending confirmation — check if there's anything to undo.
+                CountUndoStats(player, out int pieces, out int terrainChunks);
+
+                if (pieces == 0 && terrainChunks == 0)
+                {
+                    ValheimFloorPlanPlugin.ShowWrappedMessage(
+                        ValheimFloorPlanPlugin.ProgressMessageType,
+                        "ValheimFloorPlan: Nothing to undo.");
+                    return;
+                }
+
+                // Store for countdown coroutine to use.
+                _undoConfirmationPieceCount = pieces;
+                _undoConfirmationTerrainChunks = terrainChunks;
+                _undoConfirmationExpireAt = Time.time + 5f; // 5-second confirmation window.
+
+                // Stop any previous countdown coroutine.
+                if (_undoCountdownCoroutine != null)
+                    StopCoroutine(_undoCountdownCoroutine);
+
+                // Start countdown coroutine.
+                _undoCountdownCoroutine = StartCoroutine(UndoCountdownCoroutine());
+
+                ValheimFloorPlanPlugin.Log.LogInfo(
+                    $"[FloorPlanBuilder] Undo confirmation pending: {pieces} pieces, {terrainChunks} terrain chunks.");
+            }
+        }
+
+        /// <summary>Count how many pieces will be removed and how many terrain chunks will be restored.</summary>
+        private void CountUndoStats(Player player, out int pieceCount, out int terrainChunkCount)
+        {
+            pieceCount = 0;
+            Vector3 playerPos = player.transform.position;
+
+            // Count VFP-tagged pieces within undo radius.
+            foreach (var znv in UnityEngine.Object.FindObjectsByType<ZNetView>(FindObjectsSortMode.None))
+            {
+                if (znv == null) continue;
+                var zdo = znv.GetZDO();
+                if (zdo == null) continue;
+                if (zdo.GetString(VFP_TAG) != "1") continue;
+                if (Vector3.Distance(znv.transform.position, playerPos) > UNDO_RADIUS) continue;
+
+                pieceCount++;
+            }
+
+            // Count terrain chunks in snapshot.
+            terrainChunkCount = TerrainSnapshot.GetSnapshotChunkCount();
+        }
+
+        /// <summary>Perform the actual undo operation after confirmation.</summary>
+        private void PerformUndo(Player player)
+        {
             Vector3 playerPos = player.transform.position;
             int removed = 0;
 
@@ -689,12 +780,97 @@ namespace ValheimFloorPlan
             _lastPlaced.Clear();
 
             // Restore terrain snapshot if one exists (same-session only).
+            bool hadSnapshot = TerrainSnapshot.HasSnapshot;
+            int restoredChunks = TerrainSnapshot.GetSnapshotChunkCount();
             TerrainSnapshot.Restore();
 
+            if (hadSnapshot && restoredChunks > 0)
+            {
+                if (_undoRefreshCoroutine != null)
+                    StopCoroutine(_undoRefreshCoroutine);
+                _undoRefreshCoroutine = StartCoroutine(PostUndoTerrainRefresh(playerPos, restoredChunks));
+            }
+
+            if (!hadSnapshot)
+            {
+                ValheimFloorPlanPlugin.ShowWrappedMessage(
+                    ValheimFloorPlanPlugin.WarningMessageType,
+                    "ValheimFloorPlan: No terrain snapshot in this session. Undo removed pieces only.");
+            }
+
             ValheimFloorPlanPlugin.Log.LogInfo(
-                $"[FloorPlanBuilder] Undo: removed {removed} VFP pieces within {UNDO_RADIUS}m.");
+                $"[FloorPlanBuilder] Undo: removed {removed} VFP pieces within {UNDO_RADIUS}m, restored {restoredChunks} terrain chunks.");
             player.Message(MessageHud.MessageType.Center,
-                $"ValheimFloorPlan: Undone ({removed} pieces removed).");
+                $"ValheimFloorPlan: Undone ({removed} pieces removed, {restoredChunks} terrain chunks restored).");
+        }
+
+        /// <summary>
+        /// Re-pokes nearby heightmaps for a short window after undo restore.
+        /// This mimics the visual refresh that usually occurs after zone reload/teleport.
+        /// </summary>
+        private IEnumerator PostUndoTerrainRefresh(Vector3 center, int restoredChunks)
+        {
+            float elapsed = 0f;
+            int passes = 0;
+            int touched = 0;
+
+            while (elapsed < UNDO_REFRESH_DURATION)
+            {
+                #pragma warning disable CS0618
+                var hmaps = UnityEngine.Object.FindObjectsOfType<Heightmap>() ?? System.Array.Empty<Heightmap>();
+                #pragma warning restore CS0618
+
+                int passTouched = 0;
+                foreach (var hmap in hmaps)
+                {
+                    if (hmap == null) continue;
+                    if (Vector3.Distance(hmap.transform.position, center) > UNDO_REFRESH_RADIUS) continue;
+                    hmap.Poke(false);
+                    passTouched++;
+                }
+
+                passes++;
+                touched = passTouched;
+                yield return new WaitForSeconds(UNDO_REFRESH_INTERVAL);
+                elapsed += UNDO_REFRESH_INTERVAL;
+            }
+
+            ValheimFloorPlanPlugin.Log.LogInfo(
+                $"[FloorPlanBuilder] Post-undo refresh complete: {passes} passes, {touched} nearby heightmaps touched, restoredChunks={restoredChunks}.");
+
+            _undoRefreshCoroutine = null!;
+        }
+
+        /// <summary>Countdown coroutine that shows remaining confirmation time, updating every second.</summary>
+        private IEnumerator UndoCountdownCoroutine()
+        {
+            const float UPDATE_INTERVAL = 1.0f;
+            float nextUpdateAt = Time.time + UPDATE_INTERVAL;
+
+            while (_undoConfirmationExpireAt > Time.time)
+            {
+                if (Time.time >= nextUpdateAt)
+                {
+                    float remainingSeconds = _undoConfirmationExpireAt - Time.time;
+                    int secondsLeft = (int)Mathf.Ceil(remainingSeconds);
+
+                    string msg = $"ValheimFloorPlan: Confirm Undo? Will remove {_undoConfirmationPieceCount} piece(s)";
+                    if (_undoConfirmationTerrainChunks > 0)
+                        msg += $" and restore {_undoConfirmationTerrainChunks} terrain chunk(s)";
+                    msg += $". Press Undo again ({secondsLeft}s remaining) to confirm.";
+
+                    ValheimFloorPlanPlugin.ShowWrappedMessage(
+                        ValheimFloorPlanPlugin.ProgressMessageType,
+                        msg);
+
+                    nextUpdateAt = Time.time + UPDATE_INTERVAL;
+                }
+
+                yield return null;
+            }
+
+            _undoCountdownCoroutine = null!;
+            _undoConfirmationExpireAt = 0f;
         }
 
         public void BuildFromFile(string path)
@@ -735,6 +911,12 @@ namespace ValheimFloorPlan
                 out float sMinX, out float sMaxX, out float sMinZ, out float sMaxZ,
                 rotationDeg);
             TerrainSnapshot.Capture(sMinX, sMaxX, sMinZ, sMaxZ, origin.y);
+            if (!TerrainSnapshot.HasSnapshot)
+            {
+                ValheimFloorPlanPlugin.ShowWrappedMessage(
+                    ValheimFloorPlanPlugin.WarningMessageType,
+                    "ValheimFloorPlan: Warning - terrain snapshot capture failed. Undo may remove pieces without restoring terrain.");
+            }
 
             player.Message(MessageHud.MessageType.Center, "Clearing rocks...");
             ClearRocksInPad(plan, origin, rotationDeg);
