@@ -1,0 +1,9 @@
+{
+  "name": "ValheimFloorPlan",
+  "version_number": "1.0.0",
+  "website_url": "https://github.com/AlexDroz/ValheimFloorPlan",
+  "description": "Valheim Floor Plan mod with in-game terrain-aware placement plus bundled Floor Plan Designer web app for creating .vfp plans.",
+  "dependencies": [
+    "denikson-BepInExPack_Valheim-5.4.2202"
+  ]
+}

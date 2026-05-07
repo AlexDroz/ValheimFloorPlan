@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Valheim Floor Plan Designer v1.0.0 (Web)</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="panel">
+      <h1>Valheim Floor Plan Designer</h1>
+      <p class="sub">v1.0.0</p>
+
+      <section class="group">
+        <h2>File</h2>
+        <div class="btn-row">
+          <button id="newBtn">New</button>
+          <button id="clearBtn">Clear</button>
+          <button id="openBtn">Open</button>
+          <button id="saveBtn">Save</button>
+          <button id="saveAsBtn">Save As</button>
+          <button id="helpBtn">Help</button>
+        </div>
+        <p id="status" class="status">Ready.</p>
+      </section>
+
+      <section class="group">
+        <h2>Grid</h2>
+        <div class="grid-size-row">
+          <div class="grid-size-pair">
+            <label for="colsInput">Cols</label>
+            <input id="colsInput" type="number" min="1" max="200" value="20">
+          </div>
+          <div class="grid-size-pair">
+            <label for="rowsInput">Rows</label>
+            <input id="rowsInput" type="number" min="1" max="200" value="20">
+          </div>
+        </div>
+        <button id="applyGridBtn">Apply Grid Size</button>
+      </section>
+
+      <section class="group">
+        <h2>Tool</h2>
+        <div class="radio-list" id="pieceTypeRadios">
+          <label><input type="radio" name="pieceType" value="Floor2x2" checked><span class="piece-swatch" data-piece="Floor2x2"></span> Floor2x2</label>
+          <label><input type="radio" name="pieceType" value="Floor1x1"><span class="piece-swatch" data-piece="Floor1x1"></span> Floor1x1</label>
+          <label><input type="radio" name="pieceType" value="Wall"><span class="piece-swatch" data-piece="Wall"></span> Wall</label>
+          <label><input type="radio" name="pieceType" value="Doorway"><span class="piece-swatch" data-piece="Doorway"></span> Doorway</label>
+          <label><input type="radio" name="pieceType" value="Pillar"><span class="piece-swatch" data-piece="Pillar"></span> Pillar</label>
+        </div>
+        <div class="field-row">
+          <label for="rotSelect">Rotation</label>
+          <select id="rotSelect">
+            <option value="0">0</option>
+            <option value="90">90</option>
+            <option value="180">180</option>
+            <option value="270">270</option>
+          </select>
+        </div>
+      </section>
+
+      <section class="group">
+        <h2>Layout</h2>
+        <button id="shellBtn" style="width:100%">Shell</button>
+      </section>
+    </aside>
+
+    <main class="canvas-wrap">
+      <canvas id="gridCanvas" width="1200" height="900" aria-label="Grid canvas"></canvas>
+      <p class="canvas-help">MB1 Place | MB2 Remove | Arrows Rotate | Red dashed = overlap</p>
+    </main>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
