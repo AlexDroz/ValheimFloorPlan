@@ -1,27 +1,23 @@
-# ValheimFloorPlan Monorepo
+# Valheim Floor Plan
 
-This repository contains two related projects:
+Build structures in Valheim from pre-designed floor plans.
 
-1. ValheimFloorPlan mod (BepInEx C# plugin): consumes `.vfp` plans in-game and builds them.
-2. Designer web app: creates and edits `.vfp` plans for the mod.
+This package includes two components:
 
-## Project Layout
+1. **ValheimFloorPlan mod** — a BepInEx plugin that reads `.vfp` plan files and builds them in-game.
+2. **Valheim Floor Plan Designer** — a browser-based app (included) for creating and editing `.vfp` plan files.
 
-- `ValheimFloorPlanPlugin.cs`, `FloorPlanBuilder.cs`, `TerrainLeveler.cs`, and other C# files: game mod source.
-- `Designer/`: browser-based floor plan Designer.
-  - `Designer/index.html`
-  - `Designer/app.js`
-  - `Designer/Plans/`
-- `samples/`: example `.vfp` files you can load directly in the mod.
+**Included in this package:**
+- The mod DLL (installed automatically under `BepInEx/plugins`)
+- The Designer web app (`BepInEx/plugins/ValheimFloorPlan/Designer/`)
+- Sample `.vfp` plans to get started immediately
 
-## End-to-End Workflow
+## Creating Floor Plans
 
 1. Open the Designer and create or edit a plan.
 2. Save/export a `.vfp` file.
 3. Point the mod config `FloorPlanFile` to that `.vfp` file.
 4. In game, press build hotkey (default F8) and place the design.
-
-Detailed guide: see `DESIGNER_WORKFLOW.md`.
 
 ## Sample Plans
 
@@ -47,39 +43,12 @@ The `samples/` folder contains ready-to-use `.vfp` examples:
 ![Valheim Floor Plan screenshot 8](images/2026-05-07%2016_14_04-.png)
 ![Valheim Floor Plan screenshot 9](images/2026-05-07%2016_14_27-.png)
 
-## VS Code Tasks
-
-The workspace includes tasks for both projects:
-
-1. Build and deploy mod:
-   - `Build & Deploy ValheimFloorPlan`
-2. Run Designer local server:
-   - `Run Designer Local Server`
-3. Package for Thunderstore (includes mod + Designer):
-   - `Package Thunderstore (Mod + Designer)`
-
-The Designer task launches `Designer/StartLocalhost.bat`, which opens the app on localhost.
-
-## Thunderstore Packaging
-
-This repo includes Thunderstore metadata and a packaging script:
-
-- `manifest.json`
-- `CHANGELOG.md`
-- `scripts/Create-ThunderstorePackage.ps1`
-
-The package task/script creates:
-
-- `artifacts/thunderstore/ValheimFloorPlan-1.0.0.zip`
-
-Package contents include:
+## Package contents include:
 
 - `BepInEx/plugins/ValheimFloorPlan/ValheimFloorPlan.dll`
 - `BepInEx/plugins/ValheimFloorPlan/Designer/...`
 - `images/...` (used by `README.md` screenshot links)
 - `samples/...` (example `.vfp` plans)
-
-Before packaging, place a valid `icon.png` (256x256) at the repository root.
 
 ## Notes
 
