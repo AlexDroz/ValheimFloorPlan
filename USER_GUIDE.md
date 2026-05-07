@@ -28,7 +28,7 @@ From a player perspective, the flow is simple:
 
 ## Configuration
 Config file path (default):
-- `BepInEx/config/com.yourname.valheimfloorplan.cfg`
+- `BepInEx/config/com.alexdroz.valheimfloorplan.cfg`
 
 Important settings:
 - `FloorPlanFile`: Full path to your `.vfp` file.

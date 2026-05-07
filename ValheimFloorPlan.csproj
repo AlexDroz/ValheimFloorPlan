@@ -5,7 +5,7 @@
     <AssemblyName>ValheimFloorPlan</AssemblyName>
     <RootNamespace>ValheimFloorPlan</RootNamespace>
     <Description>A floor plan building tool mod for Valheim</Description>
-    <Version>0.1.0</Version>
+    <Version>1.0.0</Version>
     <Nullable>enable</Nullable>
     <LangVersion>latest</LangVersion>
     <ValheimDir>D:\Program Files (x86)\Steam\steamapps\common\Valheim</ValheimDir>
