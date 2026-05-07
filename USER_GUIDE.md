@@ -39,6 +39,7 @@ Important settings:
 - `TerrainLevelPasses`: Main leveling pass count (default `2`, range `1-5`).
 - `TerrainSpikeCleanupPasses`: Cleanup pass count after leveling (default `2`, range `1-5`).
 - `TerrainStampRadius`: Radius (meters) of each leveling disc stamp and preview outer wall width (default `3.0`, range `3.0-6.0`).
+- `TerrainHighPointDelta`: Extra height added to sampled highest terrain point for the level target, i.e. `targetY = maxY + delta` (default `0.0`, range `0.0-4.0`).
 - `TerrainSkipSatisfiedCenterStamps`: Skips center stamps already at/above target terrain height (default `true`).
 - `TerrainUseStagedRaise`: Experimental staged vertical raise mode (default `false`).
 - `TerrainRaiseStepHeight`: Max raise per stage when staged raise is enabled (default `0.5`, range `0.15-1.5`).

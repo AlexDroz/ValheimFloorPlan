@@ -27,6 +27,7 @@ On startup (`Awake`), the plugin registers BepInEx configuration entries for fil
 - **`TerrainLevelPasses`** (default `2`, range `1–5`) — number of leveling passes run on the build pad.
 - **`TerrainSpikeCleanupPasses`** (default `2`, range `1–5`) — number of post-leveling spike cleanup scans.
 - **`TerrainStampRadius`** (default `3.0 m`, range `3.0–6.0`) — radius of each terrain stamp disc and outer preview footprint reach.
+- **`TerrainHighPointDelta`** (default `0.0 m`, range `0.0–4.0`) — extra height added on top of the sampled highest point (`targetY = maxY + delta`).
 - **`TerrainSkipSatisfiedCenterStamps`** (default `true`) — skips center stamps when sampled terrain is already at/above target.
 - **`TerrainUseStagedRaise`** (default `false`) — experimental multi-stage raise mode.
 - **`TerrainRaiseStepHeight`** (default `0.5 m`, range `0.15–1.5`) — max vertical raise per stage when staged mode is enabled.
@@ -105,7 +106,7 @@ Before leveling, `ClearRocksInPad` removes rock-like blockers (for example `Mine
 
 1. **Pre-sample heights.** Heights are sampled from `ZoneSystem.GetGroundHeight` (terrain heightmap) across the area that may be modified: inner pad (plan bounds + 2-cell buffer) expanded by level-disc radius. This avoids rock/mesh tops biasing `targetY`. Sampling density is `0.5 m` on axis-aligned rotations and `0.25 m` on non-right-angle rotations.
 
-2. **Target height = maxY.** The leveling target is always the *highest* point in the footprint. This means every disc operation only ever *raises* terrain — it never lowers it. When terrain is only raised, the disc falloff at the pad edge slopes *down* to natural terrain, never up. Upward falloff causes spikes at chunk boundaries; by design this approach avoids them entirely.
+2. **Target height = maxY + delta.** The leveling target is the sampled *highest* point plus configurable **`TerrainHighPointDelta`** (`0.0–4.0 m`, default `0.0 m`). With delta at `0`, behavior is unchanged. This means every disc operation only ever *raises* terrain — it never lowers it. When terrain is only raised, the disc falloff at the pad edge slopes *down* to natural terrain, never up. Upward falloff causes spikes at chunk boundaries; by design this approach avoids them entirely.
 
 3. **Multi-pass leveling (configurable).** The leveler runs the number of passes set by **`TerrainLevelPasses`** (clamped to `1–5`, default `2`). This makes convergence quality vs. speed a user-tunable choice instead of being auto-selected from the sampled height range.
 

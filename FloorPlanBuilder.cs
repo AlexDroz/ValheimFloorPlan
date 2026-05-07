@@ -403,6 +403,8 @@ namespace ValheimFloorPlan
             if (_previewPlan == null)
                 return 0;
 
+            float previewRaiseDelta = Mathf.Clamp(ValheimFloorPlanPlugin.TerrainHighPointDelta, 0f, 4f);
+
             if (hotspots.Count == 0)
                 return 0;
 
@@ -435,7 +437,7 @@ namespace ValheimFloorPlan
                     if (hit.point.y > terrainHigh) terrainHigh = hit.point.y;
             }
             const float topLift = 0.30f;
-            float topY = (terrainHigh == float.MinValue ? refY : terrainHigh) + topLift;
+            float topY = (terrainHigh == float.MinValue ? refY : terrainHigh) + topLift + previewRaiseDelta;
 
             float topDz = lvlMaxZ - _previewOrigin.z;
             float[] topFracs = new float[] { 0.25f, 0.5f, 0.75f };
@@ -553,6 +555,8 @@ namespace ValheimFloorPlan
         {
             if (_previewPlan == null) return;
 
+            float previewRaiseDelta = Mathf.Clamp(ValheimFloorPlanPlugin.TerrainHighPointDelta, 0f, 4f);
+
             // Get axis-aligned (unrotated) bounds, then rotate the 4 corners around the
             // player origin so the LineRenderers show the actual rotated footprint.
             TerrainLeveler.GetPadBounds(_previewPlan, origin,
@@ -561,9 +565,11 @@ namespace ValheimFloorPlan
                 out float lvlMinX, out float lvlMaxX, out float lvlMinZ, out float lvlMaxZ);
 
             SetWallRingRectangle(_previewPadWalls, origin.y,
-                RotateBoundsCorners(origin, padMinX, padMaxX, padMinZ, padMaxZ, _previewRotationDeg));
+                RotateBoundsCorners(origin, padMinX, padMaxX, padMinZ, padMaxZ, _previewRotationDeg),
+                previewRaiseDelta);
             SetWallRingRectangle(_previewOuterWalls, origin.y,
-                RotateBoundsCorners(origin, lvlMinX, lvlMaxX, lvlMinZ, lvlMaxZ, _previewRotationDeg));
+                RotateBoundsCorners(origin, lvlMinX, lvlMaxX, lvlMinZ, lvlMaxZ, _previewRotationDeg),
+                previewRaiseDelta);
             SetOriginMarker(_previewOriginMarker, origin.y, origin);
         }
 
@@ -598,7 +604,7 @@ namespace ValheimFloorPlan
         }
 
         private static void SetWallRingRectangle(MeshFilter? mf,
-            float referenceY, Vector2[] corners)
+            float referenceY, Vector2[] corners, float previewRaiseDelta)
         {
             if (mf == null || mf.sharedMesh == null) return;
 
@@ -624,7 +630,7 @@ namespace ValheimFloorPlan
             }
 
             float bottomY = low + bottomLift;
-            float topY = high + topLift;
+            float topY = high + topLift + Mathf.Max(0f, previewRaiseDelta);
             if (topY - bottomY < minHeight)
                 topY = bottomY + minHeight;
 
@@ -730,9 +736,23 @@ namespace ValheimFloorPlan
                 // Start countdown coroutine.
                 _undoCountdownCoroutine = StartCoroutine(UndoCountdownCoroutine());
 
+                // Show immediate confirmation feedback so the first key press feels responsive.
+                ValheimFloorPlanPlugin.ShowWrappedMessage(
+                    ValheimFloorPlanPlugin.ProgressMessageType,
+                    BuildUndoConfirmationMessage(5));
+
                 ValheimFloorPlanPlugin.Log.LogInfo(
                     $"[FloorPlanBuilder] Undo confirmation pending: {pieces} pieces, {terrainChunks} terrain chunks.");
             }
+        }
+
+        private string BuildUndoConfirmationMessage(int secondsLeft)
+        {
+            string msg = $"ValheimFloorPlan: Confirm Undo? Will remove {_undoConfirmationPieceCount} piece(s)";
+            if (_undoConfirmationTerrainChunks > 0)
+                msg += $" and restore {_undoConfirmationTerrainChunks} terrain chunk(s)";
+            msg += $". Press Undo again ({secondsLeft}s remaining) to confirm.";
+            return msg;
         }
 
         /// <summary>Count how many pieces will be removed and how many terrain chunks will be restored.</summary>
@@ -854,14 +874,9 @@ namespace ValheimFloorPlan
                     float remainingSeconds = _undoConfirmationExpireAt - Time.time;
                     int secondsLeft = (int)Mathf.Ceil(remainingSeconds);
 
-                    string msg = $"ValheimFloorPlan: Confirm Undo? Will remove {_undoConfirmationPieceCount} piece(s)";
-                    if (_undoConfirmationTerrainChunks > 0)
-                        msg += $" and restore {_undoConfirmationTerrainChunks} terrain chunk(s)";
-                    msg += $". Press Undo again ({secondsLeft}s remaining) to confirm.";
-
                     ValheimFloorPlanPlugin.ShowWrappedMessage(
                         ValheimFloorPlanPlugin.ProgressMessageType,
-                        msg);
+                        BuildUndoConfirmationMessage(secondsLeft));
 
                     nextUpdateAt = Time.time + UPDATE_INTERVAL;
                 }

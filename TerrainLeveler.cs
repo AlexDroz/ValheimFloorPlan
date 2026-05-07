@@ -149,7 +149,8 @@ namespace ValheimFloorPlan
             }
 
             float range = maxY - minY;
-            float targetY = maxY;
+            float highPointDelta = Mathf.Clamp(ValheimFloorPlanPlugin.TerrainHighPointDelta, 0.0f, 4.0f);
+            float targetY = maxY + highPointDelta;
             TargetLevelY = targetY;
 
             if (range > WARN_RAISE)
@@ -165,7 +166,7 @@ namespace ValheimFloorPlan
             }
 
             ValheimFloorPlanPlugin.Log.LogInfo(
-                $"[TerrainLeveler] Raising pad to Y={targetY:F2}  minY={minY:F2}  range={range:F1}m" +
+                $"[TerrainLeveler] Raising pad to Y={targetY:F2} (maxY={maxY:F2} + delta={highPointDelta:F2})  minY={minY:F2}  range={range:F1}m" +
                 $"  rotation={rotationDeg:F0}°" +
                 $"  inner(local)=[{innerMinX:F1}..{innerMaxX:F1}] x [{innerMinZ:F1}..{innerMaxZ:F1}]");
 
@@ -174,11 +175,12 @@ namespace ValheimFloorPlan
             float raiseStepHeight = Mathf.Clamp(ValheimFloorPlanPlugin.TerrainRaiseStepHeight, 0.15f, 1.5f);
             int maxRaiseStages = Mathf.Clamp(ValheimFloorPlanPlugin.TerrainMaxRaiseStages, 1, 16);
             bool skipSatisfiedCenterStamps = ValheimFloorPlanPlugin.TerrainSkipSatisfiedCenterStamps;
+            float totalRaiseHeight = targetY - minY;
             int stageCount = 1;
-            if (stagedRaise && range > STAGE_RAISE_EPSILON)
-                stageCount = Mathf.Clamp(Mathf.CeilToInt(range / raiseStepHeight), 1, maxRaiseStages);
+            if (stagedRaise && totalRaiseHeight > STAGE_RAISE_EPSILON)
+                stageCount = Mathf.Clamp(Mathf.CeilToInt(totalRaiseHeight / raiseStepHeight), 1, maxRaiseStages);
 
-            float stageHeight = stageCount > 0 ? range / stageCount : range;
+            float stageHeight = stageCount > 0 ? totalRaiseHeight / stageCount : totalRaiseHeight;
 
             int stepsX = Mathf.CeilToInt((innerMaxX - innerMinX) / levelSampleStep);
             int stepsZ = Mathf.CeilToInt((innerMaxZ - innerMinZ) / levelSampleStep);
@@ -208,7 +210,7 @@ namespace ValheimFloorPlan
 
             ValheimFloorPlanPlugin.Log.LogInfo(
                 $"[TerrainLeveler] Running {totalPasses} leveling pass(es) across {stageCount} raise stage(s) " +
-                $"(range={range:F1}m, staged={stagedRaise}, stageStep={raiseStepHeight:F2}m).");
+                $"(range={range:F1}m, totalRaise={totalRaiseHeight:F1}m, staged={stagedRaise}, stageStep={raiseStepHeight:F2}m).");
             ShowProgress($"Leveling terrain... 0% ({totalPasses} pass(es), {stageCount} stage(s))");
 
             for (int stage = 1; stage <= stageCount; stage++)

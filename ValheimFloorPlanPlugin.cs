@@ -24,6 +24,7 @@ namespace ValheimFloorPlan
         internal static int TerrainLevelPasses { get; private set; } = 2;
         internal static int TerrainSpikeCleanupPasses { get; private set; } = 2;
         internal static float TerrainStampRadius { get; private set; } = 3.0f;
+        internal static float TerrainHighPointDelta { get; private set; } = 0.0f;
         internal static bool TerrainUseStagedRaise { get; private set; } = false;
         internal static float TerrainRaiseStepHeight { get; private set; } = 0.5f;
         internal static int TerrainMaxRaiseStages { get; private set; } = 1;
@@ -53,6 +54,7 @@ namespace ValheimFloorPlan
         private ConfigEntry<int> _terrainLevelPasses = null!;
         private ConfigEntry<int> _terrainSpikeCleanupPasses = null!;
         private ConfigEntry<float> _terrainStampRadius = null!;
+        private ConfigEntry<float> _terrainHighPointDelta = null!;
         private ConfigEntry<bool> _terrainUseStagedRaise = null!;
         private ConfigEntry<float> _terrainRaiseStepHeight = null!;
         private ConfigEntry<int> _terrainMaxRaiseStages = null!;
@@ -130,6 +132,15 @@ namespace ValheimFloorPlan
             _terrainStampRadius.SettingChanged += (_, _) =>
                 TerrainStampRadius = Mathf.Clamp(_terrainStampRadius.Value, 3.0f, 6.0f);
             TerrainStampRadius = Mathf.Clamp(_terrainStampRadius.Value, 3.0f, 6.0f);
+
+            _terrainHighPointDelta = Config.Bind(
+                "Terrain", "TerrainHighPointDelta", 0.0f,
+                new ConfigDescription(
+                    "Extra height in metres added to the sampled highest point for the terrain leveling target. Final target is HighestPoint + Delta.",
+                    new AcceptableValueRange<float>(0.0f, 4.0f)));
+            _terrainHighPointDelta.SettingChanged += (_, _) =>
+                TerrainHighPointDelta = Mathf.Clamp(_terrainHighPointDelta.Value, 0.0f, 4.0f);
+            TerrainHighPointDelta = Mathf.Clamp(_terrainHighPointDelta.Value, 0.0f, 4.0f);
 
             _terrainUseStagedRaise = Config.Bind(
                 "Terrain", "TerrainUseStagedRaise", false,
@@ -277,7 +288,7 @@ namespace ValheimFloorPlan
             gameObject.AddComponent<FloorPlanBuilder>();
 
             Log.LogInfo($"{PluginName} v{PluginVersion} loaded! " +
-                $"Build: {_buildHotkey.Value}  Undo: {_undoHotkey.Value}  Progress HUD: {ProgressMessageType}  Terrain passes: {TerrainLevelPasses}  Spike cleanup passes: {TerrainSpikeCleanupPasses}  Staged raise: {TerrainUseStagedRaise} ({TerrainRaiseStepHeight:F2}m, max {TerrainMaxRaiseStages})  Skip satisfied center stamps: {TerrainSkipSatisfiedCenterStamps}  External wall height: {ExternalWallHeight}  Wall/Pillar material: {WallPillarMaterial}  Origin offset: {BuildOriginForwardOffset:F1}m  Preview move: {PreviewMoveStep:F2}/{PreviewFineMoveStep:F2}m  Preview rotate: {PreviewRotateStepDeg:F0}/{PreviewFineRotateStepDeg:F0}°");
+                $"Build: {_buildHotkey.Value}  Undo: {_undoHotkey.Value}  Progress HUD: {ProgressMessageType}  Terrain passes: {TerrainLevelPasses}  Spike cleanup passes: {TerrainSpikeCleanupPasses}  High-point delta: {TerrainHighPointDelta:F2}m  Staged raise: {TerrainUseStagedRaise} ({TerrainRaiseStepHeight:F2}m, max {TerrainMaxRaiseStages})  Skip satisfied center stamps: {TerrainSkipSatisfiedCenterStamps}  External wall height: {ExternalWallHeight}  Wall/Pillar material: {WallPillarMaterial}  Origin offset: {BuildOriginForwardOffset:F1}m  Preview move: {PreviewMoveStep:F2}/{PreviewFineMoveStep:F2}m  Preview rotate: {PreviewRotateStepDeg:F0}/{PreviewFineRotateStepDeg:F0}°");
         }
 
         private void Update()
