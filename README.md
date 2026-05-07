@@ -17,7 +17,11 @@ This package includes two components:
 1. Open the Designer and create or edit a plan.
 2. Save/export a `.vfp` file.
 3. Point the mod config `FloorPlanFile` to that `.vfp` file.
-4. In game, press build hotkey (default F8) and place the design.
+4. In game, press the build hotkey (default F8) and place the design. A terrain snapshot is taken automatically before placement.
+5. To undo, press the undo hotkey (default F9). This removes all placed building pieces and restores the terrain to the snapshot.
+
+> **IMPORTANT:** Terrain can only be restored within the **current session** — if you leave the area or reload, the terrain snapshot is lost. Building pieces can be undone across sessions because they are tagged as built by Valheim Floor Plan.
+
 
 ## Sample Plans
 
