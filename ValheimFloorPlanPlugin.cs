@@ -82,7 +82,7 @@ namespace ValheimFloorPlan
 
             _vfpFilePath = Config.Bind(
                 "General", "FloorPlanFile", "",
-                "Full path to the .vfp floor plan file exported from ValheimFloorPlanner.");
+                "Full path to the .vfp floor plan file exported from Valheim Floor Plan Designer.");
 
             _buildHotkey = Config.Bind(
                 "General", "BuildHotkey", new KeyboardShortcut(KeyCode.F8),

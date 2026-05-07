@@ -20,6 +20,16 @@ This release marks the first stable milestone for ValheimFloorPlan.
   - `TerrainSpikeCleanupPasses = 2`
   - `TerrainStampRadius = 3.0`
 
+## Designer Companion App
+
+- Repository now includes the partner Designer web app under `Designer/` for creating `.vfp` plans.
+- Added monorepo workflow docs:
+  - `README.md` (project layout and end-to-end flow)
+  - `DESIGNER_WORKFLOW.md` (Designer -> Mod usage)
+- Added VS Code task support for both sides of the workflow:
+  - `Build & Deploy ValheimFloorPlan`
+  - `Run Designer Local Server`
+
 ## Pre-release Sanity Checklist
 
 - Build succeeds locally with zero compile errors.
