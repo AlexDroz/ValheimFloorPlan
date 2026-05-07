@@ -1,6 +1,7 @@
 # .NET build outputs
 bin/
 obj/
+artifacts/
 
 # VS Code local settings (optional — remove this block if you want to share launch configs)
 .vscode/
