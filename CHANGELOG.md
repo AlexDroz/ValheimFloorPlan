@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.0.2
+
+- Expanded the README package description/introduction for clearer context and feature overview.
+- Added additional README notes for in-game build placement controls (preview movement/rotation/confirm/cancel keys).
+- Updated README with a new **Examples** section using three new screenshots from `images/`.
+- Fixed Designer `Shell` layout generation so doorways are placed first and walls no longer overlap doorway footprints.
+- Improved Shell edge placement behavior on odd-sized grids by skipping wall segments that intersect doorway area.
+- Rebuilt and repackaged Thunderstore release (`ValheimFloorPlan-1.0.2.zip`) including mod DLL + Designer app.
+
 ## 1.0.1
 
 - Documentation change only; fixed broken README image links.

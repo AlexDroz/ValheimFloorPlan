@@ -496,14 +496,6 @@ canvas.addEventListener("contextmenu", (ev) => {
   draw();
 });
 
-function addNonWallPiece(col, row, type, rot) {
-  // Remove any Wall anchored exactly at this cell, then add the new piece
-  state.pieces = state.pieces.filter(
-    (p) => !(p.type === "Wall" && p.col === col && p.row === row)
-  );
-  state.pieces.push({ col, row, type, rot });
-}
-
 function cmdShell() {
   state.pieces = [];
 
@@ -521,31 +513,67 @@ function cmdShell() {
   const doorTopCol  = Math.floor((cols - 2) / 2);
   const doorLeftRow = Math.floor((rows - 2) / 2);
 
-  // 3. Top edge walls (rot 0 = outer face top), step col by 2
+  const doorways = [
+    { col: doorTopCol, row: rows - 1, type: "Doorway", rot: 0 },
+    { col: doorTopCol, row: 0, type: "Doorway", rot: 180 },
+    { col: 0, row: doorLeftRow, type: "Doorway", rot: 270 },
+    { col: cols - 1, row: doorLeftRow, type: "Doorway", rot: 90 },
+  ];
+
+  function footprintsOverlap(aCol, aRow, aW, aH, bCol, bRow, bW, bH) {
+    return aCol < bCol + bW && aCol + aW > bCol && aRow < bRow + bH && aRow + aH > bRow;
+  }
+
+  function wallOverlapsDoorway(col, row, rot) {
+    const wallSize = effectiveSize("Wall", rot);
+    for (const door of doorways) {
+      const doorSize = effectiveSize("Doorway", door.rot);
+      if (
+        footprintsOverlap(
+          col,
+          row,
+          wallSize.w,
+          wallSize.h,
+          door.col,
+          door.row,
+          doorSize.w,
+          doorSize.h
+        )
+      ) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  // 3. Doorways first
+  for (const door of doorways) {
+    state.pieces.push(door);
+  }
+
+  // 4. Top edge walls (rot 0 = outer face top), step col by 2
   for (let c = 0; c <= cols - 2; c += 2) {
+    if (wallOverlapsDoorway(c, rows - 1, 0)) continue;
     state.pieces.push({ col: c, row: rows - 1, type: "Wall", rot: 0 });
   }
 
-  // 4. Bottom edge walls (rot 180 = outer face bottom), step col by 2
+  // 5. Bottom edge walls (rot 180 = outer face bottom), step col by 2
   for (let c = 0; c <= cols - 2; c += 2) {
+    if (wallOverlapsDoorway(c, 0, 180)) continue;
     state.pieces.push({ col: c, row: 0, type: "Wall", rot: 180 });
   }
 
-  // 5. Left edge walls (rot 270 = outer face left), step row by 2
+  // 6. Left edge walls (rot 270 = outer face left), step row by 2
   for (let r = 0; r <= rows - 2; r += 2) {
+    if (wallOverlapsDoorway(0, r, 270)) continue;
     state.pieces.push({ col: 0, row: r, type: "Wall", rot: 270 });
   }
 
-  // 6. Right edge walls (rot 90 = outer face right), step row by 2
+  // 7. Right edge walls (rot 90 = outer face right), step row by 2
   for (let r = 0; r <= rows - 2; r += 2) {
+    if (wallOverlapsDoorway(cols - 1, r, 90)) continue;
     state.pieces.push({ col: cols - 1, row: r, type: "Wall", rot: 90 });
   }
-
-  // 7. Doorways — removes any wall at the same anchor, then places doorway
-  addNonWallPiece(doorTopCol,  rows - 1, "Doorway", 0);    // top
-  addNonWallPiece(doorTopCol,  0,        "Doorway", 180);  // bottom
-  addNonWallPiece(0,           doorLeftRow, "Doorway", 270); // left
-  addNonWallPiece(cols - 1,    doorLeftRow, "Doorway", 90);  // right
 
   // 8. Pillars flanking each doorway (may overlap walls, must not displace doors)
   // Top door flanks
