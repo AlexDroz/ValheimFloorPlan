@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.0.1
+
+- Documentation change only; fixed broken README image links.
+
 ## 1.0.0
 
 - First stable release.
