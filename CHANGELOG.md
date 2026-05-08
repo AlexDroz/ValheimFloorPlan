@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.0.3
+
+- Bumped mod, manifest, and Designer app version numbers from 1.0.2 to 1.0.3.
+- Updated Thunderstore dependency to `denikson-BepInExPack_Valheim-5.4.2333`.
+- Added a comprehensive README Config Options section documenting all BepInEx settings, defaults, ranges, and preview keybinds.
+- Updated README callout formatting by replacing blockquote notes (`>`) with plain bold "Note/IMPORTANT" lines for better Thunderstore dark-theme readability.
+- Rebuilt and repackaged Thunderstore release (`ValheimFloorPlan-1.0.3.zip`) including mod DLL + Designer app.
+
 ## 1.0.2
 
 - Expanded the README package description/introduction for clearer context and feature overview.

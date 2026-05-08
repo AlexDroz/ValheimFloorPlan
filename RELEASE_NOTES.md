@@ -1,4 +1,4 @@
-# ValheimFloorPlan 1.0.2
+# ValheimFloorPlan 1.0.3
 
 This release marks the first stable milestone for ValheimFloorPlan.
 
@@ -33,7 +33,7 @@ This release marks the first stable milestone for ValheimFloorPlan.
 ## Pre-release Sanity Checklist
 
 - Build succeeds locally with zero compile errors.
-- Mod loads in-game and logs `ValheimFloorPlan v1.0.2 loaded!`.
+- Mod loads in-game and logs `ValheimFloorPlan v1.0.3 loaded!`.
 - Preview can move/rotate/cancel/confirm with configured keys.
 - Terrain leveling uses `Highest + Delta` as configured.
 - Preview top walls/markers visually reflect delta height.

@@ -16,7 +16,7 @@ namespace ValheimFloorPlan
 
         public const string PluginGUID = "com.alexdroz.valheimfloorplan";
         public const string PluginName = "ValheimFloorPlan";
-        public const string PluginVersion = "1.0.2";
+        public const string PluginVersion = "1.0.3";
 
         internal static ManualLogSource Log = null!;
         internal static MessageHud.MessageType ProgressMessageType { get; private set; } = MessageHud.MessageType.Center;
