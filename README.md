@@ -19,9 +19,9 @@ This package includes two components:
 1. Open the **Designer** to create or edit a plan. It is a local web page installed by Thunderstore Mod Manager. Copy the path below and paste it into your browser address bar to open it (replace `v1.0.3` if a newer version is installed):
 
    ```
-   %APPDATA%\Thunderstore Mod Manager\DataFolder\Valheim\cache\RetiredCoders-ValheimFloorPlan\v1.0.3\BepInEx\plugins\ValheimFloorPlan\Designer\index.html
+   %APPDATA%\Thunderstore Mod Manager\DataFolder\Valheim\profiles\Default\BepInEx\plugins\RetiredCoders-ValheimFloorPlan\ValheimFloorPlan\Designer\index.html
 
-   e.g. C:\Users\{Username}\AppData\Roaming\Thunderstore Mod Manager\DataFolder\Valheim\cache\RetiredCoders-ValheimFloorPlan\v1.0.3\BepInEx\plugins\ValheimFloorPlan\Designer\index.html
+   e.g.    C:\Users\{Username}\AppData\Roaming\Thunderstore Mod Manager\DataFolder\Valheim\profiles\Default\BepInEx\plugins\RetiredCoders-ValheimFloorPlan\ValheimFloorPlan\Designer\index.html
    ```
 2. Save/export a `.vfp` file.
 3. Point the mod config `FloorPlanFile` to that `.vfp` file.
