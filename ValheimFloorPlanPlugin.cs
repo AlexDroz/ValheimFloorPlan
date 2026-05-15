@@ -16,9 +16,10 @@ namespace ValheimFloorPlan
 
         public const string PluginGUID = "com.alexdroz.valheimfloorplan";
         public const string PluginName = "ValheimFloorPlan";
-        public const string PluginVersion = "1.0.3";
+        public const string PluginVersion = "1.0.4";
 
         internal static ManualLogSource Log = null!;
+        internal static ValheimFloorPlanPlugin Instance { get; private set; } = null!;
         internal static MessageHud.MessageType ProgressMessageType { get; private set; } = MessageHud.MessageType.Center;
         internal static MessageHud.MessageType WarningMessageType { get; private set; } = MessageHud.MessageType.TopLeft;
         internal static int TerrainLevelPasses { get; private set; } = 2;
@@ -45,10 +46,12 @@ namespace ValheimFloorPlan
         internal static KeyCode PreviewRotateRightKey { get; private set; } = KeyCode.R;
         internal static KeyCode PreviewCancelKey { get; private set; } = KeyCode.Escape;
         internal static KeyCode PreviewFineAdjustKey { get; private set; } = KeyCode.LeftShift;
+        internal static float UndoRadius { get; private set; } = 15f;
 
         private ConfigEntry<string> _vfpFilePath = null!;
         private ConfigEntry<KeyboardShortcut> _buildHotkey = null!;
         private ConfigEntry<KeyboardShortcut> _undoHotkey = null!;
+        private ConfigEntry<float> _undoRadius = null!;
         private ConfigEntry<string> _progressMessagePosition = null!;
         private ConfigEntry<string> _warningMessagePosition = null!;
         private ConfigEntry<int> _terrainLevelPasses = null!;
@@ -78,6 +81,7 @@ namespace ValheimFloorPlan
 
         private void Awake()
         {
+            Instance = this;
             Log = Logger;
 
             _vfpFilePath = Config.Bind(
@@ -91,6 +95,15 @@ namespace ValheimFloorPlan
             _undoHotkey = Config.Bind(
                 "General", "UndoHotkey", new KeyboardShortcut(KeyCode.F9),
                 "Hotkey to undo the last floor plan build (removes pieces and restores terrain).");
+
+            _undoRadius = Config.Bind(
+                "General", "UndoRadius", 15f,
+                new ConfigDescription(
+                    "Search radius in metres around the player when scanning for VFP pieces to remove on Undo.",
+                    new AcceptableValueRange<float>(5f, 150f)));
+            _undoRadius.SettingChanged += (_, _) =>
+                UndoRadius = Mathf.Clamp(_undoRadius.Value, 5f, 150f);
+            UndoRadius = Mathf.Clamp(_undoRadius.Value, 5f, 150f);
 
             _progressMessagePosition = Config.Bind(
                 "General", "ProgressMessagePosition", "CenterLeft",
@@ -308,6 +321,14 @@ namespace ValheimFloorPlan
 
             if (_undoHotkey.Value.IsDown())
                 FloorPlanBuilder.Instance.Undo();
+        }
+
+        /// <summary>Persists a new undo radius to the config and updates the in-memory property.</summary>
+        internal static void SetUndoRadius(float radius)
+        {
+            if (Instance == null) return;
+            Instance._undoRadius.Value = Mathf.Clamp(radius, 5f, 150f);
+            // SettingChanged fires and updates UndoRadius automatically.
         }
 
         internal static void ShowProgressMessage(string message)

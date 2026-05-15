@@ -5,7 +5,7 @@ set "PORT=5500"
 cd /d "%~dp0"
 
 echo.
-echo Valheim Floor Plan Designer v1.0.3 - Local Server Launcher
+echo Valheim Floor Plan Designer v1.0.4 - Local Server Launcher
 echo Folder: %CD%
 echo Port:   %PORT%
 echo.

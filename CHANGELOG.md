@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.0.4
+
+- Replaced the flat X origin marker with a tall vertical flagpole (10 m, bright yellow) so the build origin is visible above terrain, water, and underground surfaces during preview.
+- Undo confirmation now shows per-piece red highlight rings around every VFP piece within the undo radius so the player can see exactly what will be removed.
+- Undo confirmation now shows an orange boundary circle on the terrain at the full undo search radius edge.
+- Reduced the default undo search radius from 75 m to 15 m.
+- Added `UndoRadius` config option (range 5–150 m, default 15 m) to control the undo search radius.
+- During the undo confirmation window, pressing `+`/`-` (or numpad equivalents) adjusts the radius by 5 m; the new value is saved to config and highlights/boundary circle refresh immediately.
+- Pressing RMB or Escape during the undo confirmation window cancels the undo and clears all highlights.
+- Undo confirmation HUD message now shows the current radius, `+/-` adjustment hint, and RMB/Esc cancel reminder.
+- Added `ValheimFloorPlanPlugin.Instance` static property and `SetUndoRadius()` helper to support live config write-back from `FloorPlanBuilder`.
+
 ## 1.0.3
 
 - Bumped mod, manifest, and Designer app version numbers from 1.0.2 to 1.0.3.

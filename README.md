@@ -16,7 +16,13 @@ This package includes two components:
 
 ## Creating Floor Plans
 
-1. Open the Designer and create or edit a plan.
+1. Open the **Designer** to create or edit a plan. It is a local web page installed by Thunderstore Mod Manager. Copy the path below and paste it into your browser address bar to open it (replace `v1.0.3` if a newer version is installed):
+
+   ```
+   %APPDATA%\Thunderstore Mod Manager\DataFolder\Valheim\cache\RetiredCoders-ValheimFloorPlan\v1.0.3\BepInEx\plugins\ValheimFloorPlan\Designer\index.html
+
+   e.g. C:\Users\{Username}\AppData\Roaming\Thunderstore Mod Manager\DataFolder\Valheim\cache\RetiredCoders-ValheimFloorPlan\v1.0.3\BepInEx\plugins\ValheimFloorPlan\Designer\index.html
+   ```
 2. Save/export a `.vfp` file.
 3. Point the mod config `FloorPlanFile` to that `.vfp` file.
 4. In game, press the build hotkey (default F8) and place the design. A terrain snapshot is taken automatically before placement.
@@ -38,12 +44,24 @@ This package includes two components:
 
    - **White rectangle** — the inner leveled pad: the exact area of ground that will be raised and flattened to sit your foundation on.
    - **Green rectangle** — the outer terrain-change boundary: terrain blending extends to this edge, giving a smooth transition rather than a hard cliff.
-   - **Dark red/brown cross marker** — the exact placement origin point at the centre of the plan.
+   - **Tall yellow flagpole** — the exact placement origin point at the centre of the plan. The pole rises 10 m above the terrain surface so it remains visible even when the ground is underwater or underground.
    - **Orange diamond markers** — terrain edge risk warnings. These appear when the surrounding terrain is uneven enough that the leveled edge may produce visible tears or spikes. Move or rotate the plan until they disappear (or reduce) for the cleanest result. Markers turn **red** when risk is high.
 
    **Note:** A HUD message also reports the current risk level (`LOW` / `MEDIUM` / `HIGH`) along with `step` (the steepest cross-edge height jump) and `relief` (total height range around the footprint) to help you judge whether to nudge the plan before building.
 
-5. To undo, press the undo hotkey (default F9). This removes all placed building pieces and restores the terrain to the snapshot.
+5. To undo, press the undo hotkey (default F9). A 5-second confirmation window opens showing:
+   - **Red rings** around every VFP piece within the search radius so you can see exactly what will be removed.
+   - **Orange boundary circle** on the ground marking the edge of the search radius.
+
+   During the confirmation window you can:
+
+   | Key | Action |
+   |-----|--------|
+   | `+` / `-` *(or numpad)* | Increase / decrease the search radius by 5 m. The new radius is saved to config. |
+   | `F9` *(undo hotkey again)* | Confirm — removes all marked pieces and restores terrain. |
+   | `RMB` / `Escape` | Cancel — clears all highlights without removing anything. |
+
+   The HUD message shows the current radius and remaining time throughout the window.
 
 **IMPORTANT:** Terrain can only be restored within the **current session** — if you leave the area or reload, the terrain snapshot is lost. Building pieces can be undone across sessions because they are tagged as built by Valheim Floor Plan.
 
@@ -62,6 +80,7 @@ All values below are configurable in that file.
 | `FloorPlanFile` | *(empty)* | Any valid file path | Full path to the `.vfp` file exported by the Designer. |
 | `BuildHotkey` | `F8` | Any valid `KeyboardShortcut` | Starts plan preview/build flow. |
 | `UndoHotkey` | `F9` | Any valid `KeyboardShortcut` | Removes placed VFP-tagged pieces and restores terrain snapshot. |
+| `UndoRadius` | `15` | `5` to `150` | Search radius in metres around the player when scanning for VFP pieces to remove on Undo. Adjustable live during the confirmation window with `+`/`-`. |
 | `ProgressMessagePosition` | `CenterLeft` | Valheim `MessageHud` positions (`Center`, `TopLeft`, `TopRight`, etc.) | HUD slot for build-progress messages. `CenterLeft` is accepted as an alias and maps to `Center`. |
 | `WarningMessagePosition` | `TopLeft` | Valheim `MessageHud` positions (`Center`, `TopLeft`, `TopRight`, etc.) | HUD slot for warnings/risk messages. `CenterLeft` is accepted as an alias and maps to `Center`. |
 | `BuildOriginForwardOffset` | `12` | `10` to `20` | Initial preview origin distance in front of the player (meters). |
@@ -136,7 +155,7 @@ The `samples/` folder contains ready-to-use `.vfp` examples:
 ![Valheim Floor Plan screenshot 4](https://raw.githubusercontent.com/AlexDroz/ValheimFloorPlan/master/images/2026-05-07%2015_53_00-Valheim.png)
 ![Valheim Floor Plan screenshot 5](https://raw.githubusercontent.com/AlexDroz/ValheimFloorPlan/master/images/2026-05-07%2015_53_17-Valheim.png)
 ![Valheim Floor Plan screenshot 6](https://raw.githubusercontent.com/AlexDroz/ValheimFloorPlan/master/images/2026-05-07%2015_53_49-Valheim.png)
-![Valheim Floor Plan screenshot 7](https://raw.githubusercontent.com/AlexDroz/ValheimFloorPlan/master/images/2026-05-07%2015_54_06-Valheim.png)
+![Valheim Floor Plan screenshot 7](https://raw.githubusercontent.com/AlexDroz/ValheimFloorPlan/master/images/2026-05-15%2016_45_51-Valheim.png)
 ![Valheim Floor Plan screenshot 8](https://raw.githubusercontent.com/AlexDroz/ValheimFloorPlan/master/images/2026-05-07%2016_14_04-.png)
 ![Valheim Floor Plan screenshot 9](https://raw.githubusercontent.com/AlexDroz/ValheimFloorPlan/master/images/2026-05-07%2016_14_27-.png)
 
