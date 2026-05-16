@@ -58,6 +58,10 @@ namespace ValheimFloorPlan
         // Reset to UNDO_RADIUS each time a new confirmation starts.
         private float _undoActiveRadius = 15f;
 
+        // Centre of the undo search circle. Starts at the player's position and can
+        // be nudged with the configured preview move keys during the confirmation window.
+        private Vector3 _undoCenter = Vector3.zero;
+
         public static FloorPlanBuilder Instance { get; private set; } = null!;
 
         // All GameObjects spawned in the last build — fallback for same-session undo.
@@ -723,7 +727,8 @@ namespace ValheimFloorPlan
             {
                 // No pending confirmation — check if there's anything to undo.
                 _undoActiveRadius = UNDO_RADIUS;
-                CountUndoStats(player, _undoActiveRadius, out int pieces, out int terrainChunks);
+                _undoCenter = player.transform.position;
+                CountUndoStats(player, _undoActiveRadius, _undoCenter, out int pieces, out int terrainChunks);
 
                 if (pieces == 0 && terrainChunks == 0)
                 {
@@ -764,24 +769,23 @@ namespace ValheimFloorPlan
             if (_undoConfirmationTerrainChunks > 0)
                 msg += $" and restore {_undoConfirmationTerrainChunks} terrain chunk(s)";
             msg += $" within {_undoActiveRadius:F0}m radius (+/- to adjust)";
-            msg += $". Press Undo again ({secondsLeft}s remaining) to confirm, or RMB/Esc to cancel.";
+            msg += $". Arrow keys to move circle center | Press Undo again ({secondsLeft}s remaining) to confirm, or RMB/Esc to cancel.";
             return msg;
         }
 
         /// <summary>Count how many pieces will be removed and how many terrain chunks will be restored.</summary>
-        private void CountUndoStats(Player player, float radius, out int pieceCount, out int terrainChunkCount)
+        private void CountUndoStats(Player player, float radius, Vector3 center, out int pieceCount, out int terrainChunkCount)
         {
             pieceCount = 0;
-            Vector3 playerPos = player.transform.position;
 
-            // Count VFP-tagged pieces within undo radius.
+            // Count VFP-tagged pieces within undo radius of the search center.
             foreach (var znv in UnityEngine.Object.FindObjectsByType<ZNetView>(FindObjectsSortMode.None))
             {
                 if (znv == null) continue;
                 var zdo = znv.GetZDO();
                 if (zdo == null) continue;
                 if (zdo.GetString(VFP_TAG) != "1") continue;
-                if (Vector3.Distance(znv.transform.position, playerPos) > radius) continue;
+                if (Vector3.Distance(znv.transform.position, center) > radius) continue;
 
                 pieceCount++;
             }
@@ -794,7 +798,6 @@ namespace ValheimFloorPlan
         private void PerformUndo(Player player)
         {
             ClearUndoHighlights();
-            Vector3 playerPos = player.transform.position;
             int removed = 0;
 
             // Scan every active ZNetView in the scene for the VFP tag.
@@ -806,7 +809,7 @@ namespace ValheimFloorPlan
                 var zdo = znv.GetZDO();
                 if (zdo == null) continue;
                 if (zdo.GetString(VFP_TAG) != "1") continue;
-                if (Vector3.Distance(znv.transform.position, playerPos) > _undoActiveRadius) continue;
+                if (Vector3.Distance(znv.transform.position, _undoCenter) > _undoActiveRadius) continue;
 
                 ZNetScene.instance.Destroy(znv.gameObject);
                 removed++;
@@ -822,7 +825,7 @@ namespace ValheimFloorPlan
             {
                 if (_undoRefreshCoroutine != null)
                     StopCoroutine(_undoRefreshCoroutine);
-                _undoRefreshCoroutine = StartCoroutine(PostUndoTerrainRefresh(playerPos, restoredChunks));
+                _undoRefreshCoroutine = StartCoroutine(PostUndoTerrainRefresh(_undoCenter, restoredChunks));
             }
 
             if (!hadSnapshot)
@@ -833,7 +836,7 @@ namespace ValheimFloorPlan
             }
 
             ValheimFloorPlanPlugin.Log.LogInfo(
-                $"[FloorPlanBuilder] Undo: removed {removed} VFP pieces within {_undoActiveRadius:F0}m, restored {restoredChunks} terrain chunks.");
+                $"[FloorPlanBuilder] Undo: removed {removed} VFP pieces within {_undoActiveRadius:F0}m from center {_undoCenter}, restored {restoredChunks} terrain chunks.");
             player.Message(MessageHud.MessageType.Center,
                 $"ValheimFloorPlan: Undone ({removed} pieces removed, {restoredChunks} terrain chunks restored).");
         }
@@ -914,7 +917,6 @@ namespace ValheimFloorPlan
             _undoHighlightGo = new GameObject("VFP_UndoHighlight");
 
             var color = new Color(1f, 0.18f, 0.12f, 0.95f);
-            Vector3 playerPos = player.transform.position;
             const int terrainLayer = 1 << 11;
 
             foreach (var znv in UnityEngine.Object.FindObjectsByType<ZNetView>(FindObjectsSortMode.None))
@@ -923,7 +925,7 @@ namespace ValheimFloorPlan
                 var zdo = znv.GetZDO();
                 if (zdo == null) continue;
                 if (zdo.GetString(VFP_TAG) != "1") continue;
-                if (Vector3.Distance(znv.transform.position, playerPos) > _undoActiveRadius) continue;
+                if (Vector3.Distance(znv.transform.position, _undoCenter) > _undoActiveRadius) continue;
 
                 Vector3 pos = znv.transform.position;
 
@@ -951,10 +953,10 @@ namespace ValheimFloorPlan
             for (int i = 0; i < UNDO_BOUNDARY_CIRCLE_SEGMENTS; i++)
             {
                 float angle = i * Mathf.PI * 2f / UNDO_BOUNDARY_CIRCLE_SEGMENTS;
-                float bx = playerPos.x + Mathf.Cos(angle) * _undoActiveRadius;
-                float bz = playerPos.z + Mathf.Sin(angle) * _undoActiveRadius;
-                float by = playerPos.y;
-                if (Physics.Raycast(new Vector3(bx, playerPos.y + 300f, bz), Vector3.down, out var bHit, 600f, terrainLayer))
+                float bx = _undoCenter.x + Mathf.Cos(angle) * _undoActiveRadius;
+                float bz = _undoCenter.z + Mathf.Sin(angle) * _undoActiveRadius;
+                float by = _undoCenter.y;
+                if (Physics.Raycast(new Vector3(bx, _undoCenter.y + 300f, bz), Vector3.down, out var bHit, 600f, terrainLayer))
                     by = bHit.point.y;
                 boundary.SetPosition(i, new Vector3(bx, by + UNDO_BOUNDARY_CIRCLE_LIFT, bz));
             }
@@ -982,9 +984,10 @@ namespace ValheimFloorPlan
         }
 
         /// <summary>
-        /// Polls +/- input while the undo confirmation window is open.
-        /// Adjusts <see cref="_undoActiveRadius"/>, refreshes highlight rings,
-        /// recounts affected pieces, and restarts the countdown timer.
+        /// Polls +/- input while the undo confirmation window is open to adjust radius.
+        /// Also handles arrow key input to nudge the circle center, allowing the player
+        /// to move the search circle and target different sets of pieces.
+        /// Refreshes highlight rings, recounts affected pieces, and restarts the countdown timer.
         /// </summary>
         private void UpdateUndoConfirmationInput()
         {
@@ -1004,32 +1007,95 @@ namespace ValheimFloorPlan
             bool decrease = UnityEngine.Input.GetKeyDown(KeyCode.Minus)
                          || UnityEngine.Input.GetKeyDown(KeyCode.KeypadMinus);
 
-            if (!increase && !decrease) return;
+            // Handle radius adjustment with +/-.
+            if (increase || decrease)
+            {
+                float newRadius = _undoActiveRadius + (increase ? UNDO_RADIUS_ADJUST_STEP : -UNDO_RADIUS_ADJUST_STEP);
+                _undoActiveRadius = Mathf.Clamp(newRadius, 5f, 150f);
 
-            float newRadius = _undoActiveRadius + (increase ? UNDO_RADIUS_ADJUST_STEP : -UNDO_RADIUS_ADJUST_STEP);
-            _undoActiveRadius = Mathf.Clamp(newRadius, 5f, 150f);
+                // Persist the adjusted radius back to the config file.
+                ValheimFloorPlanPlugin.SetUndoRadius(_undoActiveRadius);
 
-            // Persist the adjusted radius back to the config file.
-            ValheimFloorPlanPlugin.SetUndoRadius(_undoActiveRadius);
+                // Recount pieces at the new radius.
+                CountUndoStats(player, _undoActiveRadius, _undoCenter, out int pieces, out int terrainChunks);
+                _undoConfirmationPieceCount = pieces;
+                _undoConfirmationTerrainChunks = terrainChunks;
 
-            // Recount pieces at the new radius.
-            CountUndoStats(player, _undoActiveRadius, out int pieces, out int terrainChunks);
-            _undoConfirmationPieceCount = pieces;
-            _undoConfirmationTerrainChunks = terrainChunks;
+                // Refresh highlight rings to match the new radius.
+                ShowUndoHighlights(player);
 
-            // Refresh highlight rings to match the new radius.
-            ShowUndoHighlights(player);
+                // Restart the confirmation timer so the player has a full window after adjusting.
+                _undoConfirmationExpireAt = Time.time + UNDO_CONFIRMATION_SECONDS;
+                if (_undoCountdownCoroutine != null)
+                    StopCoroutine(_undoCountdownCoroutine);
+                _undoCountdownCoroutine = StartCoroutine(UndoCountdownCoroutine());
 
-            // Restart the confirmation timer so the player has a full window after adjusting.
-            _undoConfirmationExpireAt = Time.time + UNDO_CONFIRMATION_SECONDS;
-            if (_undoCountdownCoroutine != null)
-                StopCoroutine(_undoCountdownCoroutine);
-            _undoCountdownCoroutine = StartCoroutine(UndoCountdownCoroutine());
+                // Immediate HUD update.
+                ValheimFloorPlanPlugin.ShowWrappedMessage(
+                    ValheimFloorPlanPlugin.ProgressMessageType,
+                    BuildUndoConfirmationMessage((int)UNDO_CONFIRMATION_SECONDS));
+                return;
+            }
 
-            // Immediate HUD update.
-            ValheimFloorPlanPlugin.ShowWrappedMessage(
-                ValheimFloorPlanPlugin.ProgressMessageType,
-                BuildUndoConfirmationMessage((int)UNDO_CONFIRMATION_SECONDS));
+            // Handle circle center movement with arrow keys.
+            // Compute step size (fine-adjust reduces the step).
+            bool fineAdjust = IsFineAdjustHeld();
+            float moveStep = fineAdjust
+                ? ValheimFloorPlanPlugin.PreviewFineMoveStep
+                : ValheimFloorPlanPlugin.PreviewMoveStep;
+
+            // Get the camera-relative movement directions (same as preview mode).
+            Vector3 moveForward = Vector3.forward;
+            Vector3 moveRight = Vector3.right;
+            Camera movementCamera = Camera.main;
+            if (movementCamera != null)
+            {
+                moveForward = movementCamera.transform.forward;
+                moveForward.y = 0f;
+                if (moveForward.sqrMagnitude > 0.0001f)
+                {
+                    moveForward.Normalize();
+                    moveRight = new Vector3(moveForward.z, 0f, -moveForward.x);
+                }
+                else
+                {
+                    moveForward = Vector3.forward;
+                    moveRight = Vector3.right;
+                }
+            }
+
+            // Check for arrow key input (map to move directions like the preview does).
+            Vector3 nudge = Vector3.zero;
+            bool centerMoved = false;
+
+            if (IsPreviewKeyDown(ValheimFloorPlanPlugin.PreviewMoveForwardKey))         { nudge =  moveForward * moveStep; centerMoved = true; }
+            else if (IsPreviewKeyDown(ValheimFloorPlanPlugin.PreviewMoveBackwardKey))   { nudge = -moveForward * moveStep; centerMoved = true; }
+            else if (IsPreviewKeyDown(ValheimFloorPlanPlugin.PreviewMoveRightKey))      { nudge =  moveRight   * moveStep; centerMoved = true; }
+            else if (IsPreviewKeyDown(ValheimFloorPlanPlugin.PreviewMoveLeftKey))       { nudge = -moveRight   * moveStep; centerMoved = true; }
+
+            if (centerMoved)
+            {
+                _undoCenter += nudge;
+
+                // Recount pieces at the new center.
+                CountUndoStats(player, _undoActiveRadius, _undoCenter, out int pieces, out int terrainChunks);
+                _undoConfirmationPieceCount = pieces;
+                _undoConfirmationTerrainChunks = terrainChunks;
+
+                // Refresh highlight rings to show the new center.
+                ShowUndoHighlights(player);
+
+                // Restart the confirmation timer so the player has a full window after moving.
+                _undoConfirmationExpireAt = Time.time + UNDO_CONFIRMATION_SECONDS;
+                if (_undoCountdownCoroutine != null)
+                    StopCoroutine(_undoCountdownCoroutine);
+                _undoCountdownCoroutine = StartCoroutine(UndoCountdownCoroutine());
+
+                // Immediate HUD update showing the new count.
+                ValheimFloorPlanPlugin.ShowWrappedMessage(
+                    ValheimFloorPlanPlugin.ProgressMessageType,
+                    BuildUndoConfirmationMessage((int)UNDO_CONFIRMATION_SECONDS));
+            }
         }
 
 

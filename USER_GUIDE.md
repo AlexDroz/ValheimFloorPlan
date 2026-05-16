@@ -90,10 +90,22 @@ Preview controls are also configurable in the same file.
    - Run post-build spike cleanup
 6. If placement is wrong, use `F9` and try again.
 
+## Undo Workflow
+1. Press `F9` (undo hotkey).
+2. A 5-second confirmation window opens showing:
+   - Red rings around each affected VFP piece
+   - Orange boundary circle marking the search radius
+3. While the confirmation window is open:
+   - Use arrow keys to move the search circle centre and reselect different pieces
+   - Use `+`/`-` to increase/decrease the search radius
+   - Any adjustment restarts the 5-second timer
+4. Press `F9` again to confirm, or press `Esc`/right-click to cancel.
+
 ## Controls (Default)
 - Build Preview: `F8`
 - Undo: `F9`
 - Move Preview: `UpArrow`, `DownArrow`, `LeftArrow`, `RightArrow`
+- Move Undo Circle: `UpArrow`, `DownArrow`, `LeftArrow`, `RightArrow` (during undo confirmation)
 - Rotate Preview: `Q` / `R`
 - Confirm Build: `E`
 - Fine Adjust Modifier: `LeftShift`

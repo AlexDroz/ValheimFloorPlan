@@ -205,7 +205,7 @@
         <tbody>
           <tr><td><code>FloorPlanFile</code></td><td>empty</td><td>Full path to the .vfp file to build.</td></tr>
           <tr><td><code>BuildHotkey</code></td><td><code>F8</code></td><td>Opens placement preview.</td></tr>
-          <tr><td><code>UndoHotkey</code></td><td><code>F9</code></td><td>Removes nearby VFP pieces and restores terrain snapshot.</td></tr>
+          <tr><td><code>UndoHotkey</code></td><td><code>F9</code></td><td>Opens a 5-second confirmation window showing which pieces will be removed. Use arrow keys to move the search circle, +/- to adjust radius, then press F9 again to confirm or Esc to cancel.</td></tr>
           <tr><td><code>BuildOriginForwardOffset</code></td><td>12</td><td>Initial preview origin in front of player (10-20).</td></tr>
           <tr><td><code>ProgressMessagePosition</code></td><td>CenterLeft</td><td>HUD slot used for status text (CenterLeft maps to Center).</td></tr>
           <tr><td><code>TerrainLevelPasses</code></td><td>2</td><td>Main terrain leveling pass count (1-5).</td></tr>
@@ -245,6 +245,7 @@
         <li>Build preview: <code>F8</code></li>
         <li>Undo: <code>F9</code></li>
         <li>Move preview: <code>UpArrow / DownArrow / LeftArrow / RightArrow</code></li>
+        <li>Move undo circle: <code>UpArrow / DownArrow / LeftArrow / RightArrow</code> (during undo confirmation)</li>
         <li>Rotate preview: <code>Q / R</code></li>
         <li>Confirm build: <code>E</code></li>
         <li>Fine adjust: hold <code>LeftShift</code></li>
@@ -275,9 +276,23 @@
     </section>
 
     <section class="card">
-      <h2>Undo Behavior</h2>
+      <h2>Undo Workflow</h2>
+      <p>Press <code>F9</code> to start the 5-second undo confirmation window:</p>
+      <ol>
+        <li>Red rings appear around affected pieces within the search radius.</li>
+        <li>An orange boundary circle shows the search radius edge.</li>
+        <li>During the confirmation window you can:
+          <ul>
+            <li>Use <strong>arrow keys</strong> to move the circle centre and retarget different pieces (camera-relative, respects fine-adjust).</li>
+            <li>Use <strong>+/-</strong> to increase/decrease the search radius by 5m (saved to config).</li>
+            <li>Press <strong>F9 again</strong> to confirm removal, or <strong>Esc/RMB</strong> to cancel.</li>
+          </ul>
+        </li>
+        <li>Any adjustment (movement or radius) restarts the 5-second timer.</li>
+      </ol>
+      <p><strong>Behavior:</strong></p>
       <ul>
-        <li>Removes VFP-tagged pieces within about 75m of player.</li>
+        <li>Removes VFP-tagged pieces within the search radius of the circle centre.</li>
         <li>Restores terrain from the latest captured snapshot in the current session.</li>
         <li>Terrain visuals may not update immediately after undo; move to another area and come back to refresh chunk visuals.</li>
       </ul>

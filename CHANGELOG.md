@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.0.5
+
+- **Undo confirmation circle is now movable:** During the undo confirmation window, press arrow keys (configurable preview move keys) to move the search circle centre and reselect which pieces to target for removal.
+- Arrow key movement in undo confirmation respects camera angle (like preview mode) and supports fine-adjust modifier (default `LeftShift`) for precise positioning.
+- All undo adjustments (radius or circle centre movement) now restart the 5-second confirmation timer, giving the player a full window after each change.
+- Updated undo confirmation HUD message to indicate "Arrow keys to move circle center" as a control hint.
+- Documentation: correction to Desiger path
+- New user guide and example images
+
 ## 1.0.4
 
 - Replaced the flat X origin marker with a tall vertical flagpole (10 m, bright yellow) so the build origin is visible above terrain, water, and underground surfaces during preview.

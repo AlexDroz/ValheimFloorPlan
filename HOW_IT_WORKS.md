@@ -154,9 +154,15 @@ After placement, `PostBuildSpikeGuard` runs several delayed scans over the level
 
 Pressing `F9` calls `FloorPlanBuilder.Undo`:
 
-1. **Remove pieces.** Iterates every active `ZNetView` in the scene. Any ZNetView whose ZDO has `vfp_build = "1"` and is within 75 m of the player is destroyed via `ZNetScene.instance.Destroy`. This works across sessions because the tag is stored in the ZDO (persisted with the world save).
+1. **Show confirmation preview.** The first press displays a 5-second confirmation window. The search centre is initialized to the player's current position and a movable orange boundary circle is drawn showing the search radius. Red highlight rings appear around each VFP-tagged piece within the radius. The player can then:
+   - Adjust the search radius with `+`/`-` (persisted to config)
+   - Move the search circle centre with arrow keys (camera-relative, respects fine-adjust modifier)
+   - Confirm the undo by pressing `F9` again
+   - Cancel with RMB or Escape
 
-2. **Restore terrain.** `TerrainSnapshot.Restore` writes the saved `m_levelDelta` and `m_modifiedHeight` arrays back into each `TerrainComp` via reflection, then calls the private `Save()` method on each chunk so the change is persisted to the world ZDO.
+2. **Remove pieces.** Upon confirmation, iterate every active `ZNetView` in the scene. Any ZNetView whose ZDO has `vfp_build = "1"` and is within the search radius of the undo circle centre is destroyed via `ZNetScene.instance.Destroy`. This works across sessions because the tag is stored in the ZDO (persisted with the world save).
+
+3. **Restore terrain.** `TerrainSnapshot.Restore` writes the saved `m_levelDelta` and `m_modifiedHeight` arrays back into each `TerrainComp` via reflection, then calls the private `Save()` method on each chunk so the change is persisted to the world ZDO. Nearby heightmaps are poked repeatedly to refresh terrain visuals.
 
 ---
 
