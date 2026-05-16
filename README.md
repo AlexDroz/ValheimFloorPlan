@@ -2,7 +2,7 @@
 
 Build structures in Valheim from pre-designed floor plans.
 
-Anyone who has spent time building in Valheim knows the real work starts before the first wall goes up — clearing uneven ground, wrestling with terrain, nudging pieces into alignment one agonising centimetre at a time. **Valheim Floor Plan** takes that grind away. Design your layout once in the included browser-based Designer, save it as a `.vfp` plan file, and the mod handles the rest: it levels the terrain, snaps a snapshot for easy undo, and constructs your entire foundation in seconds. No more tedious ground prep or painstaking piece-by-piece placement — just load your plan, pick your spot, and build.
+Anyone who has spent time building in Valheim knows the real work starts before the first wall goes up — clearing uneven ground, wrestling with terrain, and nudging pieces into alignment one agonising centimetre at a time. **Valheim Floor Plan** takes that grind away. Design your layout once in the included browser-based Designer, save it as a `.vfp` plan file, and the mod handles the rest: it levels the terrain, captures a snapshot for easy undo, and builds the whole foundation in seconds. When something is off, you can even move the undo search circle with the arrow keys before confirming. No more tedious ground prep or painstaking piece-by-piece placement — just load your plan, pick your spot, and build.
 
 This package includes two components:
 
@@ -57,11 +57,12 @@ This package includes two components:
 
    | Key | Action |
    |-----|--------|
+   | `↑` `↓` `←` `→` | Move the search circle centre to target different pieces. Movement respects camera angle. Hold `Left Shift` for fine movement. |
    | `+` / `-` *(or numpad)* | Increase / decrease the search radius by 5 m. The new radius is saved to config. |
    | `F9` *(undo hotkey again)* | Confirm — removes all marked pieces and restores terrain. |
    | `RMB` / `Escape` | Cancel — clears all highlights without removing anything. |
 
-   The HUD message shows the current radius and remaining time throughout the window.
+   The HUD message shows the current radius and remaining time throughout the window. All adjustments (movement or radius) restart the 5-second confirmation timer.
 
 **IMPORTANT:** Terrain can only be restored within the **current session** — if you leave the area or reload, the terrain snapshot is lost. Building pieces can be undone across sessions because they are tagged as built by Valheim Floor Plan.
 
@@ -80,7 +81,7 @@ All values below are configurable in that file.
 | `FloorPlanFile` | *(empty)* | Any valid file path | Full path to the `.vfp` file exported by the Designer. |
 | `BuildHotkey` | `F8` | Any valid `KeyboardShortcut` | Starts plan preview/build flow. |
 | `UndoHotkey` | `F9` | Any valid `KeyboardShortcut` | Removes placed VFP-tagged pieces and restores terrain snapshot. |
-| `UndoRadius` | `15` | `5` to `150` | Search radius in metres around the player when scanning for VFP pieces to remove on Undo. Adjustable live during the confirmation window with `+`/`-`. |
+| `UndoRadius` | `15` | `5` to `150` | Search radius in metres around the undo circle centre when scanning for VFP pieces to remove on Undo. Adjustable live during the confirmation window with `+`/`-`, and circle centre is adjustable with arrow keys. |
 | `ProgressMessagePosition` | `CenterLeft` | Valheim `MessageHud` positions (`Center`, `TopLeft`, `TopRight`, etc.) | HUD slot for build-progress messages. `CenterLeft` is accepted as an alias and maps to `Center`. |
 | `WarningMessagePosition` | `TopLeft` | Valheim `MessageHud` positions (`Center`, `TopLeft`, `TopRight`, etc.) | HUD slot for warnings/risk messages. `CenterLeft` is accepted as an alias and maps to `Center`. |
 | `BuildOriginForwardOffset` | `12` | `10` to `20` | Initial preview origin distance in front of the player (meters). |
@@ -141,23 +142,25 @@ The `samples/` folder contains ready-to-use `.vfp` examples:
 - `samples/myfloorplan24x24.vfp`
 - `samples/myfloorplan28x28.vfp`
 
-## Examples
-
-![Valheim Floor Plan example 1](https://raw.githubusercontent.com/AlexDroz/ValheimFloorPlan/master/images/2026-05-08%2013_40_47-Valheim.png)
-![Valheim Floor Plan example 2](https://raw.githubusercontent.com/AlexDroz/ValheimFloorPlan/master/images/2026-05-08%2013_42_20-Valheim.png)
-![Valheim Floor Plan example 3](https://raw.githubusercontent.com/AlexDroz/ValheimFloorPlan/master/images/2026-05-08%2013_43_13-Valheim.png)
-
 ## Screenshots
 
-![Valheim Floor Plan screenshot 1](https://raw.githubusercontent.com/AlexDroz/ValheimFloorPlan/master/images/2026-05-07%2015_51_47-Valheim.png)
-![Valheim Floor Plan screenshot 2](https://raw.githubusercontent.com/AlexDroz/ValheimFloorPlan/master/images/2026-05-07%2015_52_16-Valheim.png)
-![Valheim Floor Plan screenshot 3](https://raw.githubusercontent.com/AlexDroz/ValheimFloorPlan/master/images/2026-05-07%2015_52_28-Valheim.png)
-![Valheim Floor Plan screenshot 4](https://raw.githubusercontent.com/AlexDroz/ValheimFloorPlan/master/images/2026-05-07%2015_53_00-Valheim.png)
-![Valheim Floor Plan screenshot 5](https://raw.githubusercontent.com/AlexDroz/ValheimFloorPlan/master/images/2026-05-07%2015_53_17-Valheim.png)
-![Valheim Floor Plan screenshot 6](https://raw.githubusercontent.com/AlexDroz/ValheimFloorPlan/master/images/2026-05-07%2015_53_49-Valheim.png)
-![Valheim Floor Plan screenshot 7](https://raw.githubusercontent.com/AlexDroz/ValheimFloorPlan/master/images/2026-05-15%2016_45_51-Valheim.png)
-![Valheim Floor Plan screenshot 8](https://raw.githubusercontent.com/AlexDroz/ValheimFloorPlan/master/images/2026-05-07%2016_14_04-.png)
-![Valheim Floor Plan screenshot 9](https://raw.githubusercontent.com/AlexDroz/ValheimFloorPlan/master/images/2026-05-07%2016_14_27-.png)
+![Valheim Floor Plan screenshot 1](https://raw.githubusercontent.com/AlexDroz/ValheimFloorPlan/master/images/2026-05-16%2014_24_14-Valheim.png)
+![Valheim Floor Plan screenshot 2](https://raw.githubusercontent.com/AlexDroz/ValheimFloorPlan/master/images/2026-05-16%2014_31_37-Designer.png)
+![Valheim Floor Plan screenshot 3](https://raw.githubusercontent.com/AlexDroz/ValheimFloorPlan/master/images/2026-05-16%2014_32_05-Designer.png)
+![Valheim Floor Plan screenshot 4](https://raw.githubusercontent.com/AlexDroz/ValheimFloorPlan/master/images/2026-05-16%2014_59_48-Valheim.png)
+![Valheim Floor Plan screenshot 5](https://raw.githubusercontent.com/AlexDroz/ValheimFloorPlan/master/images/2026-05-16%2015_01_49-Valheim.png)
+![Valheim Floor Plan screenshot 6](https://raw.githubusercontent.com/AlexDroz/ValheimFloorPlan/master/images/2026-05-16%2015_02_32-Valheim.png)
+![Valheim Floor Plan screenshot 7](https://raw.githubusercontent.com/AlexDroz/ValheimFloorPlan/master/images/2026-05-16%2015_05_44-Valheim.png)
+
+## Examples
+
+![Valheim Floor Plan example 1](https://raw.githubusercontent.com/AlexDroz/ValheimFloorPlan/master/images/2026-05-16%2014_11_25-Valheim.png)
+![Valheim Floor Plan example 2](https://raw.githubusercontent.com/AlexDroz/ValheimFloorPlan/master/images/2026-05-16%2014_11_55-Valheim.png)
+![Valheim Floor Plan example 3](https://raw.githubusercontent.com/AlexDroz/ValheimFloorPlan/master/images/2026-05-16%2014_12_08-Valheim.png)
+![Valheim Floor Plan example 4](https://raw.githubusercontent.com/AlexDroz/ValheimFloorPlan/master/images/2026-05-16%2014_12_24-Valheim.png)
+![Valheim Floor Plan example 5](https://raw.githubusercontent.com/AlexDroz/ValheimFloorPlan/master/images/2026-05-16%2014_12_57-Valheim.png)
+![Valheim Floor Plan example 6](https://raw.githubusercontent.com/AlexDroz/ValheimFloorPlan/master/images/2026-05-16%2014_13_11-Valheim.png)
+![Valheim Floor Plan example 7](https://raw.githubusercontent.com/AlexDroz/ValheimFloorPlan/master/images/2026-05-16%2014_13_54-Valheim.png)
 
 ## Package contents include:
 
