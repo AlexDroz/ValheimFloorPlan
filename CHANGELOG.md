@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.6
+
+- **Build orientation now follows camera view:** The plan is oriented based on the game camera's facing direction rather than the character's body rotation, so the origin is always at the bottom-left of the player's screen view regardless of how the character model is facing.
+- **New Roof Scaffolding option:** When enabled, automatically places wooden poles at plan corners and door jambs (with gap-fill poles on long spans), connected by horizontal log beams along all four edges, to guide roof placement. Disabled by default; toggle via the `RoofScaffolding` config option.
+- **File-not-found error feedback:** If a `.vfp` file cannot be loaded (preview or direct build), an on-screen centre message now explains the failure instead of silently doing nothing.
+
 ## 1.0.5
 
 - **Undo confirmation circle is now movable:** During the undo confirmation window, press arrow keys (configurable preview move keys) to move the search circle centre and reselect which pieces to target for removal.
