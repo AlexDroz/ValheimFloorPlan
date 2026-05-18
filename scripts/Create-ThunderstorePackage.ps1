@@ -9,7 +9,8 @@ Set-Location $repoRoot
 
 $dllPath = Join-Path $repoRoot "bin\$Configuration\net462\ValheimFloorPlan.dll"
 $stageRoot = Join-Path $repoRoot "artifacts\thunderstore\stage"
-$zipPath = Join-Path $repoRoot "artifacts\thunderstore\ValheimFloorPlan-1.0.5.zip"
+$manifestVersion = (Get-Content (Join-Path $repoRoot "manifest.json") | ConvertFrom-Json).version_number
+$zipPath = Join-Path $repoRoot "artifacts\thunderstore\ValheimFloorPlan-$manifestVersion.zip"
 
 $requiredRootFiles = @(
     "manifest.json",
