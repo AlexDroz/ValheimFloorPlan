@@ -117,6 +117,9 @@ namespace ValheimFloorPlan
             catch (System.Exception ex)
             {
                 ValheimFloorPlanPlugin.Log.LogError($"Failed to load floor plan: {ex.Message}");
+                ValheimFloorPlanPlugin.ShowWrappedMessage(
+                    MessageHud.MessageType.Center,
+                    $"ValheimFloorPlan: Could not load plan '{System.IO.Path.GetFileName(path)}' — {ex.Message}");
                 return;
             }
 
@@ -130,6 +133,13 @@ namespace ValheimFloorPlan
             _previewOrigin = previewPlayer != null
                 ? GetBuildOrigin(previewPlayer)
                 : Vector3.zero;
+
+            // Initialise rotation to match the camera yaw so the plan is always
+            // oriented from the player's viewpoint: row increases away from the player
+            // (forward), col increases to the player's right, giving origin at bottom-left.
+            _previewRotationDeg = GameCamera.instance != null
+                ? GameCamera.instance.transform.eulerAngles.y
+                : (previewPlayer != null ? previewPlayer.transform.eulerAngles.y : 0f);
 
             // Two nested vertical wall rings (open-cube style):
             // white = leveled pad, green = outer terrain-change boundary.
@@ -1109,13 +1119,19 @@ namespace ValheimFloorPlan
             catch (System.Exception ex)
             {
                 ValheimFloorPlanPlugin.Log.LogError($"Failed to load floor plan: {ex.Message}");
+                ValheimFloorPlanPlugin.ShowWrappedMessage(
+                    MessageHud.MessageType.Center,
+                    $"ValheimFloorPlan: Could not load plan '{System.IO.Path.GetFileName(path)}' — {ex.Message}");
                 return;
             }
 
             var bfPlayer = Player.m_localPlayer;
             if (bfPlayer == null) { ValheimFloorPlanPlugin.Log.LogError("No local player found."); return; }
             ValheimFloorPlanPlugin.Log.LogInfo($"Building floor plan: {plan.Pieces.Count} pieces from {path}");
-            StartCoroutine(LevelThenPlace(plan, 0f, GetBuildOrigin(bfPlayer)));
+            float buildYaw = GameCamera.instance != null
+                ? GameCamera.instance.transform.eulerAngles.y
+                : bfPlayer.transform.eulerAngles.y;
+            StartCoroutine(LevelThenPlace(plan, buildYaw, GetBuildOrigin(bfPlayer)));
         }
 
         private IEnumerator LevelThenPlace(FloorPlan plan, float rotationDeg, Vector3 origin)
@@ -1177,6 +1193,117 @@ namespace ValheimFloorPlan
             // Run a brief post-build guard to detect/remove tall non-build blockers.
             ShowBuildProgress("Final checks...");
             yield return StartCoroutine(PostBuildSpikeGuard(plan, origin, rotationDeg));
+
+            yield return StartCoroutine(PlaceCenterSignage(plan, origin, rotationDeg));
+        }
+
+        /// <summary>
+        /// Places a vertical 4m log pole at the centre of the build area with four stacked
+        /// informational signs on its south face.
+        /// </summary>
+        private IEnumerator PlaceCenterSignage(FloorPlan plan, Vector3 origin, float rotationDeg)
+        {
+            const string POLE_PREFAB  = "wood_pole_log_4";
+            const string SIGN_PREFAB  = "sign";
+            const float  POLE_HEIGHT  = 4f;
+            const float  SIGN_SPACING = 0.6f;
+
+            var player = Player.m_localPlayer;
+            if (player == null) yield break;
+
+            var polePrefab = ZNetScene.instance?.GetPrefab(POLE_PREFAB);
+            var signPrefab = ZNetScene.instance?.GetPrefab(SIGN_PREFAB);
+            if (polePrefab == null || signPrefab == null)
+            {
+                ValheimFloorPlanPlugin.Log.LogWarning(
+                    $"[Signage] Prefab '{POLE_PREFAB}' or '{SIGN_PREFAB}' not found — signage skipped.");
+                yield break;
+            }
+
+            // Determine the true centre of the plan from its piece bounds.
+            int minCol = int.MaxValue, maxColExcl = int.MinValue;
+            int minRow = int.MaxValue, maxRowExcl = int.MinValue;
+            foreach (var piece in plan.Pieces)
+            {
+                var def  = PieceMap.GetDef(piece.Type);
+                int effW = def != null ? def.EffW(piece.Rotation) : 1;
+                int effH = def != null ? def.EffH(piece.Rotation) : 1;
+                if (piece.Col          < minCol)   minCol   = piece.Col;
+                if (piece.Col + effW   > maxColExcl) maxColExcl = piece.Col + effW;
+                if (piece.Row          < minRow)   minRow   = piece.Row;
+                if (piece.Row + effH   > maxRowExcl) maxRowExcl = piece.Row + effH;
+            }
+            if (minCol == int.MaxValue)
+            {
+                minCol = 0; maxColExcl = plan.Cols;
+                minRow = 0; maxRowExcl = plan.Rows;
+            }
+
+            float localCX = (minCol + maxColExcl) * 0.5f * PieceMap.CELL_SIZE;
+            float localCZ = (minRow + maxRowExcl) * 0.5f * PieceMap.CELL_SIZE;
+
+            float rad  = rotationDeg * Mathf.Deg2Rad;
+            float cosR = Mathf.Cos(rad);
+            float sinR = Mathf.Sin(rad);
+            float wx   = origin.x + localCX * cosR + localCZ * sinR;
+            float wz   = origin.z - localCX * sinR + localCZ * cosR;
+
+            float terrainY = TerrainLeveler.TargetLevelY;
+            if (Physics.Raycast(new Vector3(wx, terrainY + 300f, wz), Vector3.down, out var hit, 600f, 1 << 11))
+                terrainY = hit.point.y;
+
+            // Centre pole.
+            SpawnScaffoldPole(polePrefab,
+                new Vector3(wx, terrainY + POLE_HEIGHT * 0.5f, wz),
+                Quaternion.Euler(0f, rotationDeg, 0f),
+                player);
+            yield return new WaitForSeconds(PLACE_DELAY);
+
+            // Four signs stacked on the south face of the pole (facing toward the player).
+            // "South in plan space" in world: direction (-sinR, 0, -cosR).
+            var signTexts = new[]
+            {
+                "<color=white>Welcome</color>",
+                "<color=white>If you like this mod please</color>",
+                "<color=white>give it a 👍 at the</color>",
+                "<color=white>Thunderstore Mods Site. Thx</color>"
+            };
+
+            float      signTopY  = terrainY + POLE_HEIGHT - 0.4f;
+            // 0.3 m keeps the sign face clear of the pole log visually while still
+            // overlapping the pole collider so Valheim treats it as attached.
+            float      signOX    = -sinR * 0.3f;
+            float      signOZ    = -cosR * 0.3f;
+            Quaternion signRot   = Quaternion.Euler(0f, rotationDeg + 180f, 0f);
+
+            for (int i = 0; i < signTexts.Length; i++)
+            {
+                float signY   = signTopY - i * SIGN_SPACING;
+                var   signPos = new Vector3(wx + signOX, signY, wz + signOZ);
+
+                var signGo = UnityEngine.Object.Instantiate(signPrefab, signPos, signRot);
+                _lastPlaced.Add(signGo);
+
+                // Disable support-wear so the sign never collapses from lack of attachment.
+                var wnt = signGo.GetComponent<WearNTear>();
+                if (wnt != null) wnt.m_noSupportWear = true;
+
+                var znv = signGo.GetComponent<ZNetView>();
+                if (znv != null)
+                {
+                    var zdo = znv.GetZDO();
+                    if (zdo != null)
+                    {
+                        zdo.SetOwner(ZDOMan.GetSessionID());
+                        zdo.Set(VFP_TAG, "1");
+                        zdo.Set("text", signTexts[i]);
+                    }
+                }
+                signGo.GetComponent<Piece>()?.SetCreator(player.GetPlayerID());
+                yield return new WaitForSeconds(PLACE_DELAY);
+            }
+
+            ValheimFloorPlanPlugin.Log.LogInfo("[FloorPlanBuilder] Placed centre signage pole + 4 signs.");
         }
 
         /// <summary>
