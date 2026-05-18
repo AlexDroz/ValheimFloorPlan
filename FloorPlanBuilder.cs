@@ -1167,6 +1167,12 @@ namespace ValheimFloorPlan
             ShowBuildProgress($"Placing pieces... 0/{plan.Pieces.Count}");
             yield return StartCoroutine(PlacePieces(plan, origin, rotationDeg));
 
+            if (ValheimFloorPlanPlugin.RoofScaffolding)
+            {
+                ShowBuildProgress("Placing roof scaffolding...");
+                yield return StartCoroutine(PlaceRoofScaffolding(plan, origin, rotationDeg));
+            }
+
             // Some spike meshes appear a short time AFTER leveling/placement finalizes.
             // Run a brief post-build guard to detect/remove tall non-build blockers.
             ShowBuildProgress("Final checks...");
@@ -1853,6 +1859,292 @@ namespace ValheimFloorPlan
                 maxColExclusive = plan.Cols;
                 maxRowExclusive = plan.Rows;
             }
+        }
+
+        // ── Roof Scaffolding ──────────────────────────────────────────────────
+
+        /// <summary>
+        /// Places a ring of vertical 4m log poles at every corner of the build area,
+        /// on the left and right adjacent cells of every perimeter doorway, and at the
+        /// midpoint of any gap that exceeds 8 m.  Once all vertical poles are placed
+        /// the tops are connected with horizontal 4m log beams running clockwise around
+        /// the perimeter. No horizontal beam extends beyond the boundary corners.
+        /// </summary>
+        private IEnumerator PlaceRoofScaffolding(FloorPlan plan, Vector3 origin, float rotationDeg)
+        {
+            const string VERT_PREFAB    = "wood_pole_log_4";
+            const string HORIZ_PREFAB   = "wood_wall_log_4x0.5";
+            const float  POLE_HEIGHT    = 4f;
+            const float  HORIZ_LEN      = 4f;
+            const float  HORIZ_HALF     = HORIZ_LEN * 0.5f;
+            const float  MAX_SPACING    = 8f;
+
+            var player = Player.m_localPlayer;
+            if (player == null) yield break;
+
+            var vertPrefab = ZNetScene.instance?.GetPrefab(VERT_PREFAB);
+            var horizPrefab = ZNetScene.instance?.GetPrefab(HORIZ_PREFAB);
+            if (vertPrefab == null || horizPrefab == null)
+            {
+                ValheimFloorPlanPlugin.Log.LogWarning(
+                    $"[Scaffolding] Prefab '{VERT_PREFAB}' or '{HORIZ_PREFAB}' not found in ZNetScene — roof scaffolding skipped.");
+                yield break;
+            }
+
+            // ── Plan bounds in local (unrotated) space ────────────────────────
+            GetPlanPieceBounds(plan,
+                out int minCol, out int maxColExclusive,
+                out int minRow, out int maxRowExclusive);
+
+            float lMinX = minCol          * PieceMap.CELL_SIZE;
+            float lMaxX = maxColExclusive * PieceMap.CELL_SIZE;
+            float lMinZ = minRow          * PieceMap.CELL_SIZE;
+            float lMaxZ = maxRowExclusive * PieceMap.CELL_SIZE;
+
+            float width     = lMaxX - lMinX;
+            float depth     = lMaxZ - lMinZ;
+            float perimeter = 2f * (width + depth);
+
+            float cosR = Mathf.Cos(rotationDeg * Mathf.Deg2Rad);
+            float sinR = Mathf.Sin(rotationDeg * Mathf.Deg2Rad);
+
+            // ── Collect perimeter parameters for all poles ────────────────────
+            // The perimeter is parameterised as clockwise distance from the SW corner:
+            //   0            → SW corner (minX, minZ)
+            //   width        → SE corner (maxX, minZ)
+            //   width+depth  → NE corner (maxX, maxZ)
+            //   2*width+depth→ NW corner (minX, maxZ)
+            var poleParams = new List<float>
+            {
+                0f,
+                width,
+                width + depth,
+                2f * width + depth
+            };
+
+            // Add poles on the left and right adjacent cells of each perimeter doorway.
+            foreach (var piece in plan.Pieces)
+            {
+                if (piece.Type != "Doorway") continue;
+                var def = PieceMap.GetDef(piece.Type);
+                if (def == null) continue;
+
+                int effW = def.EffW(piece.Rotation);
+                int effH = def.EffH(piece.Rotation);
+
+                bool onSouth = piece.Row <= minRow;
+                bool onNorth = piece.Row + effH >= maxRowExclusive;
+                bool onEast  = piece.Col + effW >= maxColExclusive;
+                bool onWest  = piece.Col <= minCol;
+
+                // Only place poles if doorway is on exactly one edge (not a corner).
+                int edgeCount = (onSouth ? 1 : 0) + (onNorth ? 1 : 0) + (onEast ? 1 : 0) + (onWest ? 1 : 0);
+                if (edgeCount != 1) continue;
+
+                float tLeft = -1f, tRight = -1f;
+
+                if (onSouth)
+                {
+                    // Doorway on south edge running east-west.
+                    // Left = west cell, Right = east cell.
+                    tLeft = (piece.Col - minCol) * PieceMap.CELL_SIZE;
+                    tRight = (piece.Col + effW - minCol) * PieceMap.CELL_SIZE;
+                }
+                else if (onNorth)
+                {
+                    // Doorway on north edge running east-west.
+                    // Left = west cell, Right = east cell.
+                    tLeft = width + depth + (maxColExclusive - piece.Col - effW) * PieceMap.CELL_SIZE;
+                    tRight = width + depth + (maxColExclusive - piece.Col) * PieceMap.CELL_SIZE;
+                }
+                else if (onEast)
+                {
+                    // Doorway on east edge running north-south.
+                    // Left = north cell, Right = south cell.
+                    tLeft = width + (piece.Row + effH - minRow) * PieceMap.CELL_SIZE;
+                    tRight = width + (piece.Row - minRow) * PieceMap.CELL_SIZE;
+                }
+                else if (onWest)
+                {
+                    // Doorway on west edge running north-south.
+                    // Left = north cell, Right = south cell.
+                    tLeft = 2f * width + depth + (maxRowExclusive - piece.Row - effH) * PieceMap.CELL_SIZE;
+                    tRight = 2f * width + depth + (maxRowExclusive - piece.Row) * PieceMap.CELL_SIZE;
+                }
+
+                if (tLeft >= 0f && tLeft <= perimeter) poleParams.Add(tLeft);
+                if (tRight >= 0f && tRight <= perimeter) poleParams.Add(tRight);
+            }
+
+            poleParams.Sort();
+            ScaffoldDedup(poleParams, 0.5f);
+            ScaffoldFillGaps(poleParams, perimeter, MAX_SPACING);
+            poleParams.Sort();
+
+            // ── Place vertical poles ──────────────────────────────────────────
+            int placed = 0;
+
+            foreach (float t in poleParams)
+            {
+                Vector2 local = ScaffoldParamToLocal(t, lMinX, lMaxX, lMinZ, lMaxZ, perimeter);
+                float wx = origin.x + local.x * cosR + local.y * sinR;
+                float wz = origin.z - local.x * sinR + local.y * cosR;
+
+                float terrainY = TerrainLeveler.TargetLevelY;
+                if (Physics.Raycast(new Vector3(wx, terrainY + 300f, wz), Vector3.down, out var hit, 600f, 1 << 11))
+                    terrainY = hit.point.y;
+
+                SpawnScaffoldPole(vertPrefab,
+                    new Vector3(wx, terrainY + POLE_HEIGHT * 0.5f, wz),
+                    Quaternion.Euler(0, rotationDeg, 0),
+                    player);
+                placed++;
+                if (placed % 10 == 0)
+                    yield return new WaitForSeconds(PLACE_DELAY);
+            }
+
+            // ── Place horizontal beams along the 4 rectangle edges ────────────
+            // Corners clockwise: SW(0) → SE(1) → NE(2) → NW(3) → SW(0)
+            float[] cornerT  = { 0f, width, width + depth, 2f * width + depth };
+            var     cornerTops = new Vector3[4];
+            for (int ci = 0; ci < 4; ci++)
+            {
+                Vector2 cl  = ScaffoldParamToLocal(cornerT[ci], lMinX, lMaxX, lMinZ, lMaxZ, perimeter);
+                float   cwx = origin.x + cl.x * cosR + cl.y * sinR;
+                float   cwz = origin.z - cl.x * sinR + cl.y * cosR;
+                float   cty = TerrainLeveler.TargetLevelY;
+                if (Physics.Raycast(new Vector3(cwx, cty + 300f, cwz), Vector3.down, out var ch, 600f, 1 << 11))
+                    cty = ch.point.y;
+                cornerTops[ci] = new Vector3(cwx, cty + POLE_HEIGHT, cwz);
+            }
+
+            // Four edges: SW→SE, SE→NE, NE→NW, NW→SW
+            int[] edgeFrom = { 0, 1, 2, 3 };
+            int[] edgeTo   = { 1, 2, 3, 0 };
+
+            for (int e = 0; e < 4; e++)
+            {
+                Vector3 cA        = cornerTops[edgeFrom[e]];
+                Vector3 cB        = cornerTops[edgeTo[e]];
+                float   edgeDx    = cB.x - cA.x;
+                float   edgeDz    = cB.z - cA.z;
+                float   edgeDist  = Mathf.Sqrt(edgeDx * edgeDx + edgeDz * edgeDz);
+                if (edgeDist < 0.1f) continue;
+
+                Vector3    dir      = new Vector3(edgeDx / edgeDist, 0f, edgeDz / edgeDist);
+                float      beamY    = (cA.y + cB.y) * 0.5f;
+                // wood_wall_log_4x0.5 has its 4m length along local X at 0°.
+                // Unity CW Y-rotation θ maps local X → (cosθ, 0, −sinθ), so θ = atan2(−dz, dx).
+                Quaternion beamRot  = Quaternion.Euler(0f, Mathf.Atan2(-dir.z, dir.x) * Mathf.Rad2Deg, 0f);
+
+                // Full 4m beams tiled from cA
+                int   nFull     = Mathf.FloorToInt(edgeDist / HORIZ_LEN);
+                float remainder = edgeDist - nFull * HORIZ_LEN;
+
+                for (int b = 0; b < nFull; b++)
+                {
+                    Vector3 center = cA + dir * (b * HORIZ_LEN + HORIZ_HALF);
+                    center.y = beamY;
+                    SpawnScaffoldPole(horizPrefab, center, beamRot, player);
+                    placed++;
+                    if (placed % 10 == 0) yield return new WaitForSeconds(PLACE_DELAY);
+                }
+
+                // Remaining span: one final beam flush with cB so it ends exactly at the corner
+                if (remainder > 0.05f)
+                {
+                    Vector3 center = cB - dir * HORIZ_HALF;
+                    center.y = beamY;
+                    SpawnScaffoldPole(horizPrefab, center, beamRot, player);
+                    placed++;
+                    if (placed % 10 == 0) yield return new WaitForSeconds(PLACE_DELAY);
+                }
+            }
+
+            ValheimFloorPlanPlugin.Log.LogInfo(
+                $"[Scaffolding] Placed {placed} roof scaffolding pieces ({poleParams.Count} vertical poles @ {POLE_HEIGHT}m each).");
+        }
+
+        /// <summary>
+        /// Converts a clockwise perimeter distance parameter to a local (unrotated) XZ position.
+        /// Edges in order: south (SW→SE), east (SE→NE), north (NE→NW), west (NW→SW).
+        /// </summary>
+        private static Vector2 ScaffoldParamToLocal(
+            float t, float minX, float maxX, float minZ, float maxZ, float perimeter)
+        {
+            float width = maxX - minX;
+            float depth = maxZ - minZ;
+            t = ((t % perimeter) + perimeter) % perimeter;
+
+            if (t <= width)              return new Vector2(minX + t,       minZ);  // south
+            t -= width;
+            if (t <= depth)              return new Vector2(maxX,            minZ + t); // east
+            t -= depth;
+            if (t <= width)              return new Vector2(maxX - t,        maxZ);  // north
+            t -= width;
+            return                              new Vector2(minX,            maxZ - t); // west
+        }
+
+        /// <summary>Removes duplicate-or-near-duplicate pole parameters (within <paramref name="minDist"/> metres).</summary>
+        private static void ScaffoldDedup(List<float> poles, float minDist)
+        {
+            for (int i = poles.Count - 1; i > 0; i--)
+                if (poles[i] - poles[i - 1] < minDist)
+                    poles.RemoveAt(i);
+        }
+
+        /// <summary>
+        /// Iteratively inserts midpoint poles into any gap that exceeds
+        /// <paramref name="maxSpacing"/>, including the wrap-around gap.
+        /// </summary>
+        private static void ScaffoldFillGaps(List<float> poles, float perimeter, float maxSpacing)
+        {
+            bool changed = true;
+            while (changed)
+            {
+                changed = false;
+                poles.Sort();
+                int n = poles.Count;
+                var toAdd = new List<float>();
+
+                for (int i = 0; i < n; i++)
+                {
+                    float a = poles[i];
+                    float gap;
+                    if (i < n - 1)
+                        gap = poles[i + 1] - a;
+                    else
+                        gap = perimeter - a + poles[0]; // wrap-around
+
+                    if (gap > maxSpacing)
+                    {
+                        float mid = a + gap * 0.5f;
+                        if (mid >= perimeter) mid -= perimeter;
+                        toAdd.Add(mid);
+                        changed = true;
+                    }
+                }
+
+                poles.AddRange(toAdd);
+            }
+        }
+
+        /// <summary>Spawns a scaffold pole, registers it with ZDOMan and tags it for Undo.</summary>
+        private void SpawnScaffoldPole(GameObject prefab, Vector3 pos, Quaternion rot, Player player)
+        {
+            var go = UnityEngine.Object.Instantiate(prefab, pos, rot);
+            _lastPlaced.Add(go);
+            var znv = go.GetComponent<ZNetView>();
+            if (znv != null)
+            {
+                var zdo = znv.GetZDO();
+                if (zdo != null)
+                {
+                    zdo.SetOwner(ZDOMan.GetSessionID());
+                    zdo.Set(VFP_TAG, "1");
+                }
+            }
+            go.GetComponent<Piece>()?.SetCreator(player.GetPlayerID());
         }
     }
 }

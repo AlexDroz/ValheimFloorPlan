@@ -32,6 +32,7 @@ namespace ValheimFloorPlan
         internal static bool TerrainSkipSatisfiedCenterStamps { get; private set; } = true;
         internal static int ExternalWallHeight { get; private set; } = 1;
         internal static StructuralMaterial WallPillarMaterial { get; private set; } = StructuralMaterial.Stone;
+        internal static bool RoofScaffolding { get; private set; } = false;
         internal static float BuildOriginForwardOffset { get; private set; } = 12f;
         internal static float PreviewMoveStep { get; private set; } = 2f;
         internal static float PreviewFineMoveStep { get; private set; } = 0.5f;
@@ -64,6 +65,7 @@ namespace ValheimFloorPlan
         private ConfigEntry<bool> _terrainSkipSatisfiedCenterStamps = null!;
         private ConfigEntry<int> _externalWallHeight = null!;
         private ConfigEntry<string> _wallPillarMaterial = null!;
+        private ConfigEntry<bool> _roofScaffolding = null!;
         private ConfigEntry<float> _buildOriginForwardOffset = null!;
         private ConfigEntry<float> _previewMoveStep = null!;
         private ConfigEntry<float> _previewFineMoveStep = null!;
@@ -205,6 +207,12 @@ namespace ValheimFloorPlan
                 WallPillarMaterial = ParseStructuralMaterial(_wallPillarMaterial.Value);
             WallPillarMaterial = ParseStructuralMaterial(_wallPillarMaterial.Value);
 
+            _roofScaffolding = Config.Bind(
+                "Building", "RoofScaffolding", false,
+                "When enabled, places a ring of vertical 4m log poles at each corner, adjacent to each door, and at midpoints where spacing exceeds 8m, then connects their tops with horizontal 4m log poles forming a rectangular scaffold frame.");
+            _roofScaffolding.SettingChanged += (_, _) => RoofScaffolding = _roofScaffolding.Value;
+            RoofScaffolding = _roofScaffolding.Value;
+
             _buildOriginForwardOffset = Config.Bind(
                 "General", "BuildOriginForwardOffset", 12f,
                 new ConfigDescription(
@@ -301,7 +309,7 @@ namespace ValheimFloorPlan
             gameObject.AddComponent<FloorPlanBuilder>();
 
             Log.LogInfo($"{PluginName} v{PluginVersion} loaded! " +
-                $"Build: {_buildHotkey.Value}  Undo: {_undoHotkey.Value}  Progress HUD: {ProgressMessageType}  Terrain passes: {TerrainLevelPasses}  Spike cleanup passes: {TerrainSpikeCleanupPasses}  High-point delta: {TerrainHighPointDelta:F2}m  Staged raise: {TerrainUseStagedRaise} ({TerrainRaiseStepHeight:F2}m, max {TerrainMaxRaiseStages})  Skip satisfied center stamps: {TerrainSkipSatisfiedCenterStamps}  External wall height: {ExternalWallHeight}  Wall/Pillar material: {WallPillarMaterial}  Origin offset: {BuildOriginForwardOffset:F1}m  Preview move: {PreviewMoveStep:F2}/{PreviewFineMoveStep:F2}m  Preview rotate: {PreviewRotateStepDeg:F0}/{PreviewFineRotateStepDeg:F0}°");
+                $"Build: {_buildHotkey.Value}  Undo: {_undoHotkey.Value}  Progress HUD: {ProgressMessageType}  Terrain passes: {TerrainLevelPasses}  Spike cleanup passes: {TerrainSpikeCleanupPasses}  High-point delta: {TerrainHighPointDelta:F2}m  Staged raise: {TerrainUseStagedRaise} ({TerrainRaiseStepHeight:F2}m, max {TerrainMaxRaiseStages})  Skip satisfied center stamps: {TerrainSkipSatisfiedCenterStamps}  External wall height: {ExternalWallHeight}  Wall/Pillar material: {WallPillarMaterial}  Roof scaffolding: {RoofScaffolding}  Origin offset: {BuildOriginForwardOffset:F1}m  Preview move: {PreviewMoveStep:F2}/{PreviewFineMoveStep:F2}m  Preview rotate: {PreviewRotateStepDeg:F0}/{PreviewFineRotateStepDeg:F0}°");
         }
 
         private void Update()
