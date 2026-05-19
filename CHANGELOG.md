@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.0.7
+
+- **Rotation preview/build flow hardened for manual placement:** preview rotation now stays aligned to safe 22.5° increments, and confirmed builds snap back onto a configurable safe grid so Valheim's follow-up piece snapping remains usable.
+- **Rotation settings simplified:** `BuildRotationSnapDegrees`, `RotateStepDegrees`, and `FineRotateStepDegrees` are now restricted to `22.5`, `45`, or `90` degrees to prevent broken off-axis combinations.
+- **Fine rotation now works correctly:** holding the fine-adjust modifier applies the configured fine rotation step during preview instead of being immediately cancelled by coarse snap logic.
+- **Preview rotation bindings updated:** default preview keys are now `Q` rotate left, `G` rotate right, `E` confirm, `Esc` cancel, with `LeftShift` as the fine-adjust modifier.
+- **New interior roof-scaffolding beam options:** added `TransverseScaffoldingBeams` and `LongitudinalScaffoldingBeams` for horizontal beam runs between interior scaffold poles.
+
+
 ## 1.0.6
 
 - **Build orientation now follows camera view:** The plan is oriented based on the game camera's facing direction rather than the character's body rotation, so the origin is always at the bottom-left of the player's screen view regardless of how the character model is facing.

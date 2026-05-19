@@ -1,42 +1,34 @@
-# ValheimFloorPlan 1.0.5
+# ValheimFloorPlan 1.0.7
 
-This release marks the first stable milestone for ValheimFloorPlan.
+This release focuses on rotation safety, improved preview controls, and stronger roof-scaffolding behavior.
 
 ## Highlights
 
-- Terrain leveling target now supports a configurable high-point offset:
-  - `TerrainHighPointDelta` (range `0.0` to `4.0`, default `0.0`)
-  - Effective target is `HighestPoint + Delta`
-- Preview visuals now account for the adjusted terrain target height.
-- Undo/restore confirmation now shows immediately on first key press (no initial HUD delay).
-- Terrain-leveling and preview behavior/documentation updated for consistency.
-
+- Preview rotation now stays on safe increments, and confirmed builds snap back onto a configurable grid so Valheim's normal post-build snapping remains usable.
+- Rotation settings are limited to `22.5`, `45`, or `90` degrees to prevent off-axis placement problems.
+- Fine-adjust rotation now works during preview instead of being overridden by the final snap.
+- Default preview rotation keys are now `Q` for rotate left and `G` for rotate right. Confirm remains `E`, cancel remains `Esc`, and `LeftShift` still enables fine adjust.
+- Added optional interior scaffold beam runs with `TransverseScaffoldingBeams` and `LongitudinalScaffoldingBeams`.
+- Fixed rotated scaffolding beam pairing so beam runs place correctly even when the footprint is previewed at a non-zero angle.
 ## Configuration Notes
 
-- New/updated terrain setting:
-  - `TerrainHighPointDelta = 0.0` (default)
-- Existing defaults remain tuned for balanced behavior:
-  - `TerrainLevelPasses = 2`
-  - `TerrainSpikeCleanupPasses = 2`
-  - `TerrainStampRadius = 3.0`
+- Rotation settings live in the `Preview - Rotation` config section.
+- Rotation-related defaults are now:
+  - `BuildRotationSnapDegrees = 90`
+  - `RotateStepDegrees = 90`
+  - `FineRotateStepDegrees = 22.5`
+- Allowed values for all three rotation settings are now:
+  - `22.5`
+  - `45`
+  - `90`
+- Updated default preview keys:
+  - `RotateLeftKey = Q`
+  - `RotateRightKey = G`
+  - `ConfirmKey = E`
+  - `FineAdjustKey = LeftShift`
 
-## Designer Companion App
+## Player Impact
 
-- Repository now includes the partner Designer web app under `Designer/` for creating `.vfp` plans.
-- Added monorepo workflow docs:
-  - `README.md` (project layout and end-to-end flow)
-  - `DESIGNER_WORKFLOW.md` (Designer -> Mod usage)
-- Added VS Code task support for both sides of the workflow:
-  - `Build & Deploy ValheimFloorPlan`
-  - `Run Designer Local Server`
-
-## Pre-release Sanity Checklist
-
-- Build succeeds locally with zero compile errors.
-- Mod loads in-game and logs `ValheimFloorPlan v1.0.5 loaded!`.
-- Preview can move/rotate/cancel/confirm with configured keys.
-- Terrain leveling uses `Highest + Delta` as configured.
-- Preview top walls/markers visually reflect delta height.
-- Undo confirmation appears immediately on first key press.
-- Undo second press performs piece removal and terrain snapshot restore.
-- User guides/config docs reflect current settings.
+- If a plan is previewed at a fine angle, the final build still lands on the configured snap grid.
+- This avoids the previous situation where a completed structure could be built at an awkward angle that made later manual hammer placement difficult.
+- Preview fine rotation remains available so you can inspect alignment before committing the snapped final build.

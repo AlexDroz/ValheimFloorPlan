@@ -49,11 +49,20 @@ Important settings:
 
 Preview input settings (all configurable):
 - `MoveForwardKey` / `MoveBackwardKey` / `MoveLeftKey` / `MoveRightKey` (defaults: arrow keys)
-- `RotateLeftKey` / `RotateRightKey` (defaults: `Q` / `R`)
+- `RotateLeftKey` / `RotateRightKey` (defaults: `Q` / `G`)
 - `ConfirmKey` (default `E`)
 - `CancelKey` (default `Escape`, right-click also cancels)
 - `FineAdjustKey` (default `LeftShift`)
-- `MoveStep`, `FineMoveStep`, `RotateStepDegrees`, `FineRotateStepDegrees`
+- `MoveStep`, `FineMoveStep`, `RotateStepDegrees`, `FineRotateStepDegrees`, `BuildRotationSnapDegrees`
+
+Rotation safety settings:
+- `BuildRotationSnapDegrees`: final build snap step (default `90`, allowed `22.5`, `45`, `90`)
+- `RotateStepDegrees`: coarse preview rotation step (default `90`, allowed `22.5`, `45`, `90`)
+- `FineRotateStepDegrees`: fine preview rotation step while `LeftShift` is held (default `22.5`, allowed `22.5`, `45`, `90`)
+
+These settings live together in the `Preview - Rotation` section of the config.
+
+Confirmed builds always snap to `BuildRotationSnapDegrees`, which keeps completed structures aligned to angles that still work with Valheim's normal manual piece placement.
 
 
 Optional `.vfp` wall-face field:
@@ -70,7 +79,7 @@ Preview controls are also configurable in the same file.
 4. Press `F8` to start preview.
 5. Adjust placement:
    - Arrow keys move preview origin.
-   - `Q` / `R` rotate.
+   - `Q` / `G` rotate.
    - Hold `LeftShift` for fine movement/rotation.
    - `Esc` or right-click cancels preview.
 6. Press `E` to confirm and start build.
@@ -106,7 +115,7 @@ Preview controls are also configurable in the same file.
 - Undo: `F9`
 - Move Preview: `UpArrow`, `DownArrow`, `LeftArrow`, `RightArrow`
 - Move Undo Circle: `UpArrow`, `DownArrow`, `LeftArrow`, `RightArrow` (during undo confirmation)
-- Rotate Preview: `Q` / `R`
+- Rotate Preview: `Q` / `G`
 - Confirm Build: `E`
 - Fine Adjust Modifier: `LeftShift`
 - Cancel Preview: `Esc` or right-click
@@ -179,7 +188,7 @@ Suggested starting presets:
 
 ## FAQ
 ### Can I rotate the whole plan before building?
-Yes. Use `Q` / `R` in preview mode.
+Yes. Use `Q` / `G` in preview mode. By default, coarse rotation uses `90°` steps, fine rotation uses `22.5°` steps while `LeftShift` is held, and the final build snaps to the configured safe angle.
 
 ### Can I fine-adjust placement?
 Yes. Hold `LeftShift` while moving/rotating.

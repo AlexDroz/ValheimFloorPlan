@@ -32,13 +32,17 @@ This package includes two components:
    | Key | Action |
    |-----|--------|
    | `↑` `↓` `←` `→` | Move the plan forward / backward / left / right |
-   | `Q` | Rotate left (45°) |
-   | `R` | Rotate right (45°) |
+   | `Q` | Rotate left (default coarse step: 90°) |
+   | `G` | Rotate right (default coarse step: 90°) |
    | `Left Shift` *(hold)* | Fine-adjust mode — smaller move/rotate steps |
    | `E` | Confirm and build at current position |
    | `RMB` / `Escape` | Cancel placement |
 
    **Note:** All keys are configurable in the BepInEx config file.
+
+   **Rotation note:** confirmed builds snap to `BuildRotationSnapDegrees` (default `90°`) so the finished structure stays aligned to angles that still work with Valheim's normal manual piece snapping. Fine preview rotation uses `22.5°` steps by default.
+
+   The rotation-related config entries live together in the `Preview - Rotation` section.
 
    While positioning the plan, watch for these visual markers in the world:
 
@@ -112,8 +116,14 @@ All values below are configurable in that file.
 |---|---|---|---|
 | `MoveStep` | `2.0` | `0.25` to `10.0` | Nudge distance per move key press (meters). |
 | `FineMoveStep` | `0.5` | `0.05` to `5.0` | Nudge distance per move key press while fine-adjust key is held (meters). |
-| `RotateStepDegrees` | `15` | `1` to `90` | Rotation applied per rotate key press (degrees). |
-| `FineRotateStepDegrees` | `5` | `1` to `45` | Rotation applied per rotate key press while fine-adjust key is held (degrees). |
+| `RotateStepDegrees` | `90` | `22.5`, `45`, `90` | Rotation applied per coarse rotate key press (degrees). |
+| `FineRotateStepDegrees` | `22.5` | `22.5`, `45`, `90` | Rotation applied per rotate key press while fine-adjust key is held (degrees). |
+
+### Preview - Rotation
+
+| Option | Default | Allowed values | What it does |
+|---|---|---|---|
+| `BuildRotationSnapDegrees` | `90` | `22.5`, `45`, `90` | Snaps the final build rotation to the nearest allowed angle when preview starts and when build is confirmed. |
 
 ### Preview Keys
 
@@ -124,7 +134,7 @@ All values below are configurable in that file.
 | `MoveLeftKey` | `LeftArrow` | Move preview origin left relative to camera. |
 | `MoveRightKey` | `RightArrow` | Move preview origin right relative to camera. |
 | `RotateLeftKey` | `Q` | Rotate preview counter-clockwise. |
-| `RotateRightKey` | `R` | Rotate preview clockwise. |
+| `RotateRightKey` | `G` | Rotate preview clockwise. |
 | `ConfirmKey` | `E` | Confirm current preview placement and start build. |
 | `CancelKey` | `Escape` | Cancel preview. (Right-click cancels too.) |
 | `FineAdjustKey` | `LeftShift` | Hold for fine movement and fine rotation. |
@@ -166,6 +176,7 @@ The `samples/` folder contains ready-to-use `.vfp` examples:
 ![Valheim Floor Plan screenshot 6](https://raw.githubusercontent.com/AlexDroz/ValheimFloorPlan/master/images/2026-05-16%2015_02_32-Valheim.png)
 ![Valheim Floor Plan screenshot 7](https://raw.githubusercontent.com/AlexDroz/ValheimFloorPlan/master/images/2026-05-16%2015_05_44-Valheim.png)
 ![Valheim Floor Plan screenshot 8](https://raw.githubusercontent.com/AlexDroz/ValheimFloorPlan/master/images/2026-05-18%2016_57_47-Valheim.png)
+![Valheim Floor Plan screenshot 9](https://raw.githubusercontent.com/AlexDroz/ValheimFloorPlan/master/images/2026-05-19%2021_19_23-Valheim.png)
 
                                   
 

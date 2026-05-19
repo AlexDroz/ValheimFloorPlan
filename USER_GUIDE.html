@@ -224,12 +224,22 @@
       <h3>Preview Input Settings</h3>
       <ul>
         <li><code>MoveForwardKey</code> / <code>MoveBackwardKey</code> / <code>MoveLeftKey</code> / <code>MoveRightKey</code> (defaults: arrow keys)</li>
-        <li><code>RotateLeftKey</code> / <code>RotateRightKey</code> (defaults: <code>Q</code> / <code>R</code>)</li>
+        <li><code>RotateLeftKey</code> / <code>RotateRightKey</code> (defaults: <code>Q</code> / <code>G</code>)</li>
         <li><code>ConfirmKey</code> (default <code>E</code>)</li>
         <li><code>CancelKey</code> (default <code>Esc</code>, right-click also cancels)</li>
         <li><code>FineAdjustKey</code> (default <code>LeftShift</code>)</li>
-        <li><code>MoveStep</code>, <code>FineMoveStep</code>, <code>RotateStepDegrees</code>, <code>FineRotateStepDegrees</code></li>
+        <li><code>MoveStep</code>, <code>FineMoveStep</code>, <code>RotateStepDegrees</code>, <code>FineRotateStepDegrees</code>, <code>BuildRotationSnapDegrees</code></li>
       </ul>
+
+      <h3>Preview Rotation Safety</h3>
+      <ul>
+        <li><code>BuildRotationSnapDegrees</code> defaults to <code>90</code> and controls the final snapped build angle.</li>
+        <li><code>RotateStepDegrees</code> defaults to <code>90</code> for coarse preview rotation.</li>
+        <li><code>FineRotateStepDegrees</code> defaults to <code>22.5</code> while <code>LeftShift</code> is held.</li>
+        <li>All three settings are limited to <code>22.5</code>, <code>45</code>, or <code>90</code> degrees.</li>
+        <li>Confirmed builds snap back onto the configured safe angle so later manual Valheim piece placement still works cleanly.</li>
+      </ul>
+      <p class="muted">These settings live together in the <code>Preview - Rotation</code> section of the config.</p>
 
       <h3>Optional .vfp wall-face field</h3>
       <ul>
@@ -246,7 +256,7 @@
         <li>Undo: <code>F9</code></li>
         <li>Move preview: <code>UpArrow / DownArrow / LeftArrow / RightArrow</code></li>
         <li>Move undo circle: <code>UpArrow / DownArrow / LeftArrow / RightArrow</code> (during undo confirmation)</li>
-        <li>Rotate preview: <code>Q / R</code></li>
+        <li>Rotate preview: <code>Q / G</code></li>
         <li>Confirm build: <code>E</code></li>
         <li>Fine adjust: hold <code>LeftShift</code></li>
         <li>Cancel preview: <code>Esc</code> or right-click</li>

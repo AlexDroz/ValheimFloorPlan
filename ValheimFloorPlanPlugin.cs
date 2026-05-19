@@ -16,7 +16,7 @@ namespace ValheimFloorPlan
 
         public const string PluginGUID = "com.alexdroz.valheimfloorplan";
         public const string PluginName = "ValheimFloorPlan";
-        public const string PluginVersion = "1.0.6";
+        public const string PluginVersion = "1.0.7";
 
         internal static ManualLogSource Log = null!;
         internal static ValheimFloorPlanPlugin Instance { get; private set; } = null!;
@@ -33,9 +33,12 @@ namespace ValheimFloorPlan
         internal static int ExternalWallHeight { get; private set; } = 1;
         internal static StructuralMaterial WallPillarMaterial { get; private set; } = StructuralMaterial.Stone;
         internal static bool RoofScaffolding { get; private set; } = false;
+        internal static bool TransverseScaffoldingBeams { get; private set; } = false;
+        internal static bool LongitudinalScaffoldingBeams { get; private set; } = false;
         internal static float BuildOriginForwardOffset { get; private set; } = 12f;
         internal static float PreviewMoveStep { get; private set; } = 2f;
         internal static float PreviewFineMoveStep { get; private set; } = 0.5f;
+        internal static float BuildRotationSnapDegrees { get; private set; } = 90f;
         internal static float PreviewRotateStepDeg { get; private set; } = 15f;
         internal static float PreviewFineRotateStepDeg { get; private set; } = 5f;
         internal static KeyCode PreviewMoveForwardKey { get; private set; } = KeyCode.UpArrow;
@@ -44,7 +47,7 @@ namespace ValheimFloorPlan
         internal static KeyCode PreviewMoveRightKey { get; private set; } = KeyCode.RightArrow;
         internal static KeyCode PreviewConfirmKey { get; private set; } = KeyCode.E;
         internal static KeyCode PreviewRotateLeftKey { get; private set; } = KeyCode.Q;
-        internal static KeyCode PreviewRotateRightKey { get; private set; } = KeyCode.R;
+        internal static KeyCode PreviewRotateRightKey { get; private set; } = KeyCode.G;
         internal static KeyCode PreviewCancelKey { get; private set; } = KeyCode.Escape;
         internal static KeyCode PreviewFineAdjustKey { get; private set; } = KeyCode.LeftShift;
         internal static float UndoRadius { get; private set; } = 15f;
@@ -66,9 +69,12 @@ namespace ValheimFloorPlan
         private ConfigEntry<int> _externalWallHeight = null!;
         private ConfigEntry<string> _wallPillarMaterial = null!;
         private ConfigEntry<bool> _roofScaffolding = null!;
+        private ConfigEntry<bool> _transverseScaffoldingBeams = null!;
+        private ConfigEntry<bool> _longitudinalScaffoldingBeams = null!;
         private ConfigEntry<float> _buildOriginForwardOffset = null!;
         private ConfigEntry<float> _previewMoveStep = null!;
         private ConfigEntry<float> _previewFineMoveStep = null!;
+        private ConfigEntry<float> _buildRotationSnapDeg = null!;
         private ConfigEntry<float> _previewRotateStepDeg = null!;
         private ConfigEntry<float> _previewFineRotateStepDeg = null!;
         private ConfigEntry<KeyCode> _previewMoveForwardKey = null!;
@@ -213,6 +219,18 @@ namespace ValheimFloorPlan
             _roofScaffolding.SettingChanged += (_, _) => RoofScaffolding = _roofScaffolding.Value;
             RoofScaffolding = _roofScaffolding.Value;
 
+            _transverseScaffoldingBeams = Config.Bind(
+                "Building", "TransverseScaffoldingBeams", false,
+                "When enabled (requires RoofScaffolding), places horizontal 4m log beams connecting vertical poles from the West edge to the East edge. Beams are placed at each vertical pole's Z position.");
+            _transverseScaffoldingBeams.SettingChanged += (_, _) => TransverseScaffoldingBeams = _transverseScaffoldingBeams.Value;
+            TransverseScaffoldingBeams = _transverseScaffoldingBeams.Value;
+
+            _longitudinalScaffoldingBeams = Config.Bind(
+                "Building", "LongitudinalScaffoldingBeams", false,
+                "When enabled (requires RoofScaffolding), places horizontal 4m log beams connecting vertical poles from the North edge to the South edge. Beams are placed at each vertical pole's X position.");
+            _longitudinalScaffoldingBeams.SettingChanged += (_, _) => LongitudinalScaffoldingBeams = _longitudinalScaffoldingBeams.Value;
+            LongitudinalScaffoldingBeams = _longitudinalScaffoldingBeams.Value;
+
             _buildOriginForwardOffset = Config.Bind(
                 "General", "BuildOriginForwardOffset", 12f,
                 new ConfigDescription(
@@ -240,23 +258,39 @@ namespace ValheimFloorPlan
                 PreviewFineMoveStep = Mathf.Clamp(_previewFineMoveStep.Value, 0.05f, 5f);
             PreviewFineMoveStep = Mathf.Clamp(_previewFineMoveStep.Value, 0.05f, 5f);
 
-            _previewRotateStepDeg = Config.Bind(
-                "Preview", "RotateStepDegrees", 15f,
+            // Rotation settings are placed in their own section so they appear as a
+            // distinct group in the in-game config manager. All values are restricted
+            // to multiples of 22.5° so that any combination of step + snap stays on
+            // the same grid and builds remain compatible with Valheim's default
+            // piece-rotation increments.
+            var validRotationSteps = new AcceptableValueList<float>(22.5f, 45f, 90f);
+
+            _buildRotationSnapDeg = Config.Bind(
+                "Preview - Rotation", "BuildRotationSnapDegrees", 90f,
                 new ConfigDescription(
-                    "How far the preview rotates per rotate key press, in degrees.",
-                    new AcceptableValueRange<float>(1f, 90f)));
+                    "Snaps the final build rotation to the nearest multiple of this value at preview start and build confirm. Allowed: 22.5, 45, 90.",
+                    validRotationSteps));
+            _buildRotationSnapDeg.SettingChanged += (_, _) =>
+                BuildRotationSnapDegrees = _buildRotationSnapDeg.Value;
+            BuildRotationSnapDegrees = _buildRotationSnapDeg.Value;
+
+            _previewRotateStepDeg = Config.Bind(
+                "Preview - Rotation", "RotateStepDegrees", 90f,
+                new ConfigDescription(
+                    "How far the preview rotates per coarse rotate key press (Q / G). Allowed: 22.5, 45, 90.",
+                    validRotationSteps));
             _previewRotateStepDeg.SettingChanged += (_, _) =>
-                PreviewRotateStepDeg = Mathf.Clamp(_previewRotateStepDeg.Value, 1f, 90f);
-            PreviewRotateStepDeg = Mathf.Clamp(_previewRotateStepDeg.Value, 1f, 90f);
+                PreviewRotateStepDeg = _previewRotateStepDeg.Value;
+            PreviewRotateStepDeg = _previewRotateStepDeg.Value;
 
             _previewFineRotateStepDeg = Config.Bind(
-                "Preview", "FineRotateStepDegrees", 5f,
+                "Preview - Rotation", "FineRotateStepDegrees", 22.5f,
                 new ConfigDescription(
-                    "How far the preview rotates per key press while the fine-adjust key is held, in degrees.",
-                    new AcceptableValueRange<float>(1f, 45f)));
+                    "How far the preview rotates per key press while the fine-adjust key (Left Shift) is held. Allowed: 22.5, 45, 90.",
+                    validRotationSteps));
             _previewFineRotateStepDeg.SettingChanged += (_, _) =>
-                PreviewFineRotateStepDeg = Mathf.Clamp(_previewFineRotateStepDeg.Value, 1f, 45f);
-            PreviewFineRotateStepDeg = Mathf.Clamp(_previewFineRotateStepDeg.Value, 1f, 45f);
+                PreviewFineRotateStepDeg = _previewFineRotateStepDeg.Value;
+            PreviewFineRotateStepDeg = _previewFineRotateStepDeg.Value;
 
             _previewMoveForwardKey = Config.Bind(
                 "Preview", "MoveForwardKey", KeyCode.UpArrow,
@@ -277,8 +311,10 @@ namespace ValheimFloorPlan
                 "Preview", "RotateLeftKey", KeyCode.Q,
                 "Preview rotation key for rotating counter-clockwise.");
             _previewRotateRightKey = Config.Bind(
-                "Preview", "RotateRightKey", KeyCode.R,
+                "Preview", "RotateRightKey", KeyCode.G,
                 "Preview rotation key for rotating clockwise.");
+            if (_previewRotateRightKey.Value == KeyCode.T)
+                _previewRotateRightKey.Value = KeyCode.G;
             _previewCancelKey = Config.Bind(
                 "Preview", "CancelKey", KeyCode.Escape,
                 "Preview keyboard cancel key. Right-click always cancels too.");
@@ -309,7 +345,7 @@ namespace ValheimFloorPlan
             gameObject.AddComponent<FloorPlanBuilder>();
 
             Log.LogInfo($"{PluginName} v{PluginVersion} loaded! " +
-                $"Build: {_buildHotkey.Value}  Undo: {_undoHotkey.Value}  Progress HUD: {ProgressMessageType}  Terrain passes: {TerrainLevelPasses}  Spike cleanup passes: {TerrainSpikeCleanupPasses}  High-point delta: {TerrainHighPointDelta:F2}m  Staged raise: {TerrainUseStagedRaise} ({TerrainRaiseStepHeight:F2}m, max {TerrainMaxRaiseStages})  Skip satisfied center stamps: {TerrainSkipSatisfiedCenterStamps}  External wall height: {ExternalWallHeight}  Wall/Pillar material: {WallPillarMaterial}  Roof scaffolding: {RoofScaffolding}  Origin offset: {BuildOriginForwardOffset:F1}m  Preview move: {PreviewMoveStep:F2}/{PreviewFineMoveStep:F2}m  Preview rotate: {PreviewRotateStepDeg:F0}/{PreviewFineRotateStepDeg:F0}°");
+                $"Build: {_buildHotkey.Value}  Undo: {_undoHotkey.Value}  Progress HUD: {ProgressMessageType}  Terrain passes: {TerrainLevelPasses}  Spike cleanup passes: {TerrainSpikeCleanupPasses}  High-point delta: {TerrainHighPointDelta:F2}m  Staged raise: {TerrainUseStagedRaise} ({TerrainRaiseStepHeight:F2}m, max {TerrainMaxRaiseStages})  Skip satisfied center stamps: {TerrainSkipSatisfiedCenterStamps}  External wall height: {ExternalWallHeight}  Wall/Pillar material: {WallPillarMaterial}  Roof scaffolding: {RoofScaffolding}  Transverse beams: {TransverseScaffoldingBeams}  Longitudinal beams: {LongitudinalScaffoldingBeams}  Origin offset: {BuildOriginForwardOffset:F1}m  Preview move: {PreviewMoveStep:F2}/{PreviewFineMoveStep:F2}m  Preview rotate: {PreviewRotateStepDeg:F0}/{PreviewFineRotateStepDeg:F0}°  Build snap: {BuildRotationSnapDegrees:F1}°");
         }
 
         private void Update()
