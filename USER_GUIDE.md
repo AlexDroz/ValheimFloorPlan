@@ -34,7 +34,7 @@ Important settings:
 - `FloorPlanFile`: Full path to your `.vfp` file.
 - `BuildHotkey`: Starts preview mode (default `F8`).
 - `UndoHotkey`: Removes nearby VFP pieces and restores terrain snapshot (default `F9`).
-- `BuildOriginForwardOffset`: Initial preview origin in front of your character (default `12`, range `10-20`).
+- `BuildOriginForwardOffset`: Initial preview center point in front of your character (default `12`, range `10-20`).
 - `ProgressMessagePosition`: HUD slot for status text (default `CenterLeft`, mapped to `Center`).
 - `TerrainLevelPasses`: Main leveling pass count (default `2`, range `1-5`).
 - `TerrainSpikeCleanupPasses`: Cleanup pass count after leveling (default `2`, range `1-5`).
@@ -46,6 +46,7 @@ Important settings:
 - `TerrainMaxRaiseStages`: Max number of raise stages when staged raise is enabled (default `1`, range `1-16`).
 - `ExternalWallHeight`: Stacks external `Wall` and `Pillar` objects to this many levels (default `1`, range `1-4`).
 - `WallPillarMaterial`: Choose `Stone` or `Wood` for `Wall` and `Pillar` types (default `Stone`).
+- `ScaffoldingLevels`: Number of stacked scaffolding levels when `RoofScaffolding` is enabled (default `1`, range `1-6`). Each extra level repeats the same vertical/perimeter/transverse/longitudinal scaffold pattern 4m higher.
 
 Preview input settings (all configurable):
 - `MoveForwardKey` / `MoveBackwardKey` / `MoveLeftKey` / `MoveRightKey` (defaults: arrow keys)
@@ -78,7 +79,7 @@ Preview controls are also configurable in the same file.
 3. Enter world and stand near your target build area.
 4. Press `F8` to start preview.
 5. Adjust placement:
-   - Arrow keys move preview origin.
+   - Arrow keys move preview center.
    - `Q` / `G` rotate.
    - Hold `LeftShift` for fine movement/rotation.
    - `Esc` or right-click cancels preview.

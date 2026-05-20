@@ -88,7 +88,7 @@ All values below are configurable in that file.
 | `UndoRadius` | `15` | `5` to `150` | Search radius in metres around the undo circle centre when scanning for VFP pieces to remove on Undo. Adjustable live during the confirmation window with `+`/`-`, and circle centre is adjustable with arrow keys. |
 | `ProgressMessagePosition` | `CenterLeft` | Valheim `MessageHud` positions (`Center`, `TopLeft`, `TopRight`, etc.) | HUD slot for build-progress messages. `CenterLeft` is accepted as an alias and maps to `Center`. |
 | `WarningMessagePosition` | `TopLeft` | Valheim `MessageHud` positions (`Center`, `TopLeft`, `TopRight`, etc.) | HUD slot for warnings/risk messages. `CenterLeft` is accepted as an alias and maps to `Center`. |
-| `BuildOriginForwardOffset` | `12` | `10` to `20` | Initial preview origin distance in front of the player (meters). |
+| `BuildOriginForwardOffset` | `12` | `10` to `20` | Initial preview center distance in front of the player (meters). |
 
 ### Terrain
 
@@ -109,6 +109,7 @@ All values below are configurable in that file.
 |---|---|---|---|
 | `ExternalWallHeight` | `1` | `1` to `4` | Stacks outer-perimeter `Wall`/`Pillar` pieces vertically to this many levels. |
 | `WallPillarMaterial` | `Stone` | `Stone`, `Wood` | Chooses material set used for `Wall` and `Pillar` types. |
+| `ScaffoldingLevels` | `1` | `1` to `6` | Number of stacked scaffolding levels when `RoofScaffolding` is enabled. Each extra level repeats the same scaffold pattern +4m above the previous level. |
 
 ### Preview Movement/Rotation
 
@@ -129,10 +130,10 @@ All values below are configurable in that file.
 
 | Option | Default | What it does |
 |---|---|---|
-| `MoveForwardKey` | `UpArrow` | Move preview origin forward relative to camera. |
-| `MoveBackwardKey` | `DownArrow` | Move preview origin backward relative to camera. |
-| `MoveLeftKey` | `LeftArrow` | Move preview origin left relative to camera. |
-| `MoveRightKey` | `RightArrow` | Move preview origin right relative to camera. |
+| `MoveForwardKey` | `UpArrow` | Move preview center forward relative to camera. |
+| `MoveBackwardKey` | `DownArrow` | Move preview center backward relative to camera. |
+| `MoveLeftKey` | `LeftArrow` | Move preview center left relative to camera. |
+| `MoveRightKey` | `RightArrow` | Move preview center right relative to camera. |
 | `RotateLeftKey` | `Q` | Rotate preview counter-clockwise. |
 | `RotateRightKey` | `G` | Rotate preview clockwise. |
 | `ConfirmKey` | `E` | Confirm current preview placement and start build. |

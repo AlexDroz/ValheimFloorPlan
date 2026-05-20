@@ -34,7 +34,7 @@ On startup (`Awake`), the plugin registers BepInEx configuration entries for fil
 - **`TerrainMaxRaiseStages`** (default `1`, range `1–16`) — cap on number of raise stages.
 - **`ExternalWallHeight`** (default `1`, range `1–4`) — stacks external `Wall`/`Pillar` pieces to this many levels.
 - **`WallPillarMaterial`** (`Stone` or `Wood`, default `Stone`) — chooses wall/pillar prefab set.
-- **`BuildOriginForwardOffset`** (default `12 m`, range `10–20`) — initial preview/build origin in front of the player.
+- **`BuildOriginForwardOffset`** (default `12 m`, range `10–20`) — initial preview/build center pivot in front of the player.
 - **`ProgressMessagePosition`** — HUD slot used for progress messages.
 - **Preview movement/rotation settings and keys** — step sizes, fine-adjust key, movement keys, rotation keys (`Q`/`R` by default), confirm key (`E` by default), and cancel key.
 
@@ -59,7 +59,7 @@ piece,4,2,Pillar
 | `cols` / `rows` | Grid dimensions of the design |
 | `piece,col,row,type[,rotation][,wallFace]` | One building piece at grid position (col, row) with optional rotation and optional wall face (`outer` / `inner`) |
 
-The grid origin (col=0, row=0) maps to the selected preview origin (default: player position plus forward offset when preview starts). Each grid cell is **1 Valheim metre** (`CELL_SIZE = 1f`).
+The grid local anchor (col=0, row=0) is derived from the selected preview center pivot (default: player position plus forward offset when preview starts). Each grid cell is **1 Valheim metre** (`CELL_SIZE = 1f`).
 
 ---
 
@@ -84,7 +84,7 @@ The grid origin (col=0, row=0) maps to the selected preview origin (default: pla
 
 ## Step 4 — The Build Sequence (Coroutine)
 
-When `F8` is pressed, `FloorPlanBuilder.StartPreview` enters placement preview mode. The initial preview origin is the player's position plus `BuildOriginForwardOffset` in the facing direction. In preview, you can nudge or rotate the plan, then confirm with the configured preview confirm key (default `E`) to launch `LevelThenPlace`. All heavy steps are spread across Unity frames to avoid freezing the game.
+When `F8` is pressed, `FloorPlanBuilder.StartPreview` enters placement preview mode. The initial preview center pivot is the player's position plus `BuildOriginForwardOffset` in the facing direction. In preview, you can nudge or rotate the plan around that center, then confirm with the configured preview confirm key (default `E`) to launch `LevelThenPlace`. Internally, a corner-based placement anchor is derived from the current center+rotation so existing terrain and spawn systems continue to use their established math. All heavy steps are spread across Unity frames to avoid freezing the game.
 
 During preview, `EvaluateEdgeRisk` runs on a timed cadence and computes:
 - Risk level (`Low`, `Medium`, `High`)
@@ -125,7 +125,7 @@ For each piece in the plan:
 
 1. Look up its `PieceDef` in `PieceMap`. Unknown types are logged and skipped.
 2. Fetch the prefab from `ZNetScene`.
-3. Convert the top-left grid cell (col, row) to a local world-space centre offset, then rotate around the chosen build origin by preview rotation:
+3. Convert the top-left grid cell (col, row) to a local world-space centre offset, then rotate around the internal placement anchor derived from the selected center pivot:
    ```
    dx = (col + EffW × 0.5) × CELL_SIZE
    dz = (row + EffH × 0.5) × CELL_SIZE
@@ -172,15 +172,15 @@ Pressing `F9` calls `FloorPlanBuilder.Undo`:
               +Z (north / row direction)
               ^
               |
-  +-----------+-----------> +X (east / col direction)
-   origin = preview origin (player position + forward offset by default)
+              +-----------+-----------> +X (east / col direction)
+   center pivot = preview center (player position + forward offset by default)
 ```
 
 - `col` → `+X` world axis
 - `row` → `+Z` world axis
 - Each cell = 1 m
 - Piece positions are **centre-based** in world space, **top-left corner-based** in the `.vfp` file
-- Preview rotation is applied clockwise around the selected origin before placement
+- Preview rotation is applied clockwise around the selected center pivot before placement
 
 ---
 

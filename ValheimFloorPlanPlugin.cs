@@ -33,6 +33,7 @@ namespace ValheimFloorPlan
         internal static int ExternalWallHeight { get; private set; } = 1;
         internal static StructuralMaterial WallPillarMaterial { get; private set; } = StructuralMaterial.Stone;
         internal static bool RoofScaffolding { get; private set; } = false;
+        internal static int ScaffoldingLevels { get; private set; } = 1;
         internal static bool TransverseScaffoldingBeams { get; private set; } = false;
         internal static bool LongitudinalScaffoldingBeams { get; private set; } = false;
         internal static float BuildOriginForwardOffset { get; private set; } = 12f;
@@ -69,6 +70,7 @@ namespace ValheimFloorPlan
         private ConfigEntry<int> _externalWallHeight = null!;
         private ConfigEntry<string> _wallPillarMaterial = null!;
         private ConfigEntry<bool> _roofScaffolding = null!;
+        private ConfigEntry<int> _scaffoldingLevels = null!;
         private ConfigEntry<bool> _transverseScaffoldingBeams = null!;
         private ConfigEntry<bool> _longitudinalScaffoldingBeams = null!;
         private ConfigEntry<float> _buildOriginForwardOffset = null!;
@@ -219,6 +221,15 @@ namespace ValheimFloorPlan
             _roofScaffolding.SettingChanged += (_, _) => RoofScaffolding = _roofScaffolding.Value;
             RoofScaffolding = _roofScaffolding.Value;
 
+            _scaffoldingLevels = Config.Bind(
+                "Building", "ScaffoldingLevels", 1,
+                new ConfigDescription(
+                    "How many stacked 4m scaffolding levels to build when RoofScaffolding is enabled. 1 builds only the ground level. Higher values repeat the same scaffold pattern every +4m, up to 4 levels to stay within log-pole height limits.",
+                    new AcceptableValueRange<int>(1, 4)));
+            _scaffoldingLevels.SettingChanged += (_, _) =>
+                ScaffoldingLevels = Mathf.Clamp(_scaffoldingLevels.Value, 1, 4);
+            ScaffoldingLevels = Mathf.Clamp(_scaffoldingLevels.Value, 1, 4);
+
             _transverseScaffoldingBeams = Config.Bind(
                 "Building", "TransverseScaffoldingBeams", false,
                 "When enabled (requires RoofScaffolding), places horizontal 4m log beams connecting vertical poles from the West edge to the East edge. Beams are placed at each vertical pole's Z position.");
@@ -345,7 +356,7 @@ namespace ValheimFloorPlan
             gameObject.AddComponent<FloorPlanBuilder>();
 
             Log.LogInfo($"{PluginName} v{PluginVersion} loaded! " +
-                $"Build: {_buildHotkey.Value}  Undo: {_undoHotkey.Value}  Progress HUD: {ProgressMessageType}  Terrain passes: {TerrainLevelPasses}  Spike cleanup passes: {TerrainSpikeCleanupPasses}  High-point delta: {TerrainHighPointDelta:F2}m  Staged raise: {TerrainUseStagedRaise} ({TerrainRaiseStepHeight:F2}m, max {TerrainMaxRaiseStages})  Skip satisfied center stamps: {TerrainSkipSatisfiedCenterStamps}  External wall height: {ExternalWallHeight}  Wall/Pillar material: {WallPillarMaterial}  Roof scaffolding: {RoofScaffolding}  Transverse beams: {TransverseScaffoldingBeams}  Longitudinal beams: {LongitudinalScaffoldingBeams}  Origin offset: {BuildOriginForwardOffset:F1}m  Preview move: {PreviewMoveStep:F2}/{PreviewFineMoveStep:F2}m  Preview rotate: {PreviewRotateStepDeg:F0}/{PreviewFineRotateStepDeg:F0}°  Build snap: {BuildRotationSnapDegrees:F1}°");
+                $"Build: {_buildHotkey.Value}  Undo: {_undoHotkey.Value}  Progress HUD: {ProgressMessageType}  Terrain passes: {TerrainLevelPasses}  Spike cleanup passes: {TerrainSpikeCleanupPasses}  High-point delta: {TerrainHighPointDelta:F2}m  Staged raise: {TerrainUseStagedRaise} ({TerrainRaiseStepHeight:F2}m, max {TerrainMaxRaiseStages})  Skip satisfied center stamps: {TerrainSkipSatisfiedCenterStamps}  External wall height: {ExternalWallHeight}  Wall/Pillar material: {WallPillarMaterial}  Roof scaffolding: {RoofScaffolding}  Scaffolding levels: {ScaffoldingLevels}  Transverse beams: {TransverseScaffoldingBeams}  Longitudinal beams: {LongitudinalScaffoldingBeams}  Origin offset: {BuildOriginForwardOffset:F1}m  Preview move: {PreviewMoveStep:F2}/{PreviewFineMoveStep:F2}m  Preview rotate: {PreviewRotateStepDeg:F0}/{PreviewFineRotateStepDeg:F0}°  Build snap: {BuildRotationSnapDegrees:F1}°");
         }
 
         private void Update()
