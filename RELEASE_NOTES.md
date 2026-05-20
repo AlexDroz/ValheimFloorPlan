@@ -1,4 +1,4 @@
-# ValheimFloorPlan 1.0.7
+# ValheimFloorPlan 1.0.8
 
 This release focuses on rotation safety, improved preview controls, and stronger roof-scaffolding behavior.
 

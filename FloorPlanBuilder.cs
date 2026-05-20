@@ -564,7 +564,9 @@ namespace ValheimFloorPlan
             forwardOffset = Mathf.Max(0f, forwardOffset);
             if (forwardOffset <= 0f) return origin;
 
-            Vector3 forward = player.transform.forward;
+            Vector3 forward = GameCamera.instance != null
+                ? GameCamera.instance.transform.forward
+                : player.transform.forward;
             forward.y = 0f;
             if (forward.sqrMagnitude < 0.0001f)
                 return origin;
@@ -1807,8 +1809,6 @@ namespace ValheimFloorPlan
                 }
 
                 int effectivePieceRotation = piece.Rotation;
-                if (useWoodStructure && piece.Type == "Wall" && piece.WallFace == WallFaceMode.Inner)
-                    effectivePieceRotation = (effectivePieceRotation + 180) % 360;
 
                 string prefabName = ResolvePrefabName(piece.Type, def.Prefab, useWoodStructure);
                 var prefab = ZNetScene.instance?.GetPrefab(prefabName);
@@ -1823,6 +1823,28 @@ namespace ValheimFloorPlan
                 // matching the B4J designer's EffW / EffH logic exactly.
                 int effW = def.EffW(effectivePieceRotation);
                 int effH = def.EffH(effectivePieceRotation);
+                bool isExternal = IsOnPlanOuterPerimeter(
+                    piece.Col, piece.Row, effW, effH,
+                    minCol, maxColExclusive, minRow, maxRowExclusive);
+
+                if (useWoodStructure && piece.Type == "Wall" && isExternal)
+                {
+                    effectivePieceRotation = GetExteriorWallRotation(
+                        piece.Col, piece.Row, effW, effH,
+                        minCol, maxColExclusive, minRow, maxRowExclusive,
+                        effectivePieceRotation);
+                    effW = def.EffW(effectivePieceRotation);
+                    effH = def.EffH(effectivePieceRotation);
+                }
+
+                // Keep perimeter wood walls facing outward even if a plan carries an
+                // Inner face flag there; only interior wood walls should flip inward.
+                if (useWoodStructure && piece.Type == "Wall" && piece.WallFace == WallFaceMode.Inner && !isExternal)
+                {
+                    effectivePieceRotation = (effectivePieceRotation + 180) % 360;
+                    effW = def.EffW(effectivePieceRotation);
+                    effH = def.EffH(effectivePieceRotation);
+                }
 
                 // Convert from top-left grid corner (B4J storage) to world centre,
                 // then rotate the offset around the player origin by the plan rotation.
@@ -1849,9 +1871,6 @@ namespace ValheimFloorPlan
                 float y = terrainY + def.YOffset;
 
                 var pos = new Vector3(x, y, z);
-                bool isExternal = IsOnPlanOuterPerimeter(
-                    piece.Col, piece.Row, effW, effH,
-                    minCol, maxColExclusive, minRow, maxRowExclusive);
                 bool shouldStack = IsExternalWallOrPillarType(piece.Type) && isExternal;
                 int stackCount = shouldStack ? configuredExternalWallHeight : 1;
                 float stackStepY = GetStackStepY(piece.Type);
@@ -1862,7 +1881,7 @@ namespace ValheimFloorPlan
                 // Direction is derived from which plan edge the piece sits on, not its
                 // own rotation (which would give wrong results for south/west walls).
                 Vector3 materialOffset = Vector3.zero;
-                if (useWoodStructure && (piece.Type == "Wall" || piece.Type == "Pillar") && isExternal)
+                if (((useWoodStructure && (piece.Type == "Wall" || piece.Type == "Pillar")) || piece.Type == "Doorway") && isExternal)
                     materialOffset = GetWoodPerimeterOffset(
                         piece.Type, piece.Col, piece.Row, effW, effH,
                         minCol, maxColExclusive, minRow, maxRowExclusive,
@@ -1959,15 +1978,32 @@ namespace ValheimFloorPlan
                    (col + effW) >= maxColExclusive || (row + effH) >= maxRowExclusive;
         }
 
+        private static int GetExteriorWallRotation(
+            int col, int row, int effW, int effH,
+            int minCol, int maxColExclusive, int minRow, int maxRowExclusive,
+            int fallbackRotation)
+        {
+            if (effW == 1)
+            {
+                if (col <= minCol) return 270;
+                if ((col + effW) >= maxColExclusive) return 90;
+            }
+            else if (effH == 1)
+            {
+                if (row <= minRow) return 180;
+                if ((row + effH) >= maxRowExclusive) return 0;
+            }
+
+            return fallbackRotation;
+        }
+
         /// <summary>
-        /// Returns the world-space offset to apply to a wood Wall or Pillar piece so its
+        /// Returns the world-space offset to apply to a perimeter Wall, Doorway, or Pillar so its
         /// outer face aligns with the outer face of the equivalent stone piece.
         ///
         /// Offset is derived from Valheim prefab geometry:
-        ///   stone_wall_2x1 depth = 1.0 m  →  half = 0.50 m
-        ///   wood_wall_half  depth = 0.3 m  →  half = 0.15 m  →  shift = 0.35 m
-        ///   stone_pillar   width = 0.5 m  →  half = 0.25 m
-        ///   wood_pole2     width = 0.2 m  →  half = 0.10 m  →  shift = 0.15 m
+        ///   wood_wall_half depth = 0.3 m  → half = 0.15 m  → shift = 0.35 m to sit on a 1 m tile edge
+        ///   wood_pole_log  width = 0.2 m  → half = 0.10 m  → shift = 0.40 m to sit on a 1 m tile edge
         ///
         /// Direction is determined by which plan edge the piece sits on (not its own
         /// rotation), so south/west walls are handled correctly.  Corner pillars that
@@ -1982,8 +2018,8 @@ namespace ValheimFloorPlan
             int minCol, int maxColExclusive, int minRow, int maxRowExclusive,
             float planRotationDeg)
         {
-            // Per-prefab outward shift (stone half-size minus wood half-size).
-            float shift = pieceType == "Pillar" ? 0.15f : 0.35f;
+            // Per-prefab outward shift so the wood piece's outer face sits on the tile edge.
+            float shift = pieceType == "Pillar" ? 0.40f : 0.35f;
 
             // Which plan edges does this piece touch?  col→+X axis, row→+Z axis.
             float lx = 0f, lz = 0f;
@@ -1997,7 +2033,7 @@ namespace ValheimFloorPlan
             //   effH==1  → wall runs E-W, faces N/S: only Z shift is valid, suppress X.
             //   effW==1  → wall runs N-S, faces E/W: only X shift is valid, suppress Z.
             // Pillars are 1×1 so both axes always apply (corner pillars shift diagonally, which is correct).
-            if (pieceType == "Wall")
+            if (pieceType == "Wall" || pieceType == "Doorway")
             {
                 if (effH == 1) lx = 0f;   // east-west wall: suppress X shift
                 else           lz = 0f;   // north-south wall: suppress Z shift
@@ -2066,6 +2102,7 @@ namespace ValheimFloorPlan
             const float  POLE_HEIGHT    = 4f;
             const float  HORIZ_LEN      = 4f;
             const float  HORIZ_HALF     = HORIZ_LEN * 0.5f;
+            const float  FLOOR_DECK_DROP = 0.05f;
 
             var player = Player.m_localPlayer;
             if (player == null) yield break;
@@ -2214,7 +2251,7 @@ namespace ValheimFloorPlan
             ScaffoldDedup(doorJambParams, 0.5f);
             poleParams.Sort();
 
-            int scaffoldLevels = Mathf.Clamp(ValheimFloorPlanPlugin.ScaffoldingLevels, 1, 4);
+            int scaffoldLevels = Mathf.Clamp(ValheimFloorPlanPlugin.ScaffoldingLevels, 1, 3);
 
             // Add intermediate edge-join poles once to establish full anchor set used by
             // all levels. The same anchor topology is then repeated upward every 4m.
@@ -2336,11 +2373,14 @@ namespace ValheimFloorPlan
                         scaffoldBaseY, levelOffsetY, horizPrefab, vertPrefab, player);
                 }
 
-                placed += PlaceScaffoldLevelFloorDeck(
-                    minCol, maxColExclusive, minRow, maxRowExclusive,
-                    origin, rotationDeg,
-                    scaffoldBaseY + POLE_HEIGHT + levelOffsetY,
-                    floor2Prefab, floor1Prefab, player);
+                if (ValheimFloorPlanPlugin.ScaffoldingFloors)
+                {
+                    placed += PlaceScaffoldLevelFloorDeck(
+                        minCol, maxColExclusive, minRow, maxRowExclusive,
+                        origin, rotationDeg,
+                        scaffoldBaseY + POLE_HEIGHT + levelOffsetY - FLOOR_DECK_DROP,
+                        floor2Prefab, floor1Prefab, player);
+                }
             }
 
             PruneGroundFloorScaffoldVerticals(doorCenters, centerWorld, origin, rotationDeg);

@@ -30,12 +30,15 @@ From a player perspective, the flow is simple:
 Config file path (default):
 - `BepInEx/config/com.alexdroz.valheimfloorplan.cfg`
 
-Important settings:
+Important settings are grouped in the config the same way they are grouped below.
+
+Section `General`:
 - `FloorPlanFile`: Full path to your `.vfp` file.
 - `BuildHotkey`: Starts preview mode (default `F8`).
 - `UndoHotkey`: Removes nearby VFP pieces and restores terrain snapshot (default `F9`).
-- `BuildOriginForwardOffset`: Initial preview center point in front of your character (default `12`, range `10-20`).
 - `ProgressMessagePosition`: HUD slot for status text (default `CenterLeft`, mapped to `Center`).
+
+Section `Terrain`:
 - `TerrainLevelPasses`: Main leveling pass count (default `2`, range `1-5`).
 - `TerrainSpikeCleanupPasses`: Cleanup pass count after leveling (default `2`, range `1-5`).
 - `TerrainStampRadius`: Radius (meters) of each leveling disc stamp and preview outer wall width (default `3.0`, range `3.0-6.0`).
@@ -44,24 +47,38 @@ Important settings:
 - `TerrainUseStagedRaise`: Experimental staged vertical raise mode (default `false`).
 - `TerrainRaiseStepHeight`: Max raise per stage when staged raise is enabled (default `0.5`, range `0.15-1.5`).
 - `TerrainMaxRaiseStages`: Max number of raise stages when staged raise is enabled (default `1`, range `1-16`).
+
+Section `Building`:
 - `ExternalWallHeight`: Stacks external `Wall` and `Pillar` objects to this many levels (default `1`, range `1-4`).
 - `WallPillarMaterial`: Choose `Stone` or `Wood` for `Wall` and `Pillar` types (default `Stone`).
-- `ScaffoldingLevels`: Number of stacked scaffolding levels when `RoofScaffolding` is enabled (default `1`, range `1-6`). Each extra level repeats the same vertical/perimeter/transverse/longitudinal scaffold pattern 4m higher.
 
-Preview input settings (all configurable):
-- `MoveForwardKey` / `MoveBackwardKey` / `MoveLeftKey` / `MoveRightKey` (defaults: arrow keys)
-- `RotateLeftKey` / `RotateRightKey` (defaults: `Q` / `G`)
-- `ConfirmKey` (default `E`)
-- `CancelKey` (default `Escape`, right-click also cancels)
-- `FineAdjustKey` (default `LeftShift`)
-- `MoveStep`, `FineMoveStep`, `RotateStepDegrees`, `FineRotateStepDegrees`, `BuildRotationSnapDegrees`
+Section `Scaffolding`:
+- `RoofScaffolding`: Enables scaffold poles and perimeter scaffold beams around the build.
+- `ScaffoldingLevels`: Number of stacked scaffolding levels when `RoofScaffolding` is enabled (default `1`, range `1-3`). Each extra level repeats the same vertical/perimeter/transverse/longitudinal scaffold pattern 4m higher.
+- `ScaffoldingFloors`: Builds wood floor decks across each scaffolding level when `RoofScaffolding` is enabled (default `false`).
+- `TransverseScaffoldingBeams`: Adds west-to-east horizontal scaffold beams at each scaffold pole row.
+- `LongitudinalScaffoldingBeams`: Adds south-to-north horizontal scaffold beams at each scaffold pole column.
 
-Rotation safety settings:
+Example of `RoofScaffolding` with `ScaffoldingLevels = 3`:
+
+![Valheim Floor Plan scaffolding levels example](https://raw.githubusercontent.com/AlexDroz/ValheimFloorPlan/master/images/2026-05-20%2017_48_37-Valheim.png)
+
+Section `Preview`:
+- `BuildOriginForwardOffset`: Initial preview center point in front of the camera-facing direction (default `12`, range `10-20`).
+- `MoveStep`: Coarse preview move distance.
+- `FineMoveStep`: Fine preview move distance while the fine-adjust key is held.
+- `MoveForwardKey` / `MoveBackwardKey` / `MoveLeftKey` / `MoveRightKey`: Preview movement keys.
+- `RotateLeftKey` / `RotateRightKey`: Preview rotation keys.
+- `ConfirmKey`: Confirms current preview placement.
+- `CancelKey`: Cancels preview.
+- `FineAdjustKey`: Fine movement/rotation modifier.
+
+Section `Preview - Rotation`:
 - `BuildRotationSnapDegrees`: final build snap step (default `90`, allowed `22.5`, `45`, `90`)
 - `RotateStepDegrees`: coarse preview rotation step (default `90`, allowed `22.5`, `45`, `90`)
 - `FineRotateStepDegrees`: fine preview rotation step while `LeftShift` is held (default `22.5`, allowed `22.5`, `45`, `90`)
 
-These settings live together in the `Preview - Rotation` section of the config.
+These settings live together in the `Preview - Rotation` section of the config. Preview keys and movement settings live in the `Preview` section.
 
 Confirmed builds always snap to `BuildRotationSnapDegrees`, which keeps completed structures aligned to angles that still work with Valheim's normal manual piece placement.
 

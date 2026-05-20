@@ -1,12 +1,11 @@
 # Changelog
 
-## Unreleased
+## 1.0.8
 
-- Placeholder: **F8 placement pivot moved to plan center:** preview/build placement now uses the plan center as the user-facing pivot (instead of corner-origin), making rotation and alignment more intuitive.
-- Placeholder: **Preview marker and controls wording updated:** in-game preview messaging now reports center movement, and technical logs include both center and internal placement anchor for easier troubleshooting.
-- Placeholder: **Documentation synced to center-pivot behavior:** README, user guide, and implementation notes now describe center-based placement/rotation and the updated meaning of `BuildOriginForwardOffset`.
-- Placeholder: **New `ScaffoldingLevels` option (1-6):** when roof scaffolding is enabled, scaffold generation now repeats the full vertical/perimeter/transverse/longitudinal pattern per level at +4m increments.
-- Placeholder: **Undo now includes elevated scaffold stories:** F9 piece selection/removal/highlighting now use horizontal (XZ) radius instead of 3D distance, so upper levels inside the undo circle are not missed.
+- **F8 placement pivot moved to plan center:** preview/build placement now uses the plan center as the user-facing pivot (instead of corner-origin), making rotation and alignment more intuitive.
+- **New `ScaffoldingLevels` option (1-3):** when roof scaffolding is enabled, scaffold generation now repeats the full vertical/perimeter/transverse/longitudinal pattern per level at +4m increments.
+- **New `ScaffoldingFloors` option:** when roof scaffolding is enabled, wood floor decks can now be toggled on or off for scaffolding levels. Default is `false`.
+- **Undo now includes elevated scaffold stories:** F9 piece selection/removal/highlighting now use horizontal (XZ) radius instead of 3D distance, so upper levels inside the undo circle are not missed.
 
 ## 1.0.7
 

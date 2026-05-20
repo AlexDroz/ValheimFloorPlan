@@ -16,7 +16,7 @@ namespace ValheimFloorPlan
 
         public const string PluginGUID = "com.alexdroz.valheimfloorplan";
         public const string PluginName = "ValheimFloorPlan";
-        public const string PluginVersion = "1.0.7";
+        public const string PluginVersion = "1.0.8";
 
         internal static ManualLogSource Log = null!;
         internal static ValheimFloorPlanPlugin Instance { get; private set; } = null!;
@@ -34,6 +34,7 @@ namespace ValheimFloorPlan
         internal static StructuralMaterial WallPillarMaterial { get; private set; } = StructuralMaterial.Stone;
         internal static bool RoofScaffolding { get; private set; } = false;
         internal static int ScaffoldingLevels { get; private set; } = 1;
+        internal static bool ScaffoldingFloors { get; private set; } = false;
         internal static bool TransverseScaffoldingBeams { get; private set; } = false;
         internal static bool LongitudinalScaffoldingBeams { get; private set; } = false;
         internal static float BuildOriginForwardOffset { get; private set; } = 12f;
@@ -71,6 +72,7 @@ namespace ValheimFloorPlan
         private ConfigEntry<string> _wallPillarMaterial = null!;
         private ConfigEntry<bool> _roofScaffolding = null!;
         private ConfigEntry<int> _scaffoldingLevels = null!;
+        private ConfigEntry<bool> _scaffoldingFloors = null!;
         private ConfigEntry<bool> _transverseScaffoldingBeams = null!;
         private ConfigEntry<bool> _longitudinalScaffoldingBeams = null!;
         private ConfigEntry<float> _buildOriginForwardOffset = null!;
@@ -216,36 +218,42 @@ namespace ValheimFloorPlan
             WallPillarMaterial = ParseStructuralMaterial(_wallPillarMaterial.Value);
 
             _roofScaffolding = Config.Bind(
-                "Building", "RoofScaffolding", false,
+                "Scaffolding", "RoofScaffolding", false,
                 "When enabled, places a ring of vertical 4m log poles at each corner, adjacent to each door, and at midpoints where spacing exceeds 8m, then connects their tops with horizontal 4m log poles forming a rectangular scaffold frame.");
             _roofScaffolding.SettingChanged += (_, _) => RoofScaffolding = _roofScaffolding.Value;
             RoofScaffolding = _roofScaffolding.Value;
 
             _scaffoldingLevels = Config.Bind(
-                "Building", "ScaffoldingLevels", 1,
+                "Scaffolding", "ScaffoldingLevels", 1,
                 new ConfigDescription(
-                    "How many stacked 4m scaffolding levels to build when RoofScaffolding is enabled. 1 builds only the ground level. Higher values repeat the same scaffold pattern every +4m, up to 4 levels to stay within log-pole height limits.",
-                    new AcceptableValueRange<int>(1, 4)));
+                    "How many stacked 4m scaffolding levels to build when RoofScaffolding is enabled. 1 builds only the ground level. Higher values repeat the same scaffold pattern every +4m, up to 3 levels to stay within core-wood height limits.",
+                    new AcceptableValueRange<int>(1, 3)));
             _scaffoldingLevels.SettingChanged += (_, _) =>
-                ScaffoldingLevels = Mathf.Clamp(_scaffoldingLevels.Value, 1, 4);
-            ScaffoldingLevels = Mathf.Clamp(_scaffoldingLevels.Value, 1, 4);
+                ScaffoldingLevels = Mathf.Clamp(_scaffoldingLevels.Value, 1, 3);
+            ScaffoldingLevels = Mathf.Clamp(_scaffoldingLevels.Value, 1, 3);
+
+            _scaffoldingFloors = Config.Bind(
+                "Scaffolding", "ScaffoldingFloors", false,
+                "When enabled (requires RoofScaffolding), builds wood floor decks across each scaffolding level.");
+            _scaffoldingFloors.SettingChanged += (_, _) => ScaffoldingFloors = _scaffoldingFloors.Value;
+            ScaffoldingFloors = _scaffoldingFloors.Value;
 
             _transverseScaffoldingBeams = Config.Bind(
-                "Building", "TransverseScaffoldingBeams", false,
+                "Scaffolding", "TransverseScaffoldingBeams", false,
                 "When enabled (requires RoofScaffolding), places horizontal 4m log beams connecting vertical poles from the West edge to the East edge. Beams are placed at each vertical pole's Z position.");
             _transverseScaffoldingBeams.SettingChanged += (_, _) => TransverseScaffoldingBeams = _transverseScaffoldingBeams.Value;
             TransverseScaffoldingBeams = _transverseScaffoldingBeams.Value;
 
             _longitudinalScaffoldingBeams = Config.Bind(
-                "Building", "LongitudinalScaffoldingBeams", false,
+                "Scaffolding", "LongitudinalScaffoldingBeams", false,
                 "When enabled (requires RoofScaffolding), places horizontal 4m log beams connecting vertical poles from the North edge to the South edge. Beams are placed at each vertical pole's X position.");
             _longitudinalScaffoldingBeams.SettingChanged += (_, _) => LongitudinalScaffoldingBeams = _longitudinalScaffoldingBeams.Value;
             LongitudinalScaffoldingBeams = _longitudinalScaffoldingBeams.Value;
 
             _buildOriginForwardOffset = Config.Bind(
-                "General", "BuildOriginForwardOffset", 12f,
+                "Preview", "BuildOriginForwardOffset", 12f,
                 new ConfigDescription(
-                    "How far in front of the player (in meters) the plan origin is placed for preview/build.",
+                    "How far in front of the camera-facing direction (in meters) the initial preview center is placed.",
                     new AcceptableValueRange<float>(10f, 20f)));
             _buildOriginForwardOffset.SettingChanged += (_, _) =>
                 BuildOriginForwardOffset = Mathf.Clamp(_buildOriginForwardOffset.Value, 10f, 20f);
@@ -356,7 +364,7 @@ namespace ValheimFloorPlan
             gameObject.AddComponent<FloorPlanBuilder>();
 
             Log.LogInfo($"{PluginName} v{PluginVersion} loaded! " +
-                $"Build: {_buildHotkey.Value}  Undo: {_undoHotkey.Value}  Progress HUD: {ProgressMessageType}  Terrain passes: {TerrainLevelPasses}  Spike cleanup passes: {TerrainSpikeCleanupPasses}  High-point delta: {TerrainHighPointDelta:F2}m  Staged raise: {TerrainUseStagedRaise} ({TerrainRaiseStepHeight:F2}m, max {TerrainMaxRaiseStages})  Skip satisfied center stamps: {TerrainSkipSatisfiedCenterStamps}  External wall height: {ExternalWallHeight}  Wall/Pillar material: {WallPillarMaterial}  Roof scaffolding: {RoofScaffolding}  Scaffolding levels: {ScaffoldingLevels}  Transverse beams: {TransverseScaffoldingBeams}  Longitudinal beams: {LongitudinalScaffoldingBeams}  Origin offset: {BuildOriginForwardOffset:F1}m  Preview move: {PreviewMoveStep:F2}/{PreviewFineMoveStep:F2}m  Preview rotate: {PreviewRotateStepDeg:F0}/{PreviewFineRotateStepDeg:F0}°  Build snap: {BuildRotationSnapDegrees:F1}°");
+                $"Build: {_buildHotkey.Value}  Undo: {_undoHotkey.Value}  Progress HUD: {ProgressMessageType}  Terrain passes: {TerrainLevelPasses}  Spike cleanup passes: {TerrainSpikeCleanupPasses}  High-point delta: {TerrainHighPointDelta:F2}m  Staged raise: {TerrainUseStagedRaise} ({TerrainRaiseStepHeight:F2}m, max {TerrainMaxRaiseStages})  Skip satisfied center stamps: {TerrainSkipSatisfiedCenterStamps}  External wall height: {ExternalWallHeight}  Wall/Pillar material: {WallPillarMaterial}  Roof scaffolding: {RoofScaffolding}  Scaffolding levels: {ScaffoldingLevels}  Scaffolding floors: {ScaffoldingFloors}  Transverse beams: {TransverseScaffoldingBeams}  Longitudinal beams: {LongitudinalScaffoldingBeams}  Origin offset: {BuildOriginForwardOffset:F1}m  Preview move: {PreviewMoveStep:F2}/{PreviewFineMoveStep:F2}m  Preview rotate: {PreviewRotateStepDeg:F0}/{PreviewFineRotateStepDeg:F0}°  Build snap: {BuildRotationSnapDegrees:F1}°");
         }
 
         private void Update()

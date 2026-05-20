@@ -88,7 +88,6 @@ All values below are configurable in that file.
 | `UndoRadius` | `15` | `5` to `150` | Search radius in metres around the undo circle centre when scanning for VFP pieces to remove on Undo. Adjustable live during the confirmation window with `+`/`-`, and circle centre is adjustable with arrow keys. |
 | `ProgressMessagePosition` | `CenterLeft` | Valheim `MessageHud` positions (`Center`, `TopLeft`, `TopRight`, etc.) | HUD slot for build-progress messages. `CenterLeft` is accepted as an alias and maps to `Center`. |
 | `WarningMessagePosition` | `TopLeft` | Valheim `MessageHud` positions (`Center`, `TopLeft`, `TopRight`, etc.) | HUD slot for warnings/risk messages. `CenterLeft` is accepted as an alias and maps to `Center`. |
-| `BuildOriginForwardOffset` | `12` | `10` to `20` | Initial preview center distance in front of the player (meters). |
 
 ### Terrain
 
@@ -109,22 +108,25 @@ All values below are configurable in that file.
 |---|---|---|---|
 | `ExternalWallHeight` | `1` | `1` to `4` | Stacks outer-perimeter `Wall`/`Pillar` pieces vertically to this many levels. |
 | `WallPillarMaterial` | `Stone` | `Stone`, `Wood` | Chooses material set used for `Wall` and `Pillar` types. |
-| `ScaffoldingLevels` | `1` | `1` to `6` | Number of stacked scaffolding levels when `RoofScaffolding` is enabled. Each extra level repeats the same scaffold pattern +4m above the previous level. |
 
-### Preview Movement/Rotation
+### Scaffolding
 
 | Option | Default | Allowed values | What it does |
 |---|---|---|---|
+| `RoofScaffolding` | `false` | `true` / `false` | Adds scaffold poles and perimeter beams around the plan during the build. |
+| `ScaffoldingLevels` | `1` | `1` to `3` | Number of stacked scaffolding levels when `RoofScaffolding` is enabled. Each extra level repeats the same scaffold pattern +4m above the previous level. |
+| `ScaffoldingFloors` | `false` | `true` / `false` | Builds wood floor decks across each scaffolding level when `RoofScaffolding` is enabled. |
+| `TransverseScaffoldingBeams` | `false` | `true` / `false` | Adds west-to-east horizontal scaffold beams at each scaffold pole row. |
+| `LongitudinalScaffoldingBeams` | `false` | `true` / `false` | Adds south-to-north horizontal scaffold beams at each scaffold pole column. |
+
+
+### Preview
+
+| Option | Default | Allowed values | What it does |
+|---|---|---|---|
+| `BuildOriginForwardOffset` | `12` | `10` to `20` | Initial preview center distance in front of the camera-facing direction (meters). |
 | `MoveStep` | `2.0` | `0.25` to `10.0` | Nudge distance per move key press (meters). |
 | `FineMoveStep` | `0.5` | `0.05` to `5.0` | Nudge distance per move key press while fine-adjust key is held (meters). |
-| `RotateStepDegrees` | `90` | `22.5`, `45`, `90` | Rotation applied per coarse rotate key press (degrees). |
-| `FineRotateStepDegrees` | `22.5` | `22.5`, `45`, `90` | Rotation applied per rotate key press while fine-adjust key is held (degrees). |
-
-### Preview - Rotation
-
-| Option | Default | Allowed values | What it does |
-|---|---|---|---|
-| `BuildRotationSnapDegrees` | `90` | `22.5`, `45`, `90` | Snaps the final build rotation to the nearest allowed angle when preview starts and when build is confirmed. |
 
 ### Preview Keys
 
@@ -139,6 +141,14 @@ All values below are configurable in that file.
 | `ConfirmKey` | `E` | Confirm current preview placement and start build. |
 | `CancelKey` | `Escape` | Cancel preview. (Right-click cancels too.) |
 | `FineAdjustKey` | `LeftShift` | Hold for fine movement and fine rotation. |
+
+### Preview - Rotation
+
+| Option | Default | Allowed values | What it does |
+|---|---|---|---|
+| `RotateStepDegrees` | `90` | `22.5`, `45`, `90` | Rotation applied per coarse rotate key press (degrees). |
+| `FineRotateStepDegrees` | `22.5` | `22.5`, `45`, `90` | Rotation applied per rotate key press while fine-adjust key is held (degrees). |
+| `BuildRotationSnapDegrees` | `90` | `22.5`, `45`, `90` | Snaps the final build rotation to the nearest allowed angle when preview starts and when build is confirmed. |
 
 
 ## Sample Plans
@@ -178,6 +188,7 @@ The `samples/` folder contains ready-to-use `.vfp` examples:
 ![Valheim Floor Plan screenshot 7](https://raw.githubusercontent.com/AlexDroz/ValheimFloorPlan/master/images/2026-05-16%2015_05_44-Valheim.png)
 ![Valheim Floor Plan screenshot 8](https://raw.githubusercontent.com/AlexDroz/ValheimFloorPlan/master/images/2026-05-18%2016_57_47-Valheim.png)
 ![Valheim Floor Plan screenshot 9](https://raw.githubusercontent.com/AlexDroz/ValheimFloorPlan/master/images/2026-05-19%2021_19_23-Valheim.png)
+![Valheim Floor Plan screenshot 10](https://raw.githubusercontent.com/AlexDroz/ValheimFloorPlan/master/images/2026-05-20%2017_48_37-Valheim.png)
 
                                   
 
