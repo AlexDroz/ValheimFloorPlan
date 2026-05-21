@@ -163,38 +163,38 @@ The `samples/` folder contains ready-to-use `.vfp` examples:
 - `samples/myfloorplan20x20.vfp`
 - `samples/myfloorplan24x24.vfp`
 - `samples/myfloorplan28x28.vfp`
+- `samples/Workbenchs_16x20.vfp`
 
 ## Screenshots
 
 
 ![Valheim Floor Plan screenshot 1](https://raw.githubusercontent.com/AlexDroz/ValheimFloorPlan/master/images/ValheimFloorPlan.png)
 ![Valheim Floor Plan screenshot 2](https://raw.githubusercontent.com/AlexDroz/ValheimFloorPlan/master/images/2026-05-16%2014_24_14-Valheim.png)
-![Valheim Floor Plan screenshot 2](https://raw.githubusercontent.com/AlexDroz/ValheimFloorPlan/master/images/2026-05-16%2014_31_37-Designer.png)
-![Valheim Floor Plan screenshot 3](https://raw.githubusercontent.com/AlexDroz/ValheimFloorPlan/master/images/2026-05-16%2014_32_05-Designer.png)
 
-![Valheim Floor Plan example 1](https://raw.githubusercontent.com/AlexDroz/ValheimFloorPlan/master/images/2026-05-16%2014_11_25-Valheim.png)
-![Valheim Floor Plan example 2](https://raw.githubusercontent.com/AlexDroz/ValheimFloorPlan/master/images/2026-05-16%2014_11_55-Valheim.png)
-![Valheim Floor Plan example 3](https://raw.githubusercontent.com/AlexDroz/ValheimFloorPlan/master/images/2026-05-16%2014_12_08-Valheim.png)
-![Valheim Floor Plan example 4](https://raw.githubusercontent.com/AlexDroz/ValheimFloorPlan/master/images/2026-05-16%2014_12_24-Valheim.png)
-![Valheim Floor Plan example 5](https://raw.githubusercontent.com/AlexDroz/ValheimFloorPlan/master/images/2026-05-16%2014_12_57-Valheim.png)
-![Valheim Floor Plan example 6](https://raw.githubusercontent.com/AlexDroz/ValheimFloorPlan/master/images/2026-05-16%2014_13_11-Valheim.png)
-![Valheim Floor Plan example 7](https://raw.githubusercontent.com/AlexDroz/ValheimFloorPlan/master/images/2026-05-16%2014_13_54-Valheim.png)      
+![Valheim Floor Plan screenshot 3](https://raw.githubusercontent.com/AlexDroz/ValheimFloorPlan/master/images/2026-05-16%2014_11_25-Valheim.png)
+![Valheim Floor Plan screenshot 4](https://raw.githubusercontent.com/AlexDroz/ValheimFloorPlan/master/images/2026-05-16%2014_11_55-Valheim.png)
+![Valheim Floor Plan screenshot 5](https://raw.githubusercontent.com/AlexDroz/ValheimFloorPlan/master/images/2026-05-16%2014_12_08-Valheim.png)
+![Valheim Floor Plan screenshot 6](https://raw.githubusercontent.com/AlexDroz/ValheimFloorPlan/master/images/2026-05-16%2014_12_24-Valheim.png)
+![Valheim Floor Plan screenshot 7](https://raw.githubusercontent.com/AlexDroz/ValheimFloorPlan/master/images/2026-05-16%2014_12_57-Valheim.png)
+![Valheim Floor Plan screenshot 8](https://raw.githubusercontent.com/AlexDroz/ValheimFloorPlan/master/images/2026-05-16%2014_13_11-Valheim.png)
+![Valheim Floor Plan screenshot 9](https://raw.githubusercontent.com/AlexDroz/ValheimFloorPlan/master/images/2026-05-16%2014_13_54-Valheim.png)      
 
+
+## Designer Latest
+
+![Valheim Floor Plan screenshot 10](https://raw.githubusercontent.com/AlexDroz/ValheimFloorPlan/master/images/ValheimFloorPlan-Designer.png)
+![Valheim Floor Plan screenshot 11](https://raw.githubusercontent.com/AlexDroz/ValheimFloorPlan/master/images/2026-05-21%2020_03_21-Valheim.png)
+![Valheim Floor Plan screenshot 12](https://raw.githubusercontent.com/AlexDroz/ValheimFloorPlan/master/images/2026-05-21%2020_09_14-Valheim.png)
+                                  
 
 ## Examples
 
-![Valheim Floor Plan screenshot 4](https://raw.githubusercontent.com/AlexDroz/ValheimFloorPlan/master/images/2026-05-16%2014_59_48-Valheim.png)
-![Valheim Floor Plan screenshot 5](https://raw.githubusercontent.com/AlexDroz/ValheimFloorPlan/master/images/2026-05-16%2015_01_49-Valheim.png)
-![Valheim Floor Plan screenshot 6](https://raw.githubusercontent.com/AlexDroz/ValheimFloorPlan/master/images/2026-05-16%2015_02_32-Valheim.png)
-![Valheim Floor Plan screenshot 7](https://raw.githubusercontent.com/AlexDroz/ValheimFloorPlan/master/images/2026-05-16%2015_05_44-Valheim.png)
-![Valheim Floor Plan screenshot 8](https://raw.githubusercontent.com/AlexDroz/ValheimFloorPlan/master/images/2026-05-18%2016_57_47-Valheim.png)
-![Valheim Floor Plan screenshot 9](https://raw.githubusercontent.com/AlexDroz/ValheimFloorPlan/master/images/2026-05-19%2021_19_23-Valheim.png)
-![Valheim Floor Plan screenshot 10](https://raw.githubusercontent.com/AlexDroz/ValheimFloorPlan/master/images/2026-05-20%2017_48_37-Valheim.png)
-![Valheim Floor Plan screenshot 11](https://raw.githubusercontent.com/AlexDroz/ValheimFloorPlan/master/images/2026-05-21%2020_03_21-Valheim.png)
-![Valheim Floor Plan screenshot 12](https://raw.githubusercontent.com/AlexDroz/ValheimFloorPlan/master/images/2026-05-21%2020_09_14-Valheim.png)
-![Valheim Floor Plan screenshot 13](https://raw.githubusercontent.com/AlexDroz/ValheimFloorPlan/master/images/2026-05-21%2020_11_40-Greenshot.png)
+![Valheim Floor Plan screenshot 13](https://raw.githubusercontent.com/AlexDroz/ValheimFloorPlan/master/images/2026-05-16%2014_59_48-Valheim.png)
+![Valheim Floor Plan screenshot 14](https://raw.githubusercontent.com/AlexDroz/ValheimFloorPlan/master/images/2026-05-16%2015_01_49-Valheim.png)
+![Valheim Floor Plan screenshot 15](https://raw.githubusercontent.com/AlexDroz/ValheimFloorPlan/master/images/2026-05-16%2015_02_32-Valheim.png)
+![Valheim Floor Plan screenshot 16](https://raw.githubusercontent.com/AlexDroz/ValheimFloorPlan/master/images/2026-05-16%2015_05_44-Valheim.png)
 
-                                  
+
 
 ## Package contents include:
 

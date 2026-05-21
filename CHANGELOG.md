@@ -1,14 +1,10 @@
 # Changelog
 
-## Unreleased (provisional)
+## 1.0.9
 
 - **Added Workbench support in Designer and Builder:** new `Workbench` tool can be placed in the Designer with rotation support and is built in-game using the mapped workstation footprint.
 - **Added Hearth and Bed tools:** the Designer and builder now support `Hearth` (`4x3`) and basic `Bed` (`2x4`) footprints.
 - **Designer/build orientation now match:** preview rotation, final build rotation, and piece placement now follow the Designer layout orientation consistently.
-- **Fixed left/right mirrored placement regressions:** north-south walls, doors, and other rotated pieces now face the correct way after the shared coordinate-transform changes.
-- **Fixed perimeter edge alignment for walls and doors:** outer-edge pieces on the left and right sides of the layout now offset toward the outside edge of the tile instead of the inside edge.
-- **Terrain leveling, preview bounds, and build footprint are aligned:** terrain edits and final piece placement now target the same selected preview area.
-- **Scaffolding placement now respects the mirrored build transform:** internal scaffold poles and scaffold floor levels now align with the main build area after the left/right orientation fix.
 - **Roof scaffolding now uses wood-iron members:** perimeter scaffold columns and scaffold beams now use `woodiron_pole` / `woodiron_beam`, with 4m columns built from stacked 2m vertical segments.
 - **Scaffold floor height is now configurable in validated 2m steps:** `ScaffoldingFloorHeight` now allows `2`, `4`, or `6` metres between scaffold levels so wood-iron support segments stack cleanly.
 - **Internal scaffold support simplified:** extra interior vertical support poles were removed and replaced with a single center support column, while transverse and longitudinal beams remain enabled.

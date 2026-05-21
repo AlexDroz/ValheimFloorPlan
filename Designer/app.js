@@ -1,4 +1,4 @@
-const DESIGNER_VERSION = "1.0.6";
+const DESIGNER_VERSION = "1.0.9";
 
 const state = {
   cols: 20,
