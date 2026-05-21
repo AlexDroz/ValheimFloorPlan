@@ -17,6 +17,9 @@ const state = {
 const pieceColors = {
   Floor2x2: "#b68d56",
   Floor1x1: "#d0ad78",
+  Bed: "#7b5c49",
+  Workbench: "#8d5a32",
+  Hearth: "#8a4b3a",
   Wall: "#8b8f99",
   Doorway: "#3aa65a",
   Pillar: "#2db6ab",
@@ -25,6 +28,9 @@ const pieceColors = {
 const pieceDefs = {
   Floor2x2: { w: 2, h: 2 },
   Floor1x1: { w: 1, h: 1 },
+  Bed: { w: 2, h: 4 },
+  Workbench: { w: 4, h: 4 },
+  Hearth: { w: 4, h: 3 },
   Wall: { w: 2, h: 1 },
   Doorway: { w: 2, h: 1 },
   Pillar: { w: 1, h: 1 },
@@ -136,12 +142,18 @@ function pieceLayerOrder(type) {
     case "Floor2x2":
     case "Floor1x1":
       return 1;
-    case "Wall":
+    case "Bed":
       return 2;
-    case "Doorway":
+    case "Workbench":
+      return 2;
+    case "Hearth":
+      return 2;
+    case "Wall":
       return 3;
-    case "Pillar":
+    case "Doorway":
       return 4;
+    case "Pillar":
+      return 5;
     default:
       return 99;
   }
@@ -169,6 +181,53 @@ function lightenHexColor(hex, amount = 0.55) {
 function pieceOccupiesCell(piece, col, row) {
   const { w, h } = effectiveSize(piece.type, piece.rot);
   return col >= piece.col && col < piece.col + w && row >= piece.row && row < piece.row + h;
+}
+
+function pieceShowsOrientation(type) {
+  return type === "Workbench";
+}
+
+function drawPieceOrientation(type, rotation, x, y, wPx, hPx, isPreview = false) {
+  if (!pieceShowsOrientation(type)) return;
+
+  const cx = x + wPx * 0.5;
+  const cy = y + hPx * 0.5;
+  const shaftOffset = Math.max(6, Math.min(wPx, hPx) * 0.23);
+  const frontInset = Math.max(8, Math.min(wPx, hPx) * 0.18);
+  const backInset = Math.max(10, Math.min(wPx, hPx) * 0.28);
+  const arrowHead = Math.max(6, Math.min(wPx, hPx) * 0.14);
+
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.rotate((-rotation * Math.PI) / 180);
+
+  const shaftX = 0;
+  const backY = -hPx * 0.5 + backInset;
+  const frontY = hPx * 0.5 - frontInset;
+
+  ctx.strokeStyle = isPreview ? "rgba(60, 35, 18, 0.78)" : "rgba(255, 245, 220, 0.95)";
+  ctx.fillStyle = ctx.strokeStyle;
+  ctx.lineWidth = Math.max(2, Math.min(wPx, hPx) * 0.06);
+  ctx.lineCap = "round";
+
+  ctx.beginPath();
+  ctx.moveTo(shaftX, backY);
+  ctx.lineTo(shaftX, frontY);
+  ctx.stroke();
+
+  ctx.beginPath();
+  ctx.moveTo(shaftX, frontY);
+  ctx.lineTo(shaftX - arrowHead, frontY - arrowHead);
+  ctx.lineTo(shaftX + arrowHead, frontY - arrowHead);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.beginPath();
+  ctx.moveTo(shaftX - shaftOffset, backY + arrowHead * 0.4);
+  ctx.lineTo(shaftX + shaftOffset, backY + arrowHead * 0.4);
+  ctx.stroke();
+
+  ctx.restore();
 }
 
 function findTopMostPieceIndexAtCell(col, row) {
@@ -239,6 +298,7 @@ function draw() {
     ctx.fillRect(x + 1, y + 1, w * cell - 2, h * cell - 2);
     ctx.strokeStyle = "rgba(0, 0, 0, 0.35)";
     ctx.strokeRect(x + 1, y + 1, w * cell - 2, h * cell - 2);
+    drawPieceOrientation(p.type, p.rot || 0, x + 1, y + 1, w * cell - 2, h * cell - 2);
   }
 
   for (const pieceIndex of topOverlappingPieceIndexes) {
@@ -261,6 +321,7 @@ function draw() {
     const hoverTint = lightenHexColor(hoverBase, 0.6);
     ctx.fillStyle = `rgba(${hoverTint.r}, ${hoverTint.g}, ${hoverTint.b}, 0.38)`;
     ctx.fillRect(x, y, w * cell, h * cell);
+    drawPieceOrientation(state.currentPiece, state.rotation, x, y, w * cell, h * cell, true);
   }
 }
 

@@ -80,6 +80,11 @@ namespace ValheimFloorPlan
         // FloorPlanBuilder reads this to decide how long to wait before placing pieces.
         public static float RecommendedPlacementWait { get; private set; } = 2f;
 
+        public static float GetOuterPerimeterDelta()
+        {
+            return INNER_PAD * PieceMap.CELL_SIZE + LEVEL_RADIUS;
+        }
+
         // ── LevelForPlan ──────────────────────────────────────────────────────
         // Pre-samples the footprint to find min/max height, then raises everything
         // to maxY using a configurable number of passes.
@@ -94,7 +99,7 @@ namespace ValheimFloorPlan
             // Always iterate in unrotated (plan-local) space, then rotate each point around
             // the player origin.  This keeps disc stamps aligned with the rotated footprint
             // rather than stamping an axis-aligned AABB.
-            GetBounds(plan, origin, INNER_PAD, 0f,
+            GetLocalBounds(plan, INNER_PAD,
                 out float innerMinX, out float innerMaxX,
                 out float innerMinZ, out float innerMaxZ);
 
@@ -134,8 +139,9 @@ namespace ValheimFloorPlan
                     float lz = (iz == preStepsZ) ? sampleMaxZ : sampleMinZ + iz * preSampleStep;
                     float ldx = lx - origin.x;
                     float ldz = lz - origin.z;
-                    float wx = origin.x + ldx * cosR + ldz * sinR;
-                    float wz = origin.z - ldx * sinR + ldz * cosR;
+                    Vector3 samplePos = PieceMap.TransformPlanPoint(origin, ldx, ldz, origin.y, rotationDeg);
+                    float wx = samplePos.x;
+                    float wz = samplePos.z;
                     float h = SampleHeight(wx, wz, origin.y);
                     if (h > maxY) maxY = h;
                     if (h < minY) minY = h;
@@ -231,8 +237,9 @@ namespace ValheimFloorPlan
                             float lz = (iz == stepsZ) ? innerMaxZ : innerMinZ + iz * levelSampleStep;
                             float ldx2 = lx - origin.x;
                             float ldz2 = lz - origin.z;
-                            float wx = origin.x + ldx2 * cosR + ldz2 * sinR;
-                            float wz = origin.z - ldx2 * sinR + ldz2 * cosR;
+                            Vector3 levelPos = PieceMap.TransformPlanPoint(origin, ldx2, ldz2, origin.y, rotationDeg);
+                            float wx = levelPos.x;
+                            float wz = levelPos.z;
 
                             float h = SampleHeight(wx, wz, stageTargetY);
                             if (!skipSatisfiedCenterStamps || h < stageTargetY - STAGE_RAISE_EPSILON)
@@ -283,8 +290,9 @@ namespace ValheimFloorPlan
 
                             float ldx2 = lx - origin.x;
                             float ldz2 = lz - origin.z;
-                            float wx = origin.x + ldx2 * cosR + ldz2 * sinR;
-                            float wz = origin.z - ldx2 * sinR + ldz2 * cosR;
+                            Vector3 edgePos = PieceMap.TransformPlanPoint(origin, ldx2, ldz2, origin.y, rotationDeg);
+                            float wx = edgePos.x;
+                            float wz = edgePos.z;
 
                             float h = SampleHeight(wx, wz, stageTargetY);
                             if (h >= stageTargetY - EDGE_RAISE_EPSILON)
@@ -346,8 +354,9 @@ namespace ValheimFloorPlan
                     {
                         float lz = (iz == spikeStepsZ) ? sampleMaxZ : sampleMinZ + iz * spikeScanStep;
                         float ldx3 = lx - origin.x, ldz3 = lz - origin.z;
-                        float wx = origin.x + ldx3 * cosR + ldz3 * sinR;
-                        float wz = origin.z - ldx3 * sinR + ldz3 * cosR;
+                        Vector3 spikePos = PieceMap.TransformPlanPoint(origin, ldx3, ldz3, origin.y, rotationDeg);
+                        float wx = spikePos.x;
+                        float wz = spikePos.z;
                         float h = SampleHeight(wx, wz, targetY);
                         if (h > targetY + SPIKE_TOLERANCE)
                         {
@@ -651,7 +660,7 @@ namespace ValheimFloorPlan
             out float maxEdgeStep,
             List<Vector3>? hotspotPoints = null)
         {
-            GetBounds(plan, origin, INNER_PAD, 0f,
+            GetLocalBounds(plan, INNER_PAD,
                 out float innerMinX, out float innerMaxX,
                 out float innerMinZ, out float innerMaxZ);
 
@@ -742,22 +751,25 @@ namespace ValheimFloorPlan
 
                     float ex = lx - origin.x;
                     float ez = lz - origin.z;
-                    float wx = origin.x + ex * cosR + ez * sinR;
-                    float wz = origin.z - ex * sinR + ez * cosR;
+                    Vector3 edgePos = PieceMap.TransformPlanPoint(origin, ex, ez, origin.y, rotationDeg);
+                    float wx = edgePos.x;
+                    float wz = edgePos.z;
 
                     float inLx = lx + inNx * crossProbeDist;
                     float inLz = lz + inNz * crossProbeDist;
                     float inDx = inLx - origin.x;
                     float inDz = inLz - origin.z;
-                    float inWx = origin.x + inDx * cosR + inDz * sinR;
-                    float inWz = origin.z - inDx * sinR + inDz * cosR;
+                    Vector3 inPos = PieceMap.TransformPlanPoint(origin, inDx, inDz, origin.y, rotationDeg);
+                    float inWx = inPos.x;
+                    float inWz = inPos.z;
 
                     float outLx = lx - inNx * crossProbeDist;
                     float outLz = lz - inNz * crossProbeDist;
                     float outDx = outLx - origin.x;
                     float outDz = outLz - origin.z;
-                    float outWx = origin.x + outDx * cosR + outDz * sinR;
-                    float outWz = origin.z - outDx * sinR + outDz * cosR;
+                    Vector3 outPos = PieceMap.TransformPlanPoint(origin, outDx, outDz, origin.y, rotationDeg);
+                    float outWx = outPos.x;
+                    float outWz = outPos.z;
 
                     float hEdge = SampleHeight(wx, wz, origin.y);
                     float hIn = SampleHeight(inWx, inWz, hEdge);
@@ -828,6 +840,32 @@ namespace ValheimFloorPlan
         private static void GetBounds(FloorPlan plan, Vector3 origin, int pad, float rotationDeg,
             out float minX, out float maxX, out float minZ, out float maxZ)
         {
+            GetLocalBounds(plan, pad, out float dx0, out float dx1, out float dz0, out float dz1);
+
+            // Compute axis-aligned bounding box of the transformed rectangle.
+            float[] cxArr = new float[] { dx0, dx1, dx1, dx0 };
+            float[] czArr = new float[] { dz0, dz0, dz1, dz1 };
+            float rMinX = float.MaxValue, rMaxX = float.MinValue;
+            float rMinZ = float.MaxValue, rMaxZ = float.MinValue;
+            for (int i = 0; i < 4; i++)
+            {
+                Vector2 transformed = PieceMap.TransformLocalXZ(cxArr[i], czArr[i], rotationDeg);
+                float rx = transformed.x;
+                float rz = transformed.y;
+                if (rx < rMinX) rMinX = rx;
+                if (rx > rMaxX) rMaxX = rx;
+                if (rz < rMinZ) rMinZ = rz;
+                if (rz > rMaxZ) rMaxZ = rz;
+            }
+            minX = origin.x + rMinX;
+            maxX = origin.x + rMaxX;
+            minZ = origin.z + rMinZ;
+            maxZ = origin.z + rMaxZ;
+        }
+
+        private static void GetLocalBounds(FloorPlan plan, int pad,
+            out float minX, out float maxX, out float minZ, out float maxZ)
+        {
             int minCol = int.MaxValue, maxCol = int.MinValue;
             int minRow = int.MaxValue, maxRow = int.MinValue;
             foreach (var p in plan.Pieces)
@@ -855,41 +893,10 @@ namespace ValheimFloorPlan
                 maxRow = plan.Rows;
             }
 
-            float dx0 = (minCol - pad) * PieceMap.CELL_SIZE;
-            float dx1 = (maxCol + pad) * PieceMap.CELL_SIZE;
-            float dz0 = (minRow - pad) * PieceMap.CELL_SIZE;
-            float dz1 = (maxRow + pad) * PieceMap.CELL_SIZE;
-
-            if (Mathf.Approximately(rotationDeg % 360f, 0f))
-            {
-                minX = origin.x + dx0;
-                maxX = origin.x + dx1;
-                minZ = origin.z + dz0;
-                maxZ = origin.z + dz1;
-                return;
-            }
-
-            // Compute axis-aligned bounding box of the rotated rectangle.
-            // Unity clockwise Y-rotation: x' = dx*cos + dz*sin,  z' = -dx*sin + dz*cos.
-            float rad = rotationDeg * Mathf.Deg2Rad;
-            float cos = Mathf.Cos(rad), sin = Mathf.Sin(rad);
-            float[] cxArr = new float[] { dx0, dx1, dx1, dx0 };
-            float[] czArr = new float[] { dz0, dz0, dz1, dz1 };
-            float rMinX = float.MaxValue, rMaxX = float.MinValue;
-            float rMinZ = float.MaxValue, rMaxZ = float.MinValue;
-            for (int i = 0; i < 4; i++)
-            {
-                float rx = cxArr[i] * cos + czArr[i] * sin;
-                float rz = -cxArr[i] * sin + czArr[i] * cos;
-                if (rx < rMinX) rMinX = rx;
-                if (rx > rMaxX) rMaxX = rx;
-                if (rz < rMinZ) rMinZ = rz;
-                if (rz > rMaxZ) rMaxZ = rz;
-            }
-            minX = origin.x + rMinX;
-            maxX = origin.x + rMaxX;
-            minZ = origin.z + rMinZ;
-            maxZ = origin.z + rMaxZ;
+            minX = (minCol - pad) * PieceMap.CELL_SIZE;
+            maxX = (maxCol + pad) * PieceMap.CELL_SIZE;
+            minZ = (minRow - pad) * PieceMap.CELL_SIZE;
+            maxZ = (maxRow + pad) * PieceMap.CELL_SIZE;
         }
 
         private static void ApplyLevel(float x, float y, float z, float radius,

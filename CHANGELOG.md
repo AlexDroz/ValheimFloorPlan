@@ -1,5 +1,19 @@
 # Changelog
 
+## Unreleased (provisional)
+
+- **Added Workbench support in Designer and Builder:** new `Workbench` tool can be placed in the Designer with rotation support and is built in-game using the mapped workstation footprint.
+- **Added Hearth and Bed tools:** the Designer and builder now support `Hearth` (`4x3`) and basic `Bed` (`2x4`) footprints.
+- **Designer/build orientation now match:** preview rotation, final build rotation, and piece placement now follow the Designer layout orientation consistently.
+- **Fixed left/right mirrored placement regressions:** north-south walls, doors, and other rotated pieces now face the correct way after the shared coordinate-transform changes.
+- **Fixed perimeter edge alignment for walls and doors:** outer-edge pieces on the left and right sides of the layout now offset toward the outside edge of the tile instead of the inside edge.
+- **Terrain leveling, preview bounds, and build footprint are aligned:** terrain edits and final piece placement now target the same selected preview area.
+- **Scaffolding placement now respects the mirrored build transform:** internal scaffold poles and scaffold floor levels now align with the main build area after the left/right orientation fix.
+- **Top scaffold deck can use roof tiles:** when scaffold floors are enabled, the topmost full deck tiles now use `wood_roof_top` instead of floor pieces.
+- **Initial build offset is now automatic:** startup placement now computes the player-to-build-center stand-off from the plan footprint plus the outer perimeter delta, while `BuildOriginForwardOffset` is now only an optional extra clearance.
+- **External wall height range increased:** `ExternalWallHeight` can now be configured up to `12` levels.
+- **Added `DisableWelcomePost` config option:** center welcome signage can now be disabled when it is not wanted.
+
 ## 1.0.8
 
 - **F8 placement pivot moved to plan center:** preview/build placement now uses the plan center as the user-facing pivot (instead of corner-origin), making rotation and alignment more intuitive.

@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using UnityEngine;
 
 namespace ValheimFloorPlan
 {
@@ -21,10 +22,15 @@ namespace ValheimFloorPlan
         public readonly int    BaseW;    // cell width  at rotation 0
         public readonly int    BaseH;    // cell depth  at rotation 0
         public readonly float  YOffset;  // metres above terrain for piece centre
+        public readonly int    RotationOffset; // prefab-local forward offset relative to Designer rotation
 
-        public PieceDef(string prefab, int baseW, int baseH, float yOffset = 0f)
+        public PieceDef(string prefab, int baseW, int baseH, float yOffset = 0f, int rotationOffset = 0)
         {
-            Prefab = prefab; BaseW = baseW; BaseH = baseH; YOffset = yOffset;
+            Prefab = prefab;
+            BaseW = baseW;
+            BaseH = baseH;
+            YOffset = yOffset;
+            RotationOffset = rotationOffset;
         }
 
         // Apply the same rotation swap the B4J designer uses.
@@ -38,15 +44,45 @@ namespace ValheimFloorPlan
         // (A Floor2x2 is 2 cells × 2 cells = 2 m × 2 m — matches the in-game piece.)
         public const float CELL_SIZE = 1f;
 
+        public static Vector2 TransformLocalXZ(float localX, float localZ, float rotationDeg)
+        {
+            float rad = rotationDeg * Mathf.Deg2Rad;
+            float cosR = Mathf.Cos(rad);
+            float sinR = Mathf.Sin(rad);
+            return new Vector2(
+                -localX * cosR + localZ * sinR,
+                localX * sinR + localZ * cosR);
+        }
+
+        public static Vector3 TransformPlanPoint(Vector3 origin, float localX, float localZ, float y, float rotationDeg)
+        {
+            Vector2 offset = TransformLocalXZ(localX, localZ, rotationDeg);
+            return new Vector3(origin.x + offset.x, y, origin.z + offset.y);
+        }
+
+        public static float TransformLocalYaw(float localYawDeg, float planRotationDeg)
+        {
+            return NormalizeAngleDeg(planRotationDeg - localYawDeg);
+        }
+
+        private static float NormalizeAngleDeg(float angleDeg)
+        {
+            angleDeg %= 360f;
+            if (angleDeg < 0f) angleDeg += 360f;
+            return angleDeg;
+        }
+
         private static readonly Dictionary<string, PieceDef> Map = new()
         {
-            //              vfp type      prefab                  W  H  Yoff
-            { "Floor2x2", new PieceDef("wood_floor",             2, 2, 0f) },
-            { "Floor1x1", new PieceDef("wood_floor_1x1",         1, 1, 0f) },
-            { "Wall",     new PieceDef("stone_wall_2x1",         2, 1, 0.5f) }, // 1 m tall → centre +0.5 m
-            { "Doorway",  new PieceDef("wood_door",               2, 1, 1f) },
-            { "Pillar",   new PieceDef("stone_pillar",            1, 1, 1f) }, // 2 m tall → centre +1 m
-            { "Hearth",   new PieceDef("hearth",                  3, 2, 0f) },
+            //              vfp type      prefab                  W  H  Yoff rot
+            { "Floor2x2", new PieceDef("wood_floor",             2, 2, 0f,   0) },
+            { "Floor1x1", new PieceDef("wood_floor_1x1",         1, 1, 0f,   0) },
+            { "Bed",      new PieceDef("bed",                    2, 4, 0f,   0) },
+            { "Workbench", new PieceDef("piece_workbench",       4, 4, 0f,   0) },
+            { "Wall",     new PieceDef("stone_wall_2x1",         2, 1, 0.5f, 0) }, // 1 m tall → centre +0.5 m
+            { "Doorway",  new PieceDef("wood_door",               2, 1, 1f,   0) },
+            { "Pillar",   new PieceDef("stone_pillar",            1, 1, 1f,   0) }, // 2 m tall → centre +1 m
+            { "Hearth",   new PieceDef("hearth",                  4, 3, 0f,   0) },
         };
 
         public static PieceDef? GetDef(string vfpType) =>

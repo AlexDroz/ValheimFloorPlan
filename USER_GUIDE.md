@@ -49,7 +49,7 @@ Section `Terrain`:
 - `TerrainMaxRaiseStages`: Max number of raise stages when staged raise is enabled (default `1`, range `1-16`).
 
 Section `Building`:
-- `ExternalWallHeight`: Stacks external `Wall` and `Pillar` objects to this many levels (default `1`, range `1-4`).
+- `ExternalWallHeight`: Stacks external `Wall` and `Pillar` objects to this many levels (default `1`, range `1-12`).
 - `WallPillarMaterial`: Choose `Stone` or `Wood` for `Wall` and `Pillar` types (default `Stone`).
 
 Section `Scaffolding`:
@@ -64,7 +64,7 @@ Example of `RoofScaffolding` with `ScaffoldingLevels = 3`:
 ![Valheim Floor Plan scaffolding levels example](https://raw.githubusercontent.com/AlexDroz/ValheimFloorPlan/master/images/2026-05-20%2017_48_37-Valheim.png)
 
 Section `Preview`:
-- `BuildOriginForwardOffset`: Initial preview center point in front of the camera-facing direction (default `12`, range `10-20`).
+- `BuildOriginForwardOffset`: Extra distance added to the auto-computed player-to-build-center preview placement (default `0`, range `0-20`). Usually not needed.
 - `MoveStep`: Coarse preview move distance.
 - `FineMoveStep`: Fine preview move distance while the fine-adjust key is held.
 - `MoveForwardKey` / `MoveBackwardKey` / `MoveLeftKey` / `MoveRightKey`: Preview movement keys.

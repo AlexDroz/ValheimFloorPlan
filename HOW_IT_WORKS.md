@@ -32,9 +32,9 @@ On startup (`Awake`), the plugin registers BepInEx configuration entries for fil
 - **`TerrainUseStagedRaise`** (default `false`) — experimental multi-stage raise mode.
 - **`TerrainRaiseStepHeight`** (default `0.5 m`, range `0.15–1.5`) — max vertical raise per stage when staged mode is enabled.
 - **`TerrainMaxRaiseStages`** (default `1`, range `1–16`) — cap on number of raise stages.
-- **`ExternalWallHeight`** (default `1`, range `1–4`) — stacks external `Wall`/`Pillar` pieces to this many levels.
+- **`ExternalWallHeight`** (default `1`, range `1–12`) — stacks external `Wall`/`Pillar` pieces to this many levels.
 - **`WallPillarMaterial`** (`Stone` or `Wood`, default `Stone`) — chooses wall/pillar prefab set.
-- **`BuildOriginForwardOffset`** (default `12 m`, range `10–20`) — initial preview/build center pivot in front of the player.
+- **`BuildOriginForwardOffset`** (default `0 m`, range `0–20`) — extra forward distance added on top of the auto-computed player-to-build-center placement.
 - **`ProgressMessagePosition`** — HUD slot used for progress messages.
 - **Preview movement/rotation settings and keys** — step sizes, fine-adjust key, movement keys, rotation keys (`Q`/`R` by default), confirm key (`E` by default), and cancel key.
 
@@ -59,7 +59,7 @@ piece,4,2,Pillar
 | `cols` / `rows` | Grid dimensions of the design |
 | `piece,col,row,type[,rotation][,wallFace]` | One building piece at grid position (col, row) with optional rotation and optional wall face (`outer` / `inner`) |
 
-The grid local anchor (col=0, row=0) is derived from the selected preview center pivot (default: player position plus forward offset when preview starts). Each grid cell is **1 Valheim metre** (`CELL_SIZE = 1f`).
+The grid local anchor (col=0, row=0) is derived from the selected preview center pivot (default: player position plus the plan's forward half-extent, with optional extra offset from config). Each grid cell is **1 Valheim metre** (`CELL_SIZE = 1f`).
 
 ---
 
@@ -84,7 +84,7 @@ The grid local anchor (col=0, row=0) is derived from the selected preview center
 
 ## Step 4 — The Build Sequence (Coroutine)
 
-When `F8` is pressed, `FloorPlanBuilder.StartPreview` enters placement preview mode. The initial preview center pivot is the player's position plus `BuildOriginForwardOffset` in the facing direction. In preview, you can nudge or rotate the plan around that center, then confirm with the configured preview confirm key (default `E`) to launch `LevelThenPlace`. Internally, a corner-based placement anchor is derived from the current center+rotation so existing terrain and spawn systems continue to use their established math. All heavy steps are spread across Unity frames to avoid freezing the game.
+When `F8` is pressed, `FloorPlanBuilder.StartPreview` enters placement preview mode. The initial preview center pivot is placed in front of the player by the amount needed to put the build center beyond the player for the current footprint and rotation, plus any configured `BuildOriginForwardOffset` extra clearance. In preview, you can nudge or rotate the plan around that center, then confirm with the configured preview confirm key (default `E`) to launch `LevelThenPlace`. Internally, a corner-based placement anchor is derived from the current center+rotation so existing terrain and spawn systems continue to use their established math. All heavy steps are spread across Unity frames to avoid freezing the game.
 
 During preview, `EvaluateEdgeRisk` runs on a timed cadence and computes:
 - Risk level (`Low`, `Medium`, `High`)
@@ -173,7 +173,7 @@ Pressing `F9` calls `FloorPlanBuilder.Undo`:
               ^
               |
               +-----------+-----------> +X (east / col direction)
-   center pivot = preview center (player position + forward offset by default)
+   center pivot = preview center (player position + auto half-extent + optional extra offset by default)
 ```
 
 - `col` → `+X` world axis

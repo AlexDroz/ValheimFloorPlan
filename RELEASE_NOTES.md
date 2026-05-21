@@ -1,4 +1,28 @@
-# ValheimFloorPlan 1.0.8
+# ValheimFloorPlan Draft Notes
+
+These are provisional notes for the next release and focus on workstation support, Designer/build alignment, and placement cleanup after the center-pivot refactor.
+
+## Highlights
+
+- Added `Workbench` support in both the Designer and the Builder, including Designer rotation handling and in-game workstation placement.
+- Added `Hearth` (`4x3`) and basic `Bed` (`2x4`) tools so those pieces can now be laid out directly in the Designer and built in-game.
+- Build orientation now matches the Designer layout orientation more closely across preview, terrain leveling, and final piece placement.
+- Fixed left/right mirrored placement issues so rotated walls, doors, and other directional pieces now face the expected way again.
+- Corrected outer-edge wall and doorway offsets so pieces on the left and right perimeter sit on the outside edge of the tile instead of the inside edge.
+- Fixed scaffold-only left/right drift so internal poles and scaffold floor levels now line up with the corrected build transform.
+- Topmost scaffold floor levels now switch to `wood_roof_top` for full deck tiles instead of using floor pieces all the way up.
+- Changed initial preview/build placement to auto-compute the player-to-build-center distance from the actual plan footprint plus the outer terrain-change perimeter. `BuildOriginForwardOffset` is now an optional extra offset rather than the full placement distance.
+- Increased the `ExternalWallHeight` range to allow much taller stacked perimeter walls, up to `12` levels.
+- Added a config option to disable the welcome post/signage after build completion.
+- Improved workstation placement reliability by centering workstation prefabs within their allocated footprint and hardening the recenter logic for awkward crafting-station prefabs.
+
+## Additional Notes
+
+- Terrain leveling, preview bounds, and final placement now use the same corrected footprint alignment, reducing cases where terrain edits happened beside the selected build area.
+- Placement math now relies more heavily on shared plan-to-world transform helpers, which should make future orientation and offset fixes less brittle.
+- The automatic preview start distance now accounts for the outer leveled-area boundary, so the full selected area starts clear of the player more reliably even with zero extra offset.
+
+## Previous 1.0.8 Notes
 
 This release focuses on rotation safety, improved preview controls, and stronger roof-scaffolding behavior.
 

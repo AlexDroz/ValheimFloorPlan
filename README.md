@@ -106,7 +106,7 @@ All values below are configurable in that file.
 
 | Option | Default | Allowed values | What it does |
 |---|---|---|---|
-| `ExternalWallHeight` | `1` | `1` to `4` | Stacks outer-perimeter `Wall`/`Pillar` pieces vertically to this many levels. |
+| `ExternalWallHeight` | `1` | `1` to `12` | Stacks outer-perimeter `Wall`/`Pillar` pieces vertically to this many levels. |
 | `WallPillarMaterial` | `Stone` | `Stone`, `Wood` | Chooses material set used for `Wall` and `Pillar` types. |
 
 ### Scaffolding
@@ -124,7 +124,7 @@ All values below are configurable in that file.
 
 | Option | Default | Allowed values | What it does |
 |---|---|---|---|
-| `BuildOriginForwardOffset` | `12` | `10` to `20` | Initial preview center distance in front of the camera-facing direction (meters). |
+| `BuildOriginForwardOffset` | `0` | `0` to `20` | Extra distance added to the auto-computed player-to-build-center preview offset (meters). Usually not needed. |
 | `MoveStep` | `2.0` | `0.25` to `10.0` | Nudge distance per move key press (meters). |
 | `FineMoveStep` | `0.5` | `0.05` to `5.0` | Nudge distance per move key press while fine-adjust key is held (meters). |
 

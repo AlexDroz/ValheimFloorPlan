@@ -17,6 +17,7 @@ namespace ValheimFloorPlan
     /// </summary>
     public class FloorPlanBuilder : MonoBehaviour
     {
+        private const bool TESTING_ONLY = false;
         private const float PLACE_DELAY = 0.05f; // seconds between spawns to avoid lag spikes
         private const float ORIGIN_MARKER_LIFT = 0.3f;
         private const float ORIGIN_MARKER_HEIGHT = 10f;
@@ -26,6 +27,15 @@ namespace ValheimFloorPlan
         private const float PREVIEW_STEEP_RELIEF_WARN = 6.0f;
         private const float PREVIEW_RISK_MARKER_RADIUS = 0.45f;
         private const float PREVIEW_RISK_MARKER_LIFT = 0.18f;
+        private static readonly string[] TEST_WORKBENCH_PREFABS = new[]
+        {
+            "piece_workbench",
+            "forge",
+            "piece_stonecutter",
+            "piece_artisanstation",
+            "blackforge",
+            "piece_magetable"
+        };
 
         // ZDO key written on every piece we place.  Used by Undo() to find VFP pieces
         // across sessions — any ZNetView with this key set to "1" was placed by this mod.
@@ -132,17 +142,17 @@ namespace ValheimFloorPlan
             // starts.  Moving or turning after this point does NOT shift the rectangle —
             // cancel and re-trigger to pick a new position.
             var previewPlayer = Player.m_localPlayer;
-            _previewCenter = previewPlayer != null
-                ? GetBuildOrigin(previewPlayer)
-                : Vector3.zero;
-
-            // Initialise rotation to match the camera yaw so the plan is always
-            // oriented from the player's viewpoint: row increases away from the player
-            // (forward), col increases to the player's right.
+            // Initialise rotation to match the Designer's screen-space convention:
+            // the front edge is at the bottom of the canvas, so increasing rows
+            // should appear toward the player rather than away from them.
             _previewRotationDeg = GameCamera.instance != null
                 ? GameCamera.instance.transform.eulerAngles.y
                 : (previewPlayer != null ? previewPlayer.transform.eulerAngles.y : 0f);
-            _previewRotationDeg = SnapAngleDeg(_previewRotationDeg);
+            _previewRotationDeg = SnapAngleDeg(_previewRotationDeg + 180f);
+
+            _previewCenter = previewPlayer != null
+                ? GetInitialBuildCenter(previewPlayer, plan, _previewRotationDeg)
+                : Vector3.zero;
             _previewOrigin = GetPlacementOriginFromCenter(plan, _previewCenter, _previewRotationDeg);
 
             // Two nested vertical wall rings (open-cube style):
@@ -553,26 +563,60 @@ namespace ValheimFloorPlan
             }
         }
 
-        private static Vector3 GetBuildOrigin(Player player)
-        {
-            return GetForwardOffsetOrigin(player, ValheimFloorPlanPlugin.BuildOriginForwardOffset);
-        }
-
-        private static Vector3 GetForwardOffsetOrigin(Player player, float forwardOffset)
+        private static Vector3 GetInitialBuildCenter(Player player, FloorPlan? plan, float rotationDeg)
         {
             Vector3 origin = player.transform.position;
-            forwardOffset = Mathf.Max(0f, forwardOffset);
-            if (forwardOffset <= 0f) return origin;
+            Vector3 forward = GetBuildForward(player);
+            if (forward.sqrMagnitude < 0.0001f)
+                return origin;
 
+            float autoOffset = GetForwardHalfExtent(plan, rotationDeg, forward);
+            float extraOffset = Mathf.Max(0f, ValheimFloorPlanPlugin.BuildOriginForwardOffset);
+            return origin + forward * (autoOffset + extraOffset);
+        }
+
+        private static Vector3 GetBuildForward(Player player)
+        {
             Vector3 forward = GameCamera.instance != null
                 ? GameCamera.instance.transform.forward
                 : player.transform.forward;
             forward.y = 0f;
-            if (forward.sqrMagnitude < 0.0001f)
-                return origin;
+            if (forward.sqrMagnitude >= 0.0001f)
+                forward.Normalize();
+            return forward;
+        }
 
-            forward.Normalize();
-            return origin + forward * forwardOffset;
+        private static float GetForwardHalfExtent(FloorPlan? plan, float rotationDeg, Vector3 worldForward)
+        {
+            if (plan == null)
+                return 0f;
+
+            GetPlanPieceBounds(plan,
+                out int minCol, out int maxColExclusive,
+                out int minRow, out int maxRowExclusive);
+
+            float outerDelta = TerrainLeveler.GetOuterPerimeterDelta();
+            float minX = minCol * PieceMap.CELL_SIZE - outerDelta;
+            float maxX = maxColExclusive * PieceMap.CELL_SIZE + outerDelta;
+            float minZ = minRow * PieceMap.CELL_SIZE - outerDelta;
+            float maxZ = maxRowExclusive * PieceMap.CELL_SIZE + outerDelta;
+            float localCenterX = (minX + maxX) * 0.5f;
+            float localCenterZ = (minZ + maxZ) * 0.5f;
+
+            float maxProjection = 0f;
+            float[] cornerX = new float[] { minX, maxX, maxX, minX };
+            float[] cornerZ = new float[] { minZ, minZ, maxZ, maxZ };
+            for (int i = 0; i < 4; i++)
+            {
+                float relX = cornerX[i] - localCenterX;
+                float relZ = cornerZ[i] - localCenterZ;
+                Vector2 worldOffset = PieceMap.TransformLocalXZ(relX, relZ, rotationDeg);
+                float projection = worldOffset.x * worldForward.x + worldOffset.y * worldForward.z;
+                if (projection > maxProjection)
+                    maxProjection = projection;
+            }
+
+            return Mathf.Max(0f, maxProjection);
         }
 
         private static bool IsPreviewKeyDown(KeyCode key)
@@ -599,18 +643,30 @@ namespace ValheimFloorPlan
 
             float previewRaiseDelta = Mathf.Clamp(ValheimFloorPlanPlugin.TerrainHighPointDelta, 0f, 4f);
 
-            // Get axis-aligned (unrotated) bounds, then rotate the 4 corners around the
-            // internal placement origin so the LineRenderers show the actual rotated footprint.
             TerrainLeveler.GetPadBounds(_previewPlan, origin,
-                out float padMinX, out float padMaxX, out float padMinZ, out float padMaxZ);
+                out float padMinX, out float padMaxX, out float padMinZ, out float padMaxZ,
+                _previewRotationDeg);
             TerrainLeveler.GetLeveledAreaBounds(_previewPlan, origin,
-                out float lvlMinX, out float lvlMaxX, out float lvlMinZ, out float lvlMaxZ);
+                out float lvlMinX, out float lvlMaxX, out float lvlMinZ, out float lvlMaxZ,
+                _previewRotationDeg);
 
             SetWallRingRectangle(_previewPadWalls, origin.y,
-                RotateBoundsCorners(origin, padMinX, padMaxX, padMinZ, padMaxZ, _previewRotationDeg),
+                new[]
+                {
+                    new Vector2(padMinX, padMinZ),
+                    new Vector2(padMaxX, padMinZ),
+                    new Vector2(padMaxX, padMaxZ),
+                    new Vector2(padMinX, padMaxZ),
+                },
                 previewRaiseDelta);
             SetWallRingRectangle(_previewOuterWalls, origin.y,
-                RotateBoundsCorners(origin, lvlMinX, lvlMaxX, lvlMinZ, lvlMaxZ, _previewRotationDeg),
+                new[]
+                {
+                    new Vector2(lvlMinX, lvlMinZ),
+                    new Vector2(lvlMaxX, lvlMinZ),
+                    new Vector2(lvlMaxX, lvlMaxZ),
+                    new Vector2(lvlMinX, lvlMaxZ),
+                },
                 previewRaiseDelta);
             SetOriginMarker(_previewOriginMarker, center.y, center);
         }
@@ -627,13 +683,8 @@ namespace ValheimFloorPlan
             float localCenterX = (minCol + maxColExclusive) * 0.5f * PieceMap.CELL_SIZE;
             float localCenterZ = (minRow + maxRowExclusive) * 0.5f * PieceMap.CELL_SIZE;
 
-            float rad = rotationDeg * Mathf.Deg2Rad;
-            float cosR = Mathf.Cos(rad);
-            float sinR = Mathf.Sin(rad);
-
-            float centerOffsetX = localCenterX * cosR + localCenterZ * sinR;
-            float centerOffsetZ = -localCenterX * sinR + localCenterZ * cosR;
-            return new Vector3(center.x - centerOffsetX, center.y, center.z - centerOffsetZ);
+            Vector2 centerOffset = PieceMap.TransformLocalXZ(localCenterX, localCenterZ, rotationDeg);
+            return new Vector3(center.x - centerOffset.x, center.y, center.z - centerOffset.y);
         }
 
         /// <summary>
@@ -652,16 +703,13 @@ namespace ValheimFloorPlan
             };
             if (Mathf.Approximately(rotDeg % 360f, 0f)) return corners;
 
-            float rad = rotDeg * Mathf.Deg2Rad;
-            float cos = Mathf.Cos(rad), sin = Mathf.Sin(rad);
             float ox = origin.x, oz = origin.z;
             for (int i = 0; i < 4; i++)
             {
                 float dx = corners[i].x - ox;
                 float dz = corners[i].y - oz;
-                // Unity clockwise Y-rotation: x' = dx*cos + dz*sin, z' = -dx*sin + dz*cos
-                corners[i] = new Vector2(ox + dx * cos + dz * sin,
-                                         oz - dx * sin + dz * cos);
+                Vector2 rotated = PieceMap.TransformLocalXZ(dx, dz, rotDeg);
+                corners[i] = new Vector2(ox + rotated.x, oz + rotated.y);
             }
             return corners;
         }
@@ -1165,8 +1213,8 @@ namespace ValheimFloorPlan
             float buildYaw = GameCamera.instance != null
                 ? GameCamera.instance.transform.eulerAngles.y
                 : bfPlayer.transform.eulerAngles.y;
-            buildYaw = SnapAngleDeg(buildYaw);
-            Vector3 center = GetBuildOrigin(bfPlayer);
+            buildYaw = SnapAngleDeg(buildYaw + 180f);
+            Vector3 center = GetInitialBuildCenter(bfPlayer, plan, buildYaw);
             Vector3 origin = GetPlacementOriginFromCenter(plan, center, buildYaw);
             StartCoroutine(LevelThenPlace(plan, buildYaw, origin));
         }
@@ -1240,7 +1288,8 @@ namespace ValheimFloorPlan
             ShowBuildProgress("Final checks...");
             yield return StartCoroutine(PostBuildSpikeGuard(plan, origin, rotationDeg));
 
-            yield return StartCoroutine(PlaceCenterSignage(plan, origin, rotationDeg));
+            if (!ValheimFloorPlanPlugin.DisableWelcomePost)
+                yield return StartCoroutine(PlaceCenterSignage(plan, origin, rotationDeg));
         }
 
         private static float SnapAngleDeg(float angleDeg)
@@ -1269,6 +1318,7 @@ namespace ValheimFloorPlan
             const string SIGN_PREFAB  = "sign";
             const float  POLE_HEIGHT  = 4f;
             const float  SIGN_SPACING = 0.6f;
+            float signageRotationDeg = rotationDeg - 180f;
 
             var player = Player.m_localPlayer;
             if (player == null) yield break;
@@ -1304,20 +1354,22 @@ namespace ValheimFloorPlan
             float localCX = (minCol + maxColExcl) * 0.5f * PieceMap.CELL_SIZE;
             float localCZ = (minRow + maxRowExcl) * 0.5f * PieceMap.CELL_SIZE;
 
-            float rad  = rotationDeg * Mathf.Deg2Rad;
-            float cosR = Mathf.Cos(rad);
-            float sinR = Mathf.Sin(rad);
-            float wx   = origin.x + localCX * cosR + localCZ * sinR;
-            float wz   = origin.z - localCX * sinR + localCZ * cosR;
+            Vector3 signCenter = PieceMap.TransformPlanPoint(origin, localCX, localCZ, origin.y, rotationDeg);
+            float wx   = signCenter.x;
+            float wz   = signCenter.z;
 
             float terrainY = TerrainLeveler.TargetLevelY;
             if (Physics.Raycast(new Vector3(wx, terrainY + 300f, wz), Vector3.down, out var hit, 600f, 1 << 11))
                 terrainY = hit.point.y;
 
+            float signageRad  = signageRotationDeg * Mathf.Deg2Rad;
+            float signageSinR = Mathf.Sin(signageRad);
+            float signageCosR = Mathf.Cos(signageRad);
+
             // Centre pole.
             SpawnScaffoldPole(polePrefab,
                 new Vector3(wx, terrainY + POLE_HEIGHT * 0.5f, wz),
-                Quaternion.Euler(0f, rotationDeg, 0f),
+                Quaternion.Euler(0f, signageRotationDeg, 0f),
                 player);
             yield return new WaitForSeconds(PLACE_DELAY);
 
@@ -1334,9 +1386,9 @@ namespace ValheimFloorPlan
             float      signTopY  = terrainY + POLE_HEIGHT - 0.4f;
             // 0.3 m keeps the sign face clear of the pole log visually while still
             // overlapping the pole collider so Valheim treats it as attached.
-            float      signOX    = -sinR * 0.3f;
-            float      signOZ    = -cosR * 0.3f;
-            Quaternion signRot   = Quaternion.Euler(0f, rotationDeg + 180f, 0f);
+            float      signOX    = -signageSinR * 0.3f;
+            float      signOZ    = -signageCosR * 0.3f;
+            Quaternion signRot   = Quaternion.Euler(0f, signageRotationDeg + 180f, 0f);
 
             for (int i = 0; i < signTexts.Length; i++)
             {
@@ -1788,7 +1840,8 @@ namespace ValheimFloorPlan
             int totalPieces = plan.Pieces.Count;
             int processed = 0;
             int nextProgressPct = 10;
-            int configuredExternalWallHeight = Mathf.Clamp(ValheimFloorPlanPlugin.ExternalWallHeight, 1, 4);
+            int workbenchVariantIndex = 0;
+            int configuredExternalWallHeight = Mathf.Clamp(ValheimFloorPlanPlugin.ExternalWallHeight, 1, 12);
             bool useWoodStructure = ValheimFloorPlanPlugin.WallPillarMaterial == ValheimFloorPlanPlugin.StructuralMaterial.Wood;
 
             GetPlanPieceBounds(plan,
@@ -1811,6 +1864,15 @@ namespace ValheimFloorPlan
                 int effectivePieceRotation = piece.Rotation;
 
                 string prefabName = ResolvePrefabName(piece.Type, def.Prefab, useWoodStructure);
+                if (TESTING_ONLY && piece.Type == "Workbench")
+                {
+                    int workbenchTestSlot = workbenchVariantIndex;
+                    prefabName = ResolveWorkbenchTestPrefab(workbenchVariantIndex);
+                    workbenchVariantIndex++;
+                    ValheimFloorPlanPlugin.Log.LogInfo(
+                        $"[WorkbenchTest] slot={workbenchTestSlot} prefab={prefabName} col={piece.Col} row={piece.Row} rot={piece.Rotation}");
+                }
+
                 var prefab = ZNetScene.instance?.GetPrefab(prefabName);
                 if (prefab == null)
                 {
@@ -1851,8 +1913,9 @@ namespace ValheimFloorPlan
                 // Unity clockwise Y-rotation: x' = dx*cos + dz*sin, z' = -dx*sin + dz*cos.
                 float dx = (piece.Col + effW * 0.5f) * PieceMap.CELL_SIZE;
                 float dz = (piece.Row + effH * 0.5f) * PieceMap.CELL_SIZE;
-                float x  = origin.x + dx * cosR + dz * sinR;
-                float z  = origin.z - dx * sinR + dz * cosR;
+                Vector3 pieceCenter = PieceMap.TransformPlanPoint(origin, dx, dz, origin.y, rotationDeg);
+                float x  = pieceCenter.x;
+                float z  = pieceCenter.z;
 
                 // Sample the actual physics terrain height at this piece's XZ position.
                 // We do NOT use TerrainLeveler.TargetLevelY (a uniform height) because the
@@ -1874,7 +1937,8 @@ namespace ValheimFloorPlan
                 bool shouldStack = IsExternalWallOrPillarType(piece.Type) && isExternal;
                 int stackCount = shouldStack ? configuredExternalWallHeight : 1;
                 float stackStepY = GetStackStepY(piece.Type);
-                var rot = Quaternion.Euler(0, effectivePieceRotation + rotationDeg, 0);
+                float pieceYaw = PieceMap.TransformLocalYaw(effectivePieceRotation + def.RotationOffset, rotationDeg);
+                var rot = Quaternion.Euler(0, pieceYaw, 0);
 
                 // Wood pieces are narrower/thinner than their stone equivalents; push
                 // external pieces outward so their outer face aligns with the floor edge.
@@ -1897,26 +1961,8 @@ namespace ValheimFloorPlan
                         ValheimFloorPlanPlugin.Log.LogInfo($"First piece: type={piece.Type} prefab={prefabName} pos={stackedPos}");
                     }
 
-                    var go = UnityEngine.Object.Instantiate(prefab, stackedPos, rot);
-
-                    // Track for undo.
-                    _lastPlaced.Add(go);
-
-                    // Register owner and creator so the piece is properly tracked,
-                    // and write the VFP tag so Undo() can find this piece across sessions.
-                    var zNetView = go.GetComponent<ZNetView>();
-                    if (zNetView != null)
-                    {
-                        var zdo = zNetView.GetZDO();
-                        if (zdo != null)
-                        {
-                            zdo.SetOwner(ZDOMan.GetSessionID());
-                            zdo.Set(VFP_TAG, "1");
-                        }
-                    }
-
-                    var pieceComp = go.GetComponent<Piece>();
-                    pieceComp?.SetCreator(player.GetPlayerID());
+                    bool centerWorkbench = piece.Type == "Workbench";
+                    SpawnRegisteredPiece(prefab, stackedPos, rot, player, centerWorkbench);
 
                     placed++;
 
@@ -1944,9 +1990,116 @@ namespace ValheimFloorPlan
                 $"Floor plan built: {placed} pieces placed, {skipped} skipped. Check log for position info.");
         }
 
+        private static void CenterPieceOnRenderedBoundsXZ(GameObject go, Vector3 desiredCenter)
+        {
+            if (!TryGetBoundsCenterXZ(go, includeColliders: true, includeRenderers: false, out Vector3 actualCenter, out string source) &&
+                !TryGetBoundsCenterXZ(go, includeColliders: false, includeRenderers: true, out actualCenter, out source))
+                return;
+
+            const float MAX_RECENTER_DISTANCE = 5f;
+            float sourceDeltaX = actualCenter.x - go.transform.position.x;
+            float sourceDeltaZ = actualCenter.z - go.transform.position.z;
+            float sourceDistance = Mathf.Sqrt(sourceDeltaX * sourceDeltaX + sourceDeltaZ * sourceDeltaZ);
+            if (sourceDistance > MAX_RECENTER_DISTANCE)
+            {
+                ValheimFloorPlanPlugin.Log.LogWarning(
+                    $"[WorkbenchTest] skipped recenter prefab={go.name} source={source} sourceDistance={sourceDistance:F3} actual=({actualCenter.x:F2}, {actualCenter.z:F2}) spawn=({go.transform.position.x:F2}, {go.transform.position.z:F2})");
+                return;
+            }
+
+            Vector3 adjusted = go.transform.position;
+            adjusted.x += desiredCenter.x - actualCenter.x;
+            adjusted.z += desiredCenter.z - actualCenter.z;
+
+            float deltaX = adjusted.x - go.transform.position.x;
+            float deltaZ = adjusted.z - go.transform.position.z;
+            if (Mathf.Abs(deltaX) > 0.001f || Mathf.Abs(deltaZ) > 0.001f)
+            {
+                ValheimFloorPlanPlugin.Log.LogInfo(
+                    $"[WorkbenchTest] recentered prefab={go.name} source={source} dx={deltaX:F3} dz={deltaZ:F3} desired=({desiredCenter.x:F2}, {desiredCenter.z:F2}) actual=({actualCenter.x:F2}, {actualCenter.z:F2})");
+            }
+
+            go.transform.position = adjusted;
+        }
+
+        private static bool TryGetBoundsCenterXZ(GameObject go, bool includeColliders, bool includeRenderers, out Vector3 center, out string source)
+        {
+            bool haveBounds = false;
+            Bounds combined = default;
+
+            if (includeColliders)
+            {
+                var colliders = go.GetComponentsInChildren<Collider>();
+                for (int i = 0; i < colliders.Length; i++)
+                {
+                    var collider = colliders[i];
+                    if (collider == null || !collider.enabled)
+                        continue;
+
+                    if (!haveBounds)
+                    {
+                        combined = collider.bounds;
+                        haveBounds = true;
+                    }
+                    else
+                    {
+                        combined.Encapsulate(collider.bounds);
+                    }
+                }
+
+                if (haveBounds)
+                {
+                    center = combined.center;
+                    source = "collider";
+                    return true;
+                }
+            }
+
+            if (includeRenderers)
+            {
+                var renderers = go.GetComponentsInChildren<Renderer>();
+                for (int i = 0; i < renderers.Length; i++)
+                {
+                    var renderer = renderers[i];
+                    if (renderer == null || !renderer.enabled)
+                        continue;
+
+                    if (!haveBounds)
+                    {
+                        combined = renderer.bounds;
+                        haveBounds = true;
+                    }
+                    else
+                    {
+                        combined.Encapsulate(renderer.bounds);
+                    }
+                }
+
+                if (haveBounds)
+                {
+                    center = combined.center;
+                    source = "renderer";
+                    return true;
+                }
+            }
+
+            center = go.transform.position;
+            source = "none";
+            return false;
+        }
+
         private static void ShowBuildProgress(string message)
         {
             ValheimFloorPlanPlugin.ShowProgressMessage(message);
+        }
+
+        private static string ResolveWorkbenchTestPrefab(int variantIndex)
+        {
+            if (TEST_WORKBENCH_PREFABS.Length == 0)
+                return "piece_workbench";
+
+            int index = Mathf.Abs(variantIndex) % TEST_WORKBENCH_PREFABS.Length;
+            return TEST_WORKBENCH_PREFABS[index];
         }
 
         private static bool IsExternalWallOrPillarType(string type)
@@ -2044,8 +2197,10 @@ namespace ValheimFloorPlan
             // Apply per-axis shift (not normalised: corner pillars shift in both axes).
             var localOffset = new Vector3(lx * shift, 0f, lz * shift);
 
-            // Rotate into world space using the plan's rotation.
-            return Quaternion.Euler(0, planRotationDeg, 0) * localOffset;
+            // Convert through the shared mirrored plan transform so outward edge
+            // shifts stay consistent with the build-space handedness fix.
+            Vector2 worldOffset = PieceMap.TransformLocalXZ(localOffset.x, localOffset.z, planRotationDeg);
+            return new Vector3(worldOffset.x, 0f, worldOffset.y);
         }
 
         private static void GetPlanPieceBounds(
@@ -2099,6 +2254,7 @@ namespace ValheimFloorPlan
             const string HORIZ_PREFAB   = "wood_wall_log_4x0.5";
             const string FLOOR2_PREFAB  = "wood_floor";
             const string FLOOR1_PREFAB  = "wood_floor_1x1";
+            const string ROOF_TOP_PREFAB = "wood_roof_top";
             const float  POLE_HEIGHT    = 4f;
             const float  HORIZ_LEN      = 4f;
             const float  HORIZ_HALF     = HORIZ_LEN * 0.5f;
@@ -2111,6 +2267,7 @@ namespace ValheimFloorPlan
             var horizPrefab = ZNetScene.instance?.GetPrefab(HORIZ_PREFAB);
             var floor2Prefab = ZNetScene.instance?.GetPrefab(FLOOR2_PREFAB);
             var floor1Prefab = ZNetScene.instance?.GetPrefab(FLOOR1_PREFAB);
+            var roofTopPrefab = ZNetScene.instance?.GetPrefab(ROOF_TOP_PREFAB);
             if (vertPrefab == null || horizPrefab == null || floor2Prefab == null || floor1Prefab == null)
             {
                 ValheimFloorPlanPlugin.Log.LogWarning(
@@ -2132,14 +2289,10 @@ namespace ValheimFloorPlan
             float depth     = lMaxZ - lMinZ;
             float perimeter = 2f * (width + depth);
 
-            float cosR = Mathf.Cos(rotationDeg * Mathf.Deg2Rad);
-            float sinR = Mathf.Sin(rotationDeg * Mathf.Deg2Rad);
             float scaffoldBaseY = TerrainLeveler.TargetLevelY;
             float localCenterX = (lMinX + lMaxX) * 0.5f;
             float localCenterZ = (lMinZ + lMaxZ) * 0.5f;
-            float centerWorldX = origin.x + localCenterX * cosR + localCenterZ * sinR;
-            float centerWorldZ = origin.z - localCenterX * sinR + localCenterZ * cosR;
-            Vector3 centerWorld = new Vector3(centerWorldX, scaffoldBaseY + POLE_HEIGHT * 0.5f, centerWorldZ);
+            Vector3 centerWorld = PieceMap.TransformPlanPoint(origin, localCenterX, localCenterZ, scaffoldBaseY + POLE_HEIGHT * 0.5f, rotationDeg);
 
             // ── Collect perimeter parameters for all poles ────────────────────
             // The perimeter is parameterised as clockwise distance from the SW corner:
@@ -2295,11 +2448,10 @@ namespace ValheimFloorPlan
                 foreach (float t in poleParams)
                 {
                     Vector2 local = ScaffoldParamToLocal(t, lMinX, lMaxX, lMinZ, lMaxZ, perimeter);
-                    float wx = origin.x + local.x * cosR + local.y * sinR;
-                    float wz = origin.z - local.x * sinR + local.y * cosR;
+                    Vector3 polePos = PieceMap.TransformPlanPoint(origin, local.x, local.y, scaffoldBaseY + POLE_HEIGHT * 0.5f + levelOffsetY, rotationDeg);
 
                     SpawnScaffoldPole(vertPrefab,
-                        new Vector3(wx, scaffoldBaseY + POLE_HEIGHT * 0.5f + levelOffsetY, wz),
+                        polePos,
                         Quaternion.Euler(0, rotationDeg, 0),
                         player);
                     placed++;
@@ -2313,9 +2465,7 @@ namespace ValheimFloorPlan
                 for (int ci = 0; ci < 4; ci++)
                 {
                     Vector2 cl = ScaffoldParamToLocal(cornerT[ci], lMinX, lMaxX, lMinZ, lMaxZ, perimeter);
-                    float cwx = origin.x + cl.x * cosR + cl.y * sinR;
-                    float cwz = origin.z - cl.x * sinR + cl.y * cosR;
-                    cornerTops[ci] = new Vector3(cwx, scaffoldBaseY + POLE_HEIGHT + levelOffsetY, cwz);
+                    cornerTops[ci] = PieceMap.TransformPlanPoint(origin, cl.x, cl.y, scaffoldBaseY + POLE_HEIGHT + levelOffsetY, rotationDeg);
                 }
 
                 for (int e = 0; e < 4; e++)
@@ -2375,11 +2525,12 @@ namespace ValheimFloorPlan
 
                 if (ValheimFloorPlanPlugin.ScaffoldingFloors)
                 {
+                    bool isTopmostLevel = level == scaffoldLevels - 1;
                     placed += PlaceScaffoldLevelFloorDeck(
                         minCol, maxColExclusive, minRow, maxRowExclusive,
                         origin, rotationDeg,
                         scaffoldBaseY + POLE_HEIGHT + levelOffsetY - FLOOR_DECK_DROP,
-                        floor2Prefab, floor1Prefab, player);
+                        floor2Prefab, floor1Prefab, roofTopPrefab, isTopmostLevel, player);
                 }
             }
 
@@ -2392,11 +2543,10 @@ namespace ValheimFloorPlan
         private int PlaceScaffoldLevelFloorDeck(
             int minCol, int maxColExclusive, int minRow, int maxRowExclusive,
             Vector3 origin, float rotationDeg, float deckY,
-            GameObject floor2Prefab, GameObject floor1Prefab, Player player)
+            GameObject floor2Prefab, GameObject floor1Prefab, GameObject? roofTopPrefab, bool useRoofTop,
+            Player player)
         {
             int placed = 0;
-            float cosR = Mathf.Cos(rotationDeg * Mathf.Deg2Rad);
-            float sinR = Mathf.Sin(rotationDeg * Mathf.Deg2Rad);
             Quaternion deckRot = Quaternion.Euler(0f, rotationDeg, 0f);
 
             for (int row = minRow; row < maxRowExclusive; )
@@ -2407,14 +2557,15 @@ namespace ValheimFloorPlan
                 {
                     int tileWidth = (col + 1 < maxColExclusive) ? 2 : 1;
                     bool useFloor2 = tileWidth == 2 && tileDepth == 2;
-                    var prefab = useFloor2 ? floor2Prefab : floor1Prefab;
+                    var prefab = useFloor2
+                        ? (useRoofTop && roofTopPrefab != null ? roofTopPrefab : floor2Prefab)
+                        : floor1Prefab;
 
                     float dx = (col + tileWidth * 0.5f) * PieceMap.CELL_SIZE;
                     float dz = (row + tileDepth * 0.5f) * PieceMap.CELL_SIZE;
-                    float x = origin.x + dx * cosR + dz * sinR;
-                    float z = origin.z - dx * sinR + dz * cosR;
+                    Vector3 deckPos = PieceMap.TransformPlanPoint(origin, dx, dz, deckY, rotationDeg);
 
-                    SpawnRegisteredPiece(prefab, new Vector3(x, deckY, z), deckRot, player);
+                    SpawnRegisteredPiece(prefab, deckPos, deckRot, player);
                     placed++;
                     col += tileWidth;
                 }
@@ -2578,12 +2729,14 @@ namespace ValheimFloorPlan
             const float POLE_HEIGHT = 4f;
 
             Vector2 local = ScaffoldParamToLocal(t, lMinX, lMaxX, lMinZ, lMaxZ, perimeter);
-            float cosR = Mathf.Cos(rotationDeg * Mathf.Deg2Rad);
-            float sinR = Mathf.Sin(rotationDeg * Mathf.Deg2Rad);
-            float wx = origin.x + local.x * cosR + local.y * sinR;
-            float wz = origin.z - local.x * sinR + local.y * cosR;
+            Vector3 worldPos = PieceMap.TransformPlanPoint(
+                origin,
+                local.x,
+                local.y,
+                scaffoldBaseY + POLE_HEIGHT + levelOffsetY,
+                rotationDeg);
 
-            return new ScaffoldPolePoint(t, local, new Vector3(wx, scaffoldBaseY + POLE_HEIGHT + levelOffsetY, wz));
+            return new ScaffoldPolePoint(t, local, worldPos);
         }
 
         private int PlaceScaffoldBeamSpan(
@@ -2800,21 +2953,29 @@ namespace ValheimFloorPlan
             }
         }
 
-        private GameObject SpawnRegisteredPiece(GameObject prefab, Vector3 pos, Quaternion rot, Player player)
+        private GameObject SpawnRegisteredPiece(GameObject prefab, Vector3 pos, Quaternion rot, Player player, bool centerOnRenderedBoundsXZ = false)
         {
             var go = UnityEngine.Object.Instantiate(prefab, pos, rot);
-            _lastPlaced.Add(go);
 
             var znv = go.GetComponent<ZNetView>();
+            ZDO? zdo = null;
             if (znv != null)
             {
-                var zdo = znv.GetZDO();
+                zdo = znv.GetZDO();
+                if (centerOnRenderedBoundsXZ)
+                {
+                    CenterPieceOnRenderedBoundsXZ(go, pos);
+                    zdo?.SetPosition(go.transform.position);
+                }
+
                 if (zdo != null)
                 {
                     zdo.SetOwner(ZDOMan.GetSessionID());
                     zdo.Set(VFP_TAG, "1");
                 }
             }
+
+            _lastPlaced.Add(go);
             go.GetComponent<Piece>()?.SetCreator(player.GetPlayerID());
             return go;
         }

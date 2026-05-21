@@ -37,7 +37,8 @@ namespace ValheimFloorPlan
         internal static bool ScaffoldingFloors { get; private set; } = false;
         internal static bool TransverseScaffoldingBeams { get; private set; } = false;
         internal static bool LongitudinalScaffoldingBeams { get; private set; } = false;
-        internal static float BuildOriginForwardOffset { get; private set; } = 12f;
+        internal static bool DisableWelcomePost { get; private set; } = false;
+        internal static float BuildOriginForwardOffset { get; private set; } = 0f;
         internal static float PreviewMoveStep { get; private set; } = 2f;
         internal static float PreviewFineMoveStep { get; private set; } = 0.5f;
         internal static float BuildRotationSnapDegrees { get; private set; } = 90f;
@@ -75,6 +76,7 @@ namespace ValheimFloorPlan
         private ConfigEntry<bool> _scaffoldingFloors = null!;
         private ConfigEntry<bool> _transverseScaffoldingBeams = null!;
         private ConfigEntry<bool> _longitudinalScaffoldingBeams = null!;
+        private ConfigEntry<bool> _disableWelcomePost = null!;
         private ConfigEntry<float> _buildOriginForwardOffset = null!;
         private ConfigEntry<float> _previewMoveStep = null!;
         private ConfigEntry<float> _previewFineMoveStep = null!;
@@ -203,10 +205,10 @@ namespace ValheimFloorPlan
                 "Building", "ExternalWallHeight", 1,
                 new ConfigDescription(
                     "How many levels high external Wall/Pillar pieces should be stacked.",
-                    new AcceptableValueRange<int>(1, 4)));
+                    new AcceptableValueRange<int>(1, 12)));
             _externalWallHeight.SettingChanged += (_, _) =>
-                ExternalWallHeight = Mathf.Clamp(_externalWallHeight.Value, 1, 4);
-            ExternalWallHeight = Mathf.Clamp(_externalWallHeight.Value, 1, 4);
+                ExternalWallHeight = Mathf.Clamp(_externalWallHeight.Value, 1, 12);
+            ExternalWallHeight = Mathf.Clamp(_externalWallHeight.Value, 1, 12);
 
             _wallPillarMaterial = Config.Bind(
                 "Building", "WallPillarMaterial", "Stone",
@@ -250,14 +252,20 @@ namespace ValheimFloorPlan
             _longitudinalScaffoldingBeams.SettingChanged += (_, _) => LongitudinalScaffoldingBeams = _longitudinalScaffoldingBeams.Value;
             LongitudinalScaffoldingBeams = _longitudinalScaffoldingBeams.Value;
 
+            _disableWelcomePost = Config.Bind(
+                "Building", "DisableWelcomePost", false,
+                "When enabled, skips creation of the center Welcome post and signs after a build completes.");
+            _disableWelcomePost.SettingChanged += (_, _) => DisableWelcomePost = _disableWelcomePost.Value;
+            DisableWelcomePost = _disableWelcomePost.Value;
+
             _buildOriginForwardOffset = Config.Bind(
-                "Preview", "BuildOriginForwardOffset", 12f,
+                "Preview", "BuildOriginForwardOffset", 0f,
                 new ConfigDescription(
-                    "How far in front of the camera-facing direction (in meters) the initial preview center is placed.",
-                    new AcceptableValueRange<float>(10f, 20f)));
+                    "Extra distance in metres added beyond the auto-computed player-to-build-center placement when preview starts. Usually 0 is sufficient.",
+                    new AcceptableValueRange<float>(0f, 20f)));
             _buildOriginForwardOffset.SettingChanged += (_, _) =>
-                BuildOriginForwardOffset = Mathf.Clamp(_buildOriginForwardOffset.Value, 10f, 20f);
-            BuildOriginForwardOffset = Mathf.Clamp(_buildOriginForwardOffset.Value, 10f, 20f);
+                BuildOriginForwardOffset = Mathf.Clamp(_buildOriginForwardOffset.Value, 0f, 20f);
+            BuildOriginForwardOffset = Mathf.Clamp(_buildOriginForwardOffset.Value, 0f, 20f);
 
             _previewMoveStep = Config.Bind(
                 "Preview", "MoveStep", 2f,
@@ -364,7 +372,7 @@ namespace ValheimFloorPlan
             gameObject.AddComponent<FloorPlanBuilder>();
 
             Log.LogInfo($"{PluginName} v{PluginVersion} loaded! " +
-                $"Build: {_buildHotkey.Value}  Undo: {_undoHotkey.Value}  Progress HUD: {ProgressMessageType}  Terrain passes: {TerrainLevelPasses}  Spike cleanup passes: {TerrainSpikeCleanupPasses}  High-point delta: {TerrainHighPointDelta:F2}m  Staged raise: {TerrainUseStagedRaise} ({TerrainRaiseStepHeight:F2}m, max {TerrainMaxRaiseStages})  Skip satisfied center stamps: {TerrainSkipSatisfiedCenterStamps}  External wall height: {ExternalWallHeight}  Wall/Pillar material: {WallPillarMaterial}  Roof scaffolding: {RoofScaffolding}  Scaffolding levels: {ScaffoldingLevels}  Scaffolding floors: {ScaffoldingFloors}  Transverse beams: {TransverseScaffoldingBeams}  Longitudinal beams: {LongitudinalScaffoldingBeams}  Origin offset: {BuildOriginForwardOffset:F1}m  Preview move: {PreviewMoveStep:F2}/{PreviewFineMoveStep:F2}m  Preview rotate: {PreviewRotateStepDeg:F0}/{PreviewFineRotateStepDeg:F0}°  Build snap: {BuildRotationSnapDegrees:F1}°");
+                $"Build: {_buildHotkey.Value}  Undo: {_undoHotkey.Value}  Progress HUD: {ProgressMessageType}  Terrain passes: {TerrainLevelPasses}  Spike cleanup passes: {TerrainSpikeCleanupPasses}  High-point delta: {TerrainHighPointDelta:F2}m  Staged raise: {TerrainUseStagedRaise} ({TerrainRaiseStepHeight:F2}m, max {TerrainMaxRaiseStages})  Skip satisfied center stamps: {TerrainSkipSatisfiedCenterStamps}  External wall height: {ExternalWallHeight}  Wall/Pillar material: {WallPillarMaterial}  Roof scaffolding: {RoofScaffolding}  Scaffolding levels: {ScaffoldingLevels}  Scaffolding floors: {ScaffoldingFloors}  Transverse beams: {TransverseScaffoldingBeams}  Longitudinal beams: {LongitudinalScaffoldingBeams}  Origin extra offset: {BuildOriginForwardOffset:F1}m  Preview move: {PreviewMoveStep:F2}/{PreviewFineMoveStep:F2}m  Preview rotate: {PreviewRotateStepDeg:F0}/{PreviewFineRotateStepDeg:F0}°  Build snap: {BuildRotationSnapDegrees:F1}°");
         }
 
         private void Update()
