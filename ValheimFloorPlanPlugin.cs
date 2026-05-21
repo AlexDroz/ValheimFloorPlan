@@ -34,6 +34,7 @@ namespace ValheimFloorPlan
         internal static StructuralMaterial WallPillarMaterial { get; private set; } = StructuralMaterial.Stone;
         internal static bool RoofScaffolding { get; private set; } = false;
         internal static int ScaffoldingLevels { get; private set; } = 1;
+        internal static int ScaffoldingFloorHeight { get; private set; } = 4;
         internal static bool ScaffoldingFloors { get; private set; } = false;
         internal static bool TransverseScaffoldingBeams { get; private set; } = false;
         internal static bool LongitudinalScaffoldingBeams { get; private set; } = false;
@@ -73,6 +74,7 @@ namespace ValheimFloorPlan
         private ConfigEntry<string> _wallPillarMaterial = null!;
         private ConfigEntry<bool> _roofScaffolding = null!;
         private ConfigEntry<int> _scaffoldingLevels = null!;
+        private ConfigEntry<int> _scaffoldingFloorHeight = null!;
         private ConfigEntry<bool> _scaffoldingFloors = null!;
         private ConfigEntry<bool> _transverseScaffoldingBeams = null!;
         private ConfigEntry<bool> _longitudinalScaffoldingBeams = null!;
@@ -205,10 +207,10 @@ namespace ValheimFloorPlan
                 "Building", "ExternalWallHeight", 1,
                 new ConfigDescription(
                     "How many levels high external Wall/Pillar pieces should be stacked.",
-                    new AcceptableValueRange<int>(1, 12)));
+                    new AcceptableValueRange<int>(1, 18)));
             _externalWallHeight.SettingChanged += (_, _) =>
-                ExternalWallHeight = Mathf.Clamp(_externalWallHeight.Value, 1, 12);
-            ExternalWallHeight = Mathf.Clamp(_externalWallHeight.Value, 1, 12);
+                ExternalWallHeight = Mathf.Clamp(_externalWallHeight.Value, 1, 18);
+            ExternalWallHeight = Mathf.Clamp(_externalWallHeight.Value, 1, 18);
 
             _wallPillarMaterial = Config.Bind(
                 "Building", "WallPillarMaterial", "Stone",
@@ -233,6 +235,16 @@ namespace ValheimFloorPlan
             _scaffoldingLevels.SettingChanged += (_, _) =>
                 ScaffoldingLevels = Mathf.Clamp(_scaffoldingLevels.Value, 1, 3);
             ScaffoldingLevels = Mathf.Clamp(_scaffoldingLevels.Value, 1, 3);
+
+            var validScaffoldHeights = new AcceptableValueList<int>(2, 4, 6);
+            _scaffoldingFloorHeight = Config.Bind(
+                "Scaffolding", "ScaffoldingFloorHeight", 4,
+                new ConfigDescription(
+                    "Vertical height in metres between scaffold levels. Must be a multiple of 2m so stacked wood-iron support segments line up correctly.",
+                    validScaffoldHeights));
+            _scaffoldingFloorHeight.SettingChanged += (_, _) =>
+                ScaffoldingFloorHeight = _scaffoldingFloorHeight.Value;
+            ScaffoldingFloorHeight = _scaffoldingFloorHeight.Value;
 
             _scaffoldingFloors = Config.Bind(
                 "Scaffolding", "ScaffoldingFloors", false,
@@ -372,7 +384,7 @@ namespace ValheimFloorPlan
             gameObject.AddComponent<FloorPlanBuilder>();
 
             Log.LogInfo($"{PluginName} v{PluginVersion} loaded! " +
-                $"Build: {_buildHotkey.Value}  Undo: {_undoHotkey.Value}  Progress HUD: {ProgressMessageType}  Terrain passes: {TerrainLevelPasses}  Spike cleanup passes: {TerrainSpikeCleanupPasses}  High-point delta: {TerrainHighPointDelta:F2}m  Staged raise: {TerrainUseStagedRaise} ({TerrainRaiseStepHeight:F2}m, max {TerrainMaxRaiseStages})  Skip satisfied center stamps: {TerrainSkipSatisfiedCenterStamps}  External wall height: {ExternalWallHeight}  Wall/Pillar material: {WallPillarMaterial}  Roof scaffolding: {RoofScaffolding}  Scaffolding levels: {ScaffoldingLevels}  Scaffolding floors: {ScaffoldingFloors}  Transverse beams: {TransverseScaffoldingBeams}  Longitudinal beams: {LongitudinalScaffoldingBeams}  Origin extra offset: {BuildOriginForwardOffset:F1}m  Preview move: {PreviewMoveStep:F2}/{PreviewFineMoveStep:F2}m  Preview rotate: {PreviewRotateStepDeg:F0}/{PreviewFineRotateStepDeg:F0}°  Build snap: {BuildRotationSnapDegrees:F1}°");
+                $"Build: {_buildHotkey.Value}  Undo: {_undoHotkey.Value}  Progress HUD: {ProgressMessageType}  Terrain passes: {TerrainLevelPasses}  Spike cleanup passes: {TerrainSpikeCleanupPasses}  High-point delta: {TerrainHighPointDelta:F2}m  Staged raise: {TerrainUseStagedRaise} ({TerrainRaiseStepHeight:F2}m, max {TerrainMaxRaiseStages})  Skip satisfied center stamps: {TerrainSkipSatisfiedCenterStamps}  External wall height: {ExternalWallHeight}  Wall/Pillar material: {WallPillarMaterial}  Roof scaffolding: {RoofScaffolding}  Scaffolding levels: {ScaffoldingLevels}  Scaffolding floor height: {ScaffoldingFloorHeight}m  Scaffolding floors: {ScaffoldingFloors}  Transverse beams: {TransverseScaffoldingBeams}  Longitudinal beams: {LongitudinalScaffoldingBeams}  Origin extra offset: {BuildOriginForwardOffset:F1}m  Preview move: {PreviewMoveStep:F2}/{PreviewFineMoveStep:F2}m  Preview rotate: {PreviewRotateStepDeg:F0}/{PreviewFineRotateStepDeg:F0}°  Build snap: {BuildRotationSnapDegrees:F1}°");
         }
 
         private void Update()

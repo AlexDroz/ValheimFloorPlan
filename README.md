@@ -106,7 +106,7 @@ All values below are configurable in that file.
 
 | Option | Default | Allowed values | What it does |
 |---|---|---|---|
-| `ExternalWallHeight` | `1` | `1` to `12` | Stacks outer-perimeter `Wall`/`Pillar` pieces vertically to this many levels. |
+| `ExternalWallHeight` | `1` | `1` to `18` | Stacks outer-perimeter `Wall`/`Pillar` pieces vertically to this many levels. |
 | `WallPillarMaterial` | `Stone` | `Stone`, `Wood` | Chooses material set used for `Wall` and `Pillar` types. |
 
 ### Scaffolding
@@ -115,6 +115,7 @@ All values below are configurable in that file.
 |---|---|---|---|
 | `RoofScaffolding` | `false` | `true` / `false` | Adds scaffold poles and perimeter beams around the plan during the build. |
 | `ScaffoldingLevels` | `1` | `1` to `3` | Number of stacked scaffolding levels when `RoofScaffolding` is enabled. Each extra level repeats the same scaffold pattern +4m above the previous level. |
+| `ScaffoldingFloorHeight` | `4` | `2`, `4`, `6` | Vertical height in metres between scaffold levels. Must be a multiple of 2m so stacked wood-iron support segments line up correctly. |
 | `ScaffoldingFloors` | `false` | `true` / `false` | Builds wood floor decks across each scaffolding level when `RoofScaffolding` is enabled. |
 | `TransverseScaffoldingBeams` | `false` | `true` / `false` | Adds west-to-east horizontal scaffold beams at each scaffold pole row. |
 | `LongitudinalScaffoldingBeams` | `false` | `true` / `false` | Adds south-to-north horizontal scaffold beams at each scaffold pole column. |
@@ -189,6 +190,9 @@ The `samples/` folder contains ready-to-use `.vfp` examples:
 ![Valheim Floor Plan screenshot 8](https://raw.githubusercontent.com/AlexDroz/ValheimFloorPlan/master/images/2026-05-18%2016_57_47-Valheim.png)
 ![Valheim Floor Plan screenshot 9](https://raw.githubusercontent.com/AlexDroz/ValheimFloorPlan/master/images/2026-05-19%2021_19_23-Valheim.png)
 ![Valheim Floor Plan screenshot 10](https://raw.githubusercontent.com/AlexDroz/ValheimFloorPlan/master/images/2026-05-20%2017_48_37-Valheim.png)
+![Valheim Floor Plan screenshot 11](https://raw.githubusercontent.com/AlexDroz/ValheimFloorPlan/master/images/2026-05-21%2020_03_21-Valheim.png)
+![Valheim Floor Plan screenshot 12](https://raw.githubusercontent.com/AlexDroz/ValheimFloorPlan/master/images/2026-05-21%2020_09_14-Valheim.png)
+![Valheim Floor Plan screenshot 13](https://raw.githubusercontent.com/AlexDroz/ValheimFloorPlan/master/images/2026-05-21%2020_11_40-Greenshot.png)
 
                                   
 

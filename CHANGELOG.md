@@ -9,9 +9,12 @@
 - **Fixed perimeter edge alignment for walls and doors:** outer-edge pieces on the left and right sides of the layout now offset toward the outside edge of the tile instead of the inside edge.
 - **Terrain leveling, preview bounds, and build footprint are aligned:** terrain edits and final piece placement now target the same selected preview area.
 - **Scaffolding placement now respects the mirrored build transform:** internal scaffold poles and scaffold floor levels now align with the main build area after the left/right orientation fix.
+- **Roof scaffolding now uses wood-iron members:** perimeter scaffold columns and scaffold beams now use `woodiron_pole` / `woodiron_beam`, with 4m columns built from stacked 2m vertical segments.
+- **Scaffold floor height is now configurable in validated 2m steps:** `ScaffoldingFloorHeight` now allows `2`, `4`, or `6` metres between scaffold levels so wood-iron support segments stack cleanly.
+- **Internal scaffold support simplified:** extra interior vertical support poles were removed and replaced with a single center support column, while transverse and longitudinal beams remain enabled.
 - **Top scaffold deck can use roof tiles:** when scaffold floors are enabled, the topmost full deck tiles now use `wood_roof_top` instead of floor pieces.
 - **Initial build offset is now automatic:** startup placement now computes the player-to-build-center stand-off from the plan footprint plus the outer perimeter delta, while `BuildOriginForwardOffset` is now only an optional extra clearance.
-- **External wall height range increased:** `ExternalWallHeight` can now be configured up to `12` levels.
+- **External wall height range increased:** `ExternalWallHeight` can now be configured up to `18` levels.
 - **Added `DisableWelcomePost` config option:** center welcome signage can now be disabled when it is not wanted.
 
 ## 1.0.8

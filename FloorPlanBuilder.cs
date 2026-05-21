@@ -1841,7 +1841,7 @@ namespace ValheimFloorPlan
             int processed = 0;
             int nextProgressPct = 10;
             int workbenchVariantIndex = 0;
-            int configuredExternalWallHeight = Mathf.Clamp(ValheimFloorPlanPlugin.ExternalWallHeight, 1, 12);
+            int configuredExternalWallHeight = Mathf.Clamp(ValheimFloorPlanPlugin.ExternalWallHeight, 1, 18);
             bool useWoodStructure = ValheimFloorPlanPlugin.WallPillarMaterial == ValheimFloorPlanPlugin.StructuralMaterial.Wood;
 
             GetPlanPieceBounds(plan,
@@ -2250,13 +2250,14 @@ namespace ValheimFloorPlan
         /// </summary>
         private IEnumerator PlaceRoofScaffolding(FloorPlan plan, Vector3 origin, float rotationDeg)
         {
-            const string VERT_PREFAB    = "wood_pole_log_4";
-            const string HORIZ_PREFAB   = "wood_wall_log_4x0.5";
+            const string VERT_PREFAB    = "woodiron_pole";
+            const string HORIZ_PREFAB   = "woodiron_beam";
             const string FLOOR2_PREFAB  = "wood_floor";
             const string FLOOR1_PREFAB  = "wood_floor_1x1";
             const string ROOF_TOP_PREFAB = "wood_roof_top";
-            const float  POLE_HEIGHT    = 4f;
-            const float  HORIZ_LEN      = 4f;
+            const float  POLE_SEGMENT_HEIGHT = 2f;
+            const float  POLE_SPACING   = 4f;
+            const float  HORIZ_LEN      = 2f;
             const float  HORIZ_HALF     = HORIZ_LEN * 0.5f;
             const float  FLOOR_DECK_DROP = 0.05f;
 
@@ -2288,11 +2289,12 @@ namespace ValheimFloorPlan
             float width     = lMaxX - lMinX;
             float depth     = lMaxZ - lMinZ;
             float perimeter = 2f * (width + depth);
+            float scaffoldFloorHeight = Mathf.Max(2f, ValheimFloorPlanPlugin.ScaffoldingFloorHeight);
 
             float scaffoldBaseY = TerrainLeveler.TargetLevelY;
             float localCenterX = (lMinX + lMaxX) * 0.5f;
             float localCenterZ = (lMinZ + lMaxZ) * 0.5f;
-            Vector3 centerWorld = PieceMap.TransformPlanPoint(origin, localCenterX, localCenterZ, scaffoldBaseY + POLE_HEIGHT * 0.5f, rotationDeg);
+            Vector3 centerWorld = PieceMap.TransformPlanPoint(origin, localCenterX, localCenterZ, scaffoldBaseY + scaffoldFloorHeight * 0.5f, rotationDeg);
 
             // ── Collect perimeter parameters for all poles ────────────────────
             // The perimeter is parameterised as clockwise distance from the SW corner:
@@ -2405,6 +2407,7 @@ namespace ValheimFloorPlan
             poleParams.Sort();
 
             int scaffoldLevels = Mathf.Clamp(ValheimFloorPlanPlugin.ScaffoldingLevels, 1, 3);
+            var supportFurnitureExclusions = BuildScaffoldFurnitureExclusions(plan);
 
             // Add intermediate edge-join poles once to establish full anchor set used by
             // all levels. The same anchor topology is then repeated upward every 4m.
@@ -2417,7 +2420,7 @@ namespace ValheimFloorPlan
                 Vector2 aLocal = ScaffoldParamToLocal(cornerT[edgeFrom[e]], lMinX, lMaxX, lMinZ, lMaxZ, perimeter);
                 Vector2 bLocal = ScaffoldParamToLocal(cornerT[edgeTo[e]], lMinX, lMaxX, lMinZ, lMaxZ, perimeter);
                 float edgeDist = Vector2.Distance(aLocal, bLocal);
-                for (float joinDist = HORIZ_LEN; joinDist < edgeDist - 0.05f; joinDist += HORIZ_LEN)
+                for (float joinDist = POLE_SPACING; joinDist < edgeDist - 0.05f; joinDist += POLE_SPACING)
                 {
                     float joinT = cornerT[edgeFrom[e]] + joinDist;
                     if (joinT >= perimeter) joinT -= perimeter;
@@ -2442,22 +2445,40 @@ namespace ValheimFloorPlan
 
             for (int level = 0; level < scaffoldLevels; level++)
             {
-                float levelOffsetY = level * POLE_HEIGHT;
+                float levelOffsetY = level * scaffoldFloorHeight;
+                var occupiedPoleLocals = new List<Vector2>(poleParams.Count + 32);
+                for (int pi = 0; pi < poleParams.Count; pi++)
+                {
+                    occupiedPoleLocals.Add(ScaffoldParamToLocal(poleParams[pi], lMinX, lMaxX, lMinZ, lMaxZ, perimeter));
+                }
+                occupiedPoleLocals.Add(new Vector2(localCenterX, localCenterZ));
 
                 // ── Place vertical poles for this level ──────────────────────
                 foreach (float t in poleParams)
                 {
                     Vector2 local = ScaffoldParamToLocal(t, lMinX, lMaxX, lMinZ, lMaxZ, perimeter);
-                    Vector3 polePos = PieceMap.TransformPlanPoint(origin, local.x, local.y, scaffoldBaseY + POLE_HEIGHT * 0.5f + levelOffsetY, rotationDeg);
+                    Vector3 polePos = PieceMap.TransformPlanPoint(origin, local.x, local.y, scaffoldBaseY + scaffoldFloorHeight * 0.5f + levelOffsetY, rotationDeg);
 
-                    SpawnScaffoldPole(vertPrefab,
+                    placed += SpawnScaffoldColumn(vertPrefab,
                         polePos,
                         Quaternion.Euler(0, rotationDeg, 0),
-                        player);
-                    placed++;
+                        player,
+                        scaffoldFloorHeight,
+                        POLE_SEGMENT_HEIGHT);
                     if (placed % 10 == 0)
                         yield return new WaitForSeconds(PLACE_DELAY);
                 }
+
+                Vector3 centerPolePos = PieceMap.TransformPlanPoint(origin, localCenterX, localCenterZ, scaffoldBaseY + scaffoldFloorHeight * 0.5f + levelOffsetY, rotationDeg);
+                placed += SpawnScaffoldColumn(
+                    vertPrefab,
+                    centerPolePos,
+                    Quaternion.Euler(0, rotationDeg, 0),
+                    player,
+                    scaffoldFloorHeight,
+                    POLE_SEGMENT_HEIGHT);
+                if (placed % 10 == 0)
+                    yield return new WaitForSeconds(PLACE_DELAY);
 
                 // ── Place horizontal perimeter beams for this level ──────────
                 // Corners clockwise: SW(0) → SE(1) → NE(2) → NW(3) → SW(0)
@@ -2465,7 +2486,7 @@ namespace ValheimFloorPlan
                 for (int ci = 0; ci < 4; ci++)
                 {
                     Vector2 cl = ScaffoldParamToLocal(cornerT[ci], lMinX, lMaxX, lMinZ, lMaxZ, perimeter);
-                    cornerTops[ci] = PieceMap.TransformPlanPoint(origin, cl.x, cl.y, scaffoldBaseY + POLE_HEIGHT + levelOffsetY, rotationDeg);
+                    cornerTops[ci] = PieceMap.TransformPlanPoint(origin, cl.x, cl.y, scaffoldBaseY + scaffoldFloorHeight + levelOffsetY, rotationDeg);
                 }
 
                 for (int e = 0; e < 4; e++)
@@ -2479,7 +2500,7 @@ namespace ValheimFloorPlan
 
                     Vector3 dir = new Vector3(edgeDx / edgeDist, 0f, edgeDz / edgeDist);
                     float beamY = (cA.y + cB.y) * 0.5f;
-                    // wood_wall_log_4x0.5 has its 4m length along local X at 0°.
+                    // woodiron_beam has its beam length along local X at 0°.
                     // Unity CW Y-rotation θ maps local X → (cosθ, 0, −sinθ), so θ = atan2(−dz, dx).
                     Quaternion beamRot = Quaternion.Euler(0f, Mathf.Atan2(-dir.z, dir.x) * Mathf.Rad2Deg, 0f);
 
@@ -2510,7 +2531,7 @@ namespace ValheimFloorPlan
                 {
                     placed += PlaceTransverseBeams(
                         poleParams, width, depth, lMinX, lMaxX, lMinZ, lMaxZ, perimeter,
-                        doorJambParams, blockedTransverseLocalZs, doorCenters, origin, rotationDeg,
+                        doorJambParams, blockedTransverseLocalZs, doorCenters, supportFurnitureExclusions, occupiedPoleLocals, origin, rotationDeg,
                         scaffoldBaseY, levelOffsetY, horizPrefab, vertPrefab, player);
                 }
 
@@ -2519,7 +2540,7 @@ namespace ValheimFloorPlan
                 {
                     placed += PlaceLongitudinalBeams(
                         poleParams, width, depth, lMinX, lMaxX, lMinZ, lMaxZ, perimeter,
-                        doorJambParams, blockedLongitudinalLocalXs, doorCenters, origin, rotationDeg,
+                        doorJambParams, blockedLongitudinalLocalXs, doorCenters, supportFurnitureExclusions, occupiedPoleLocals, origin, rotationDeg,
                         scaffoldBaseY, levelOffsetY, horizPrefab, vertPrefab, player);
                 }
 
@@ -2529,7 +2550,7 @@ namespace ValheimFloorPlan
                     placed += PlaceScaffoldLevelFloorDeck(
                         minCol, maxColExclusive, minRow, maxRowExclusive,
                         origin, rotationDeg,
-                        scaffoldBaseY + POLE_HEIGHT + levelOffsetY - FLOOR_DECK_DROP,
+                        scaffoldBaseY + scaffoldFloorHeight + levelOffsetY - FLOOR_DECK_DROP,
                         floor2Prefab, floor1Prefab, roofTopPrefab, isTopmostLevel, player);
                 }
             }
@@ -2537,7 +2558,7 @@ namespace ValheimFloorPlan
             PruneGroundFloorScaffoldVerticals(doorCenters, centerWorld, origin, rotationDeg);
 
             ValheimFloorPlanPlugin.Log.LogInfo(
-                $"[Scaffolding] Placed {placed} roof scaffolding pieces ({poleParams.Count} vertical poles per level @ {POLE_HEIGHT}m each, levels={scaffoldLevels}).");
+                $"[Scaffolding] Placed {placed} roof scaffolding pieces ({poleParams.Count + 1} vertical columns per level @ {scaffoldFloorHeight:F0}m each, levels={scaffoldLevels}).");
         }
 
         private int PlaceScaffoldLevelFloorDeck(
@@ -2583,7 +2604,8 @@ namespace ValheimFloorPlan
         /// </summary>
         private int PlaceTransverseBeams(
             List<float> poleParams, float width, float depth, float lMinX, float lMaxX, float lMinZ, float lMaxZ, float perimeter,
-            List<float> doorJambParams, List<ScaffoldDoorSpan> blockedTransverseLocalZs, List<Vector2> doorCenters, Vector3 origin, float rotationDeg,
+            List<float> doorJambParams, List<ScaffoldDoorSpan> blockedTransverseLocalZs, List<Vector2> doorCenters,
+            List<ScaffoldFurnitureExclusion> supportFurnitureExclusions, List<Vector2> occupiedPoleLocals, Vector3 origin, float rotationDeg,
             float scaffoldBaseY, float levelOffsetY, GameObject horizPrefab, GameObject vertPrefab, Player player)
         {
             int placed = 0;
@@ -2640,7 +2662,7 @@ namespace ValheimFloorPlan
                     westEdge[wi].Local, eastEdge[bestEi].Local,
                     westEdge[wi].Pos, eastEdge[bestEi].Pos,
                     scaffoldBaseY, levelOffsetY,
-                    horizPrefab, vertPrefab, player, doorCenters);
+                    horizPrefab, vertPrefab, player, doorCenters, supportFurnitureExclusions, occupiedPoleLocals);
             }
 
             ValheimFloorPlanPlugin.Log.LogInfo(
@@ -2656,7 +2678,8 @@ namespace ValheimFloorPlan
         /// </summary>
         private int PlaceLongitudinalBeams(
             List<float> poleParams, float width, float depth, float lMinX, float lMaxX, float lMinZ, float lMaxZ, float perimeter,
-            List<float> doorJambParams, List<ScaffoldDoorSpan> blockedLongitudinalLocalXs, List<Vector2> doorCenters, Vector3 origin, float rotationDeg,
+            List<float> doorJambParams, List<ScaffoldDoorSpan> blockedLongitudinalLocalXs, List<Vector2> doorCenters,
+            List<ScaffoldFurnitureExclusion> supportFurnitureExclusions, List<Vector2> occupiedPoleLocals, Vector3 origin, float rotationDeg,
             float scaffoldBaseY, float levelOffsetY, GameObject horizPrefab, GameObject vertPrefab, Player player)
         {
             int placed = 0;
@@ -2713,7 +2736,7 @@ namespace ValheimFloorPlan
                     southEdge[si].Local, northEdge[bestNi].Local,
                     southEdge[si].Pos, northEdge[bestNi].Pos,
                     scaffoldBaseY, levelOffsetY,
-                    horizPrefab, vertPrefab, player, doorCenters);
+                    horizPrefab, vertPrefab, player, doorCenters, supportFurnitureExclusions, occupiedPoleLocals);
             }
 
             ValheimFloorPlanPlugin.Log.LogInfo(
@@ -2726,14 +2749,14 @@ namespace ValheimFloorPlan
             float t, float lMinX, float lMaxX, float lMinZ, float lMaxZ, float perimeter,
             Vector3 origin, float rotationDeg, float scaffoldBaseY, float levelOffsetY)
         {
-            const float POLE_HEIGHT = 4f;
+            float scaffoldFloorHeight = Mathf.Max(2f, ValheimFloorPlanPlugin.ScaffoldingFloorHeight);
 
             Vector2 local = ScaffoldParamToLocal(t, lMinX, lMaxX, lMinZ, lMaxZ, perimeter);
             Vector3 worldPos = PieceMap.TransformPlanPoint(
                 origin,
                 local.x,
                 local.y,
-                scaffoldBaseY + POLE_HEIGHT + levelOffsetY,
+                scaffoldBaseY + scaffoldFloorHeight + levelOffsetY,
                 rotationDeg);
 
             return new ScaffoldPolePoint(t, local, worldPos);
@@ -2742,11 +2765,11 @@ namespace ValheimFloorPlan
         private int PlaceScaffoldBeamSpan(
             Vector2 localA, Vector2 localB, Vector3 pA, Vector3 pB,
             float scaffoldBaseY, float levelOffsetY,
-            GameObject horizPrefab, GameObject vertPrefab, Player player, List<Vector2> doorCenters)
+            GameObject horizPrefab, GameObject vertPrefab, Player player, List<Vector2> doorCenters,
+            List<ScaffoldFurnitureExclusion> supportFurnitureExclusions, List<Vector2> occupiedPoleLocals)
         {
-            const float HORIZ_LEN  = 4f;
+            const float HORIZ_LEN  = 2f;
             const float HORIZ_HALF = HORIZ_LEN * 0.5f;
-            const float POLE_HEIGHT = 4f;
 
             float dx = pB.x - pA.x;
             float dz = pB.z - pA.z;
@@ -2757,24 +2780,6 @@ namespace ValheimFloorPlan
             Vector3 dir = new Vector3(dx / dist, 0f, dz / dist);
             float beamY = (pA.y + pB.y) * 0.5f;
             Quaternion beamRot = Quaternion.Euler(0f, Mathf.Atan2(-dir.z, dir.x) * Mathf.Rad2Deg, 0f);
-
-            // Spawn internal support poles first so newly created beam pieces immediately
-            // evaluate against the full support chain instead of attaching to mid-air joins.
-            for (float supportDist = HORIZ_LEN; supportDist < dist - 0.05f; supportDist += HORIZ_LEN)
-            {
-                Vector3 support = pA + dir * supportDist;
-
-                var supportGo = SpawnScaffoldPole(
-                    vertPrefab,
-                    new Vector3(support.x, scaffoldBaseY + POLE_HEIGHT * 0.5f + levelOffsetY, support.z),
-                    Quaternion.Euler(0f, Mathf.Atan2(-dir.z, dir.x) * Mathf.Rad2Deg, 0f),
-                    player);
-                if (Mathf.Abs(levelOffsetY) <= 0.01f)
-                {
-                    _groundFloorScaffoldVerticals.Add(supportGo);
-                }
-                placed++;
-            }
 
             int nFull = Mathf.FloorToInt(dist / HORIZ_LEN);
             float remainder = dist - nFull * HORIZ_LEN;
@@ -2809,6 +2814,32 @@ namespace ValheimFloorPlan
                 T = t;
                 Local = local;
                 Pos = pos;
+            }
+        }
+
+        private sealed class ScaffoldFurnitureExclusion
+        {
+            public readonly Vector2 Center;
+            public readonly Vector2 Forward;
+            public readonly Vector2 Side;
+            public readonly float ForwardHalfExtent;
+            public readonly float SideHalfExtent;
+            public readonly float FrontClearance;
+
+            public ScaffoldFurnitureExclusion(
+                Vector2 center,
+                Vector2 forward,
+                Vector2 side,
+                float forwardHalfExtent,
+                float sideHalfExtent,
+                float frontClearance)
+            {
+                Center = center;
+                Forward = forward;
+                Side = side;
+                ForwardHalfExtent = forwardHalfExtent;
+                SideHalfExtent = sideHalfExtent;
+                FrontClearance = frontClearance;
             }
         }
 
@@ -2874,6 +2905,90 @@ namespace ValheimFloorPlan
             return false;
         }
 
+        private static bool IsNearAnyPole(Vector2 local, List<Vector2> poleLocals, float minDistance)
+        {
+            float minDistanceSqr = minDistance * minDistance;
+            for (int i = 0; i < poleLocals.Count; i++)
+            {
+                Vector2 delta = local - poleLocals[i];
+                if (delta.sqrMagnitude < minDistanceSqr)
+                    return true;
+            }
+            return false;
+        }
+
+        private static List<ScaffoldFurnitureExclusion> BuildScaffoldFurnitureExclusions(FloorPlan plan)
+        {
+            const float FRONT_CLEARANCE = 4f;
+            const float SIDE_MARGIN = 0.35f;
+            var exclusions = new List<ScaffoldFurnitureExclusion>();
+
+            foreach (var piece in plan.Pieces)
+            {
+                if (piece.Type != "Workbench" && piece.Type != "Bed" && piece.Type != "Hearth")
+                    continue;
+
+                var def = PieceMap.GetDef(piece.Type);
+                if (def == null)
+                    continue;
+
+                int effW = def.EffW(piece.Rotation);
+                int effH = def.EffH(piece.Rotation);
+                Vector2 center = new Vector2(
+                    (piece.Col + effW * 0.5f) * PieceMap.CELL_SIZE,
+                    (piece.Row + effH * 0.5f) * PieceMap.CELL_SIZE);
+                Vector2 forward = GetScaffoldFrontDirection(piece.Rotation);
+                Vector2 side = new Vector2(-forward.y, forward.x);
+                bool forwardAlongX = Mathf.Abs(forward.x) > 0.5f;
+                float forwardHalfExtent = (forwardAlongX ? effW : effH) * 0.5f * PieceMap.CELL_SIZE;
+                float sideHalfExtent = (forwardAlongX ? effH : effW) * 0.5f * PieceMap.CELL_SIZE + SIDE_MARGIN;
+
+                exclusions.Add(new ScaffoldFurnitureExclusion(
+                    center,
+                    forward,
+                    side,
+                    forwardHalfExtent,
+                    sideHalfExtent,
+                    FRONT_CLEARANCE));
+            }
+
+            return exclusions;
+        }
+
+        private static Vector2 GetScaffoldFrontDirection(int rotation)
+        {
+            int normalized = ((rotation % 360) + 360) % 360;
+            switch (normalized)
+            {
+                case 90: return new Vector2(-1f, 0f);
+                case 180: return new Vector2(0f, -1f);
+                case 270: return new Vector2(1f, 0f);
+                default: return new Vector2(0f, 1f);
+            }
+        }
+
+        private static bool IsInsideAnyScaffoldFurnitureExclusion(Vector2 local, List<ScaffoldFurnitureExclusion> exclusions)
+        {
+            for (int i = 0; i < exclusions.Count; i++)
+            {
+                var exclusion = exclusions[i];
+                Vector2 rel = local - exclusion.Center;
+                float forwardDist = Vector2.Dot(rel, exclusion.Forward);
+                float sideDist = Mathf.Abs(Vector2.Dot(rel, exclusion.Side));
+
+                bool insideFootprint = Mathf.Abs(forwardDist) <= exclusion.ForwardHalfExtent &&
+                    sideDist <= exclusion.SideHalfExtent;
+                bool insideFrontBand = forwardDist > exclusion.ForwardHalfExtent &&
+                    forwardDist <= exclusion.ForwardHalfExtent + exclusion.FrontClearance &&
+                    sideDist <= exclusion.SideHalfExtent;
+
+                if (insideFootprint || insideFrontBand)
+                    return true;
+            }
+
+            return false;
+        }
+
         private static bool IsWithinHorizontalRadius(Vector3 position, Vector3 center, float radius)
         {
             float dx = position.x - center.x;
@@ -2895,7 +3010,6 @@ namespace ValheimFloorPlan
         private void PruneGroundFloorScaffoldVerticals(List<Vector2> doorCenters, Vector3 centerWorld, Vector3 origin, float rotationDeg)
         {
             const float DOOR_RADIUS = 4.25f;
-            const float CENTER_RADIUS = 2.5f;
 
             if (_groundFloorScaffoldVerticals.Count == 0)
                 return;
@@ -2921,7 +3035,7 @@ namespace ValheimFloorPlan
                     continue;
                 }
 
-                bool remove = IsWithinHorizontalRadius(poleGo.transform.position, centerWorld, CENTER_RADIUS);
+                bool remove = false;
                 if (!remove)
                 {
                     for (int d = 0; d < worldDoorCenters.Count; d++)
@@ -2949,8 +3063,21 @@ namespace ValheimFloorPlan
             if (removed > 0)
             {
                 ValheimFloorPlanPlugin.Log.LogInfo(
-                    $"[Scaffolding] Pruned {removed} ground-floor vertical poles near doors/center after scaffolding completed.");
+                    $"[Scaffolding] Pruned {removed} ground-floor vertical poles near doors after scaffolding completed.");
             }
+        }
+
+        private int SpawnScaffoldColumn(GameObject prefab, Vector3 center, Quaternion rot, Player player, float columnHeight, float segmentHeight)
+        {
+            int segmentCount = Mathf.Max(1, Mathf.RoundToInt(columnHeight / segmentHeight));
+            float startCenterY = center.y - columnHeight * 0.5f + segmentHeight * 0.5f;
+            for (int i = 0; i < segmentCount; i++)
+            {
+                Vector3 segmentPos = new Vector3(center.x, startCenterY + i * segmentHeight, center.z);
+                SpawnScaffoldPole(prefab, segmentPos, rot, player);
+            }
+
+            return segmentCount;
         }
 
         private GameObject SpawnRegisteredPiece(GameObject prefab, Vector3 pos, Quaternion rot, Player player, bool centerOnRenderedBoundsXZ = false)

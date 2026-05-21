@@ -10,9 +10,12 @@ These are provisional notes for the next release and focus on workstation suppor
 - Fixed left/right mirrored placement issues so rotated walls, doors, and other directional pieces now face the expected way again.
 - Corrected outer-edge wall and doorway offsets so pieces on the left and right perimeter sit on the outside edge of the tile instead of the inside edge.
 - Fixed scaffold-only left/right drift so internal poles and scaffold floor levels now line up with the corrected build transform.
+- Roof scaffolding now uses stronger wood-iron members for perimeter columns and scaffold beams, with each 4m column built from two joined 2m vertical pieces.
+- `ScaffoldingFloorHeight` is now configurable with validated `2`, `4`, or `6` metre level spacing so scaffold decks and stacked wood-iron supports stay aligned.
+- Internal vertical scaffold support is now simplified to a single center support column rather than multiple extra interior poles.
 - Topmost scaffold floor levels now switch to `wood_roof_top` for full deck tiles instead of using floor pieces all the way up.
 - Changed initial preview/build placement to auto-compute the player-to-build-center distance from the actual plan footprint plus the outer terrain-change perimeter. `BuildOriginForwardOffset` is now an optional extra offset rather than the full placement distance.
-- Increased the `ExternalWallHeight` range to allow much taller stacked perimeter walls, up to `12` levels.
+- Increased the `ExternalWallHeight` range to allow much taller stacked perimeter walls, up to `18` levels.
 - Added a config option to disable the welcome post/signage after build completion.
 - Improved workstation placement reliability by centering workstation prefabs within their allocated footprint and hardening the recenter logic for awkward crafting-station prefabs.
 

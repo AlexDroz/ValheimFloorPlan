@@ -32,7 +32,8 @@ On startup (`Awake`), the plugin registers BepInEx configuration entries for fil
 - **`TerrainUseStagedRaise`** (default `false`) — experimental multi-stage raise mode.
 - **`TerrainRaiseStepHeight`** (default `0.5 m`, range `0.15–1.5`) — max vertical raise per stage when staged mode is enabled.
 - **`TerrainMaxRaiseStages`** (default `1`, range `1–16`) — cap on number of raise stages.
-- **`ExternalWallHeight`** (default `1`, range `1–12`) — stacks external `Wall`/`Pillar` pieces to this many levels.
+- **`ExternalWallHeight`** (default `1`, range `1–18`) — stacks external `Wall`/`Pillar` pieces to this many levels.
+- **`ScaffoldingFloorHeight`** (default `4 m`, allowed `2, 4, 6`) — vertical distance between scaffold levels; kept to 2m multiples so stacked wood-iron supports line up correctly.
 - **`WallPillarMaterial`** (`Stone` or `Wood`, default `Stone`) — chooses wall/pillar prefab set.
 - **`BuildOriginForwardOffset`** (default `0 m`, range `0–20`) — extra forward distance added on top of the auto-computed player-to-build-center placement.
 - **`ProgressMessagePosition`** — HUD slot used for progress messages.

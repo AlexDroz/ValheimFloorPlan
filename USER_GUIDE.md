@@ -49,12 +49,13 @@ Section `Terrain`:
 - `TerrainMaxRaiseStages`: Max number of raise stages when staged raise is enabled (default `1`, range `1-16`).
 
 Section `Building`:
-- `ExternalWallHeight`: Stacks external `Wall` and `Pillar` objects to this many levels (default `1`, range `1-12`).
+- `ExternalWallHeight`: Stacks external `Wall` and `Pillar` objects to this many levels (default `1`, range `1-18`).
 - `WallPillarMaterial`: Choose `Stone` or `Wood` for `Wall` and `Pillar` types (default `Stone`).
 
 Section `Scaffolding`:
 - `RoofScaffolding`: Enables scaffold poles and perimeter scaffold beams around the build.
-- `ScaffoldingLevels`: Number of stacked scaffolding levels when `RoofScaffolding` is enabled (default `1`, range `1-3`). Each extra level repeats the same vertical/perimeter/transverse/longitudinal scaffold pattern 4m higher.
+- `ScaffoldingLevels`: Number of stacked scaffolding levels when `RoofScaffolding` is enabled (default `1`, range `1-3`). Each extra level repeats the same scaffold pattern at the configured scaffold floor height above the previous level.
+- `ScaffoldingFloorHeight`: Vertical height in metres between scaffold levels (default `4`, allowed `2`, `4`, `6`). Must be a multiple of 2m so wood-iron support segments stack cleanly.
 - `ScaffoldingFloors`: Builds wood floor decks across each scaffolding level when `RoofScaffolding` is enabled (default `false`).
 - `TransverseScaffoldingBeams`: Adds west-to-east horizontal scaffold beams at each scaffold pole row.
 - `LongitudinalScaffoldingBeams`: Adds south-to-north horizontal scaffold beams at each scaffold pole column.
