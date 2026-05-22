@@ -1841,7 +1841,11 @@ namespace ValheimFloorPlan
             int processed = 0;
             int nextProgressPct = 10;
             int workbenchVariantIndex = 0;
-            int configuredExternalWallHeight = Mathf.Clamp(ValheimFloorPlanPlugin.ExternalWallHeight, 1, 18);
+            int configuredExternalWallHeight = Mathf.Clamp(
+                ValheimFloorPlanPlugin.ExternalWallHeight,
+                1,
+                ValheimFloorPlanPlugin.GetMaxExternalWallHeight(
+                    ValheimFloorPlanPlugin.ScaffoldingLevels));
             bool useWoodStructure = ValheimFloorPlanPlugin.WallPillarMaterial == ValheimFloorPlanPlugin.StructuralMaterial.Wood;
 
             GetPlanPieceBounds(plan,
@@ -2250,11 +2254,20 @@ namespace ValheimFloorPlan
         /// </summary>
         private IEnumerator PlaceRoofScaffolding(FloorPlan plan, Vector3 origin, float rotationDeg)
         {
+            ValheimFloorPlanPlugin.RefreshScaffoldingRules();
+
             const string VERT_PREFAB    = "woodiron_pole";
             const string HORIZ_PREFAB   = "woodiron_beam";
             const string FLOOR2_PREFAB  = "wood_floor";
             const string FLOOR1_PREFAB  = "wood_floor_1x1";
             const string ROOF_TOP_PREFAB = "wood_roof_top";
+            const string TOP_ROOF_LOWER_PREFAB = "wood_roof";
+            const string TOP_SUPPORT_LOWER_PREFAB = "woodiron_beam_26";
+            const string CHIMNEY_WALL2_PREFAB = "wood_wall_half";
+            const string CHIMNEY_WALL1_PREFAB = "wood_wall_1x1";
+            const string CHIMNEY_ROOF_PREFAB = "wood_roof";
+            const float  HEARTH_ACCESS_CLEARANCE = 3f;
+            const float  CHIMNEY_CAP_EXTRA_HEIGHT = 2f;
             const float  POLE_SEGMENT_HEIGHT = 2f;
             const float  POLE_SPACING   = 4f;
             const float  HORIZ_LEN      = 2f;
@@ -2269,6 +2282,11 @@ namespace ValheimFloorPlan
             var floor2Prefab = ZNetScene.instance?.GetPrefab(FLOOR2_PREFAB);
             var floor1Prefab = ZNetScene.instance?.GetPrefab(FLOOR1_PREFAB);
             var roofTopPrefab = ZNetScene.instance?.GetPrefab(ROOF_TOP_PREFAB);
+            var topLowerRoofPrefab = ZNetScene.instance?.GetPrefab(TOP_ROOF_LOWER_PREFAB);
+            var topLowerSupportPrefab = ZNetScene.instance?.GetPrefab(TOP_SUPPORT_LOWER_PREFAB);
+            var chimneyWall2Prefab = ZNetScene.instance?.GetPrefab(CHIMNEY_WALL2_PREFAB);
+            var chimneyWall1Prefab = ZNetScene.instance?.GetPrefab(CHIMNEY_WALL1_PREFAB);
+            var chimneyRoofPrefab = ZNetScene.instance?.GetPrefab(CHIMNEY_ROOF_PREFAB);
             if (vertPrefab == null || horizPrefab == null || floor2Prefab == null || floor1Prefab == null)
             {
                 ValheimFloorPlanPlugin.Log.LogWarning(
@@ -2289,12 +2307,19 @@ namespace ValheimFloorPlan
             float width     = lMaxX - lMinX;
             float depth     = lMaxZ - lMinZ;
             float perimeter = 2f * (width + depth);
-            float scaffoldFloorHeight = Mathf.Max(2f, ValheimFloorPlanPlugin.ScaffoldingFloorHeight);
+            int scaffoldLevels = Mathf.Clamp(ValheimFloorPlanPlugin.ScaffoldingLevels, 1, 3);
+            bool useTransverseScaffoldingBeams = ValheimFloorPlanPlugin.GetEffectiveTransverseScaffoldingBeams(scaffoldLevels);
+            bool useLongitudinalScaffoldingBeams = ValheimFloorPlanPlugin.GetEffectiveLongitudinalScaffoldingBeams(scaffoldLevels);
+            var scaffoldFloorHeights = new float[scaffoldLevels];
+            for (int level = 0; level < scaffoldLevels; level++)
+            {
+                scaffoldFloorHeights[level] = Mathf.Max(2f, ValheimFloorPlanPlugin.GetScaffoldingFloorHeightForLevel(level));
+            }
 
             float scaffoldBaseY = TerrainLeveler.TargetLevelY;
             float localCenterX = (lMinX + lMaxX) * 0.5f;
             float localCenterZ = (lMinZ + lMaxZ) * 0.5f;
-            Vector3 centerWorld = PieceMap.TransformPlanPoint(origin, localCenterX, localCenterZ, scaffoldBaseY + scaffoldFloorHeight * 0.5f, rotationDeg);
+            Vector3 centerWorld = PieceMap.TransformPlanPoint(origin, localCenterX, localCenterZ, scaffoldBaseY + scaffoldFloorHeights[0] * 0.5f, rotationDeg);
 
             // ── Collect perimeter parameters for all poles ────────────────────
             // The perimeter is parameterised as clockwise distance from the SW corner:
@@ -2406,8 +2431,8 @@ namespace ValheimFloorPlan
             ScaffoldDedup(doorJambParams, 0.5f);
             poleParams.Sort();
 
-            int scaffoldLevels = Mathf.Clamp(ValheimFloorPlanPlugin.ScaffoldingLevels, 1, 3);
             var supportFurnitureExclusions = BuildScaffoldFurnitureExclusions(plan);
+            var hearthOpenings = BuildHearthOpenings(plan);
 
             // Add intermediate edge-join poles once to establish full anchor set used by
             // all levels. The same anchor topology is then repeated upward every 4m.
@@ -2442,10 +2467,12 @@ namespace ValheimFloorPlan
             }
 
             int placed = 0;
+            float currentLevelBaseY = scaffoldBaseY;
 
             for (int level = 0; level < scaffoldLevels; level++)
             {
-                float levelOffsetY = level * scaffoldFloorHeight;
+                float scaffoldFloorHeight = scaffoldFloorHeights[level];
+                float levelTopY = currentLevelBaseY + scaffoldFloorHeight;
                 var occupiedPoleLocals = new List<Vector2>(poleParams.Count + 32);
                 for (int pi = 0; pi < poleParams.Count; pi++)
                 {
@@ -2457,7 +2484,7 @@ namespace ValheimFloorPlan
                 foreach (float t in poleParams)
                 {
                     Vector2 local = ScaffoldParamToLocal(t, lMinX, lMaxX, lMinZ, lMaxZ, perimeter);
-                    Vector3 polePos = PieceMap.TransformPlanPoint(origin, local.x, local.y, scaffoldBaseY + scaffoldFloorHeight * 0.5f + levelOffsetY, rotationDeg);
+                    Vector3 polePos = PieceMap.TransformPlanPoint(origin, local.x, local.y, currentLevelBaseY + scaffoldFloorHeight * 0.5f, rotationDeg);
 
                     placed += SpawnScaffoldColumn(vertPrefab,
                         polePos,
@@ -2469,7 +2496,7 @@ namespace ValheimFloorPlan
                         yield return new WaitForSeconds(PLACE_DELAY);
                 }
 
-                Vector3 centerPolePos = PieceMap.TransformPlanPoint(origin, localCenterX, localCenterZ, scaffoldBaseY + scaffoldFloorHeight * 0.5f + levelOffsetY, rotationDeg);
+                    Vector3 centerPolePos = PieceMap.TransformPlanPoint(origin, localCenterX, localCenterZ, currentLevelBaseY + scaffoldFloorHeight * 0.5f, rotationDeg);
                 placed += SpawnScaffoldColumn(
                     vertPrefab,
                     centerPolePos,
@@ -2486,7 +2513,7 @@ namespace ValheimFloorPlan
                 for (int ci = 0; ci < 4; ci++)
                 {
                     Vector2 cl = ScaffoldParamToLocal(cornerT[ci], lMinX, lMaxX, lMinZ, lMaxZ, perimeter);
-                    cornerTops[ci] = PieceMap.TransformPlanPoint(origin, cl.x, cl.y, scaffoldBaseY + scaffoldFloorHeight + levelOffsetY, rotationDeg);
+                    cornerTops[ci] = PieceMap.TransformPlanPoint(origin, cl.x, cl.y, levelTopY, rotationDeg);
                 }
 
                 for (int e = 0; e < 4; e++)
@@ -2527,21 +2554,21 @@ namespace ValheimFloorPlan
                 }
 
                 // ── Place transverse beams (West to East) for this level ─────
-                if (ValheimFloorPlanPlugin.TransverseScaffoldingBeams)
+                if (useTransverseScaffoldingBeams)
                 {
                     placed += PlaceTransverseBeams(
                         poleParams, width, depth, lMinX, lMaxX, lMinZ, lMaxZ, perimeter,
                         doorJambParams, blockedTransverseLocalZs, doorCenters, supportFurnitureExclusions, occupiedPoleLocals, origin, rotationDeg,
-                        scaffoldBaseY, levelOffsetY, horizPrefab, vertPrefab, player);
+                        levelTopY, horizPrefab, vertPrefab, player);
                 }
 
                 // ── Place longitudinal beams (South to North) for this level ─
-                if (ValheimFloorPlanPlugin.LongitudinalScaffoldingBeams)
+                if (useLongitudinalScaffoldingBeams)
                 {
                     placed += PlaceLongitudinalBeams(
                         poleParams, width, depth, lMinX, lMaxX, lMinZ, lMaxZ, perimeter,
                         doorJambParams, blockedLongitudinalLocalXs, doorCenters, supportFurnitureExclusions, occupiedPoleLocals, origin, rotationDeg,
-                        scaffoldBaseY, levelOffsetY, horizPrefab, vertPrefab, player);
+                        levelTopY, horizPrefab, vertPrefab, player);
                 }
 
                 if (ValheimFloorPlanPlugin.ScaffoldingFloors)
@@ -2550,34 +2577,95 @@ namespace ValheimFloorPlan
                     placed += PlaceScaffoldLevelFloorDeck(
                         minCol, maxColExclusive, minRow, maxRowExclusive,
                         origin, rotationDeg,
-                        scaffoldBaseY + scaffoldFloorHeight + levelOffsetY - FLOOR_DECK_DROP,
-                        floor2Prefab, floor1Prefab, roofTopPrefab, isTopmostLevel, player);
+                        levelTopY - FLOOR_DECK_DROP,
+                        floor2Prefab, floor1Prefab, roofTopPrefab,
+                        topLowerRoofPrefab, topLowerSupportPrefab,
+                        isTopmostLevel, hearthOpenings, player);
                 }
+
+                if (hearthOpenings.Count > 0 && chimneyWall2Prefab != null)
+                {
+                    placed += PlaceHearthChimneyLevel(
+                        hearthOpenings,
+                        origin,
+                        rotationDeg,
+                        currentLevelBaseY,
+                        levelTopY,
+                        scaffoldBaseY + HEARTH_ACCESS_CLEARANCE,
+                        chimneyWall2Prefab,
+                        chimneyWall1Prefab,
+                        player);
+                }
+
+                currentLevelBaseY = levelTopY;
+            }
+
+            if (hearthOpenings.Count > 0 && chimneyWall2Prefab != null)
+            {
+                placed += PlaceHearthChimneyTop(
+                    hearthOpenings,
+                    origin,
+                    rotationDeg,
+                    currentLevelBaseY,
+                    currentLevelBaseY + CHIMNEY_CAP_EXTRA_HEIGHT,
+                    chimneyWall2Prefab,
+                    chimneyWall1Prefab,
+                    chimneyRoofPrefab,
+                    player);
             }
 
             PruneGroundFloorScaffoldVerticals(doorCenters, centerWorld, origin, rotationDeg);
 
             ValheimFloorPlanPlugin.Log.LogInfo(
-                $"[Scaffolding] Placed {placed} roof scaffolding pieces ({poleParams.Count + 1} vertical columns per level @ {scaffoldFloorHeight:F0}m each, levels={scaffoldLevels}).");
+                $"[Scaffolding] Placed {placed} roof scaffolding pieces ({poleParams.Count + 1} vertical columns per level across {scaffoldLevels} scaffold levels).");
         }
 
         private int PlaceScaffoldLevelFloorDeck(
             int minCol, int maxColExclusive, int minRow, int maxRowExclusive,
             Vector3 origin, float rotationDeg, float deckY,
-            GameObject floor2Prefab, GameObject floor1Prefab, GameObject? roofTopPrefab, bool useRoofTop,
-            Player player)
+            GameObject floor2Prefab, GameObject floor1Prefab, GameObject? roofTopPrefab,
+            GameObject? topLowerRoofPrefab, GameObject? topLowerSupportPrefab,
+            bool useRoofTop,
+            List<HearthOpening> hearthOpenings, Player player)
         {
+            if (useRoofTop && topLowerRoofPrefab != null)
+            {
+                return PlaceTopScaffoldGableRoof(
+                    minCol,
+                    maxColExclusive,
+                    minRow,
+                    maxRowExclusive,
+                    origin,
+                    rotationDeg,
+                    deckY,
+                    topLowerRoofPrefab,
+                    topLowerSupportPrefab,
+                    hearthOpenings,
+                    player);
+            }
+
             int placed = 0;
             Quaternion deckRot = Quaternion.Euler(0f, rotationDeg, 0f);
 
-            for (int row = minRow; row < maxRowExclusive; )
+            for (int row = minRow; row < maxRowExclusive; row++)
             {
-                int tileDepth = (row + 1 < maxRowExclusive) ? 2 : 1;
-
                 for (int col = minCol; col < maxColExclusive; )
                 {
-                    int tileWidth = (col + 1 < maxColExclusive) ? 2 : 1;
-                    bool useFloor2 = tileWidth == 2 && tileDepth == 2;
+                    if (IsBlockedByHearthOpening(col, row, hearthOpenings))
+                    {
+                        col++;
+                        continue;
+                    }
+
+                    bool useFloor2 =
+                        col + 1 < maxColExclusive &&
+                        row + 1 < maxRowExclusive &&
+                        !IsBlockedByHearthOpening(col + 1, row, hearthOpenings) &&
+                        !IsBlockedByHearthOpening(col, row + 1, hearthOpenings) &&
+                        !IsBlockedByHearthOpening(col + 1, row + 1, hearthOpenings);
+
+                    int tileWidth = useFloor2 ? 2 : 1;
+                    int tileDepth = useFloor2 ? 2 : 1;
                     var prefab = useFloor2
                         ? (useRoofTop && roofTopPrefab != null ? roofTopPrefab : floor2Prefab)
                         : floor1Prefab;
@@ -2591,10 +2679,418 @@ namespace ValheimFloorPlan
                     col += tileWidth;
                 }
 
-                row += tileDepth;
             }
 
             return placed;
+        }
+
+        private int PlaceTopScaffoldGableRoof(
+            int minCol,
+            int maxColExclusive,
+            int minRow,
+            int maxRowExclusive,
+            Vector3 origin,
+            float rotationDeg,
+            float roofBaseY,
+            GameObject roofPrefab,
+            GameObject? supportPrefab,
+            List<HearthOpening> hearthOpenings,
+            Player player)
+        {
+            int placed = 0;
+            bool ridgeRunsAlongX = (maxColExclusive - minCol) >= (maxRowExclusive - minRow);
+            const float GABLE_PITCH_DEGREES = 26f;
+            const float SLOPED_SEGMENT_LENGTH = 2f;
+            float pitchRadians = GABLE_PITCH_DEGREES * Mathf.Deg2Rad;
+
+            if (ridgeRunsAlongX)
+            {
+                float centerZ = (minRow + maxRowExclusive) * 0.5f;
+                float southEdgeZ = minRow;
+                float northEdgeZ = maxRowExclusive;
+                float halfSpan = Mathf.Abs(centerZ - southEdgeZ);
+                float ridgeY = roofBaseY + Mathf.Tan(pitchRadians) * halfSpan;
+
+                for (int col = minCol; col < maxColExclusive; col += 2)
+                {
+                    int stripWidth = Mathf.Min(2, maxColExclusive - col);
+                    float localX = col + stripWidth * 0.5f;
+
+                    placed += PlaceSlopedRoofRun(
+                        new Vector2(localX, southEdgeZ),
+                        new Vector2(localX, centerZ),
+                        roofBaseY,
+                        ridgeY,
+                        180f,
+                        SLOPED_SEGMENT_LENGTH,
+                        supportPrefab,
+                        roofPrefab,
+                        origin,
+                        rotationDeg,
+                        hearthOpenings,
+                        player);
+                    placed += PlaceSlopedRoofRun(
+                        new Vector2(localX, northEdgeZ),
+                        new Vector2(localX, centerZ),
+                        roofBaseY,
+                        ridgeY,
+                        0f,
+                        SLOPED_SEGMENT_LENGTH,
+                        supportPrefab,
+                        roofPrefab,
+                        origin,
+                        rotationDeg,
+                        hearthOpenings,
+                        player);
+                }
+            }
+            else
+            {
+                float centerX = (minCol + maxColExclusive) * 0.5f;
+                float westEdgeX = minCol;
+                float eastEdgeX = maxColExclusive;
+                float halfSpan = Mathf.Abs(centerX - westEdgeX);
+                float ridgeY = roofBaseY + Mathf.Tan(pitchRadians) * halfSpan;
+
+                for (int row = minRow; row < maxRowExclusive; row += 2)
+                {
+                    int stripDepth = Mathf.Min(2, maxRowExclusive - row);
+                    float localZ = row + stripDepth * 0.5f;
+
+                    placed += PlaceSlopedRoofRun(
+                        new Vector2(westEdgeX, localZ),
+                        new Vector2(centerX, localZ),
+                        roofBaseY,
+                        ridgeY,
+                        270f,
+                        SLOPED_SEGMENT_LENGTH,
+                        supportPrefab,
+                        roofPrefab,
+                        origin,
+                        rotationDeg,
+                        hearthOpenings,
+                        player);
+                    placed += PlaceSlopedRoofRun(
+                        new Vector2(eastEdgeX, localZ),
+                        new Vector2(centerX, localZ),
+                        roofBaseY,
+                        ridgeY,
+                        90f,
+                        SLOPED_SEGMENT_LENGTH,
+                        supportPrefab,
+                        roofPrefab,
+                        origin,
+                        rotationDeg,
+                        hearthOpenings,
+                        player);
+                }
+            }
+
+            return placed;
+        }
+
+        private int PlaceSlopedRoofRun(
+            Vector2 startLocal,
+            Vector2 ridgeLocal,
+            float startY,
+            float ridgeY,
+            float localYaw,
+            float segmentLength,
+            GameObject? supportPrefab,
+            GameObject roofPrefab,
+            Vector3 origin,
+            float rotationDeg,
+            List<HearthOpening> hearthOpenings,
+            Player player)
+        {
+            const float ROOF_SUPPORT_VERTICAL_OFFSET = -0.08f;
+            const float ROOF_SUPPORT_INWARD_OFFSET = 0.12f;
+
+            Vector2 delta = ridgeLocal - startLocal;
+            float horizontalLength = delta.magnitude;
+            if (horizontalLength < 0.01f)
+                return 0;
+
+            float verticalRise = ridgeY - startY;
+            float slopeLength = Mathf.Sqrt(horizontalLength * horizontalLength + verticalRise * verticalRise);
+            int segmentCount = Mathf.Max(1, Mathf.CeilToInt(slopeLength / segmentLength));
+            int placed = 0;
+
+            for (int segment = 0; segment < segmentCount; segment++)
+            {
+                float t = (segment + 0.5f) / segmentCount;
+                Vector2 local = Vector2.Lerp(startLocal, ridgeLocal, t);
+                float localY = Mathf.Lerp(startY, ridgeY, t);
+                Vector2 inwardDir = delta.normalized;
+                Vector2 roofLocal = local + inwardDir * ROOF_SUPPORT_INWARD_OFFSET;
+                float roofY = localY + ROOF_SUPPORT_VERTICAL_OFFSET;
+
+                placed += PlaceTopSupportPieceIfClear(local.x, local.y, localY, localYaw, origin, rotationDeg, supportPrefab, hearthOpenings, player);
+                placed += PlaceTopRoofPieceIfClear(roofLocal.x, roofLocal.y, roofY, localYaw, origin, rotationDeg, roofPrefab, hearthOpenings, player);
+            }
+
+            return placed;
+        }
+
+        private int PlaceTopRoofPieceIfClear(
+            float localX,
+            float localZ,
+            float localY,
+            float localYaw,
+            Vector3 origin,
+            float rotationDeg,
+            GameObject? prefab,
+            List<HearthOpening> hearthOpenings,
+            Player player)
+        {
+            if (prefab == null || IsInsideAnyHearthOpening(localX, localZ, hearthOpenings))
+                return 0;
+
+            return PlaceChimneyRoofPiece(localX, localZ, localY, localYaw, origin, rotationDeg, prefab, player);
+        }
+
+        private int PlaceTopSupportPieceIfClear(
+            float localX,
+            float localZ,
+            float localY,
+            float localYaw,
+            Vector3 origin,
+            float rotationDeg,
+            GameObject? prefab,
+            List<HearthOpening> hearthOpenings,
+            Player player)
+        {
+            if (prefab == null || IsInsideAnyHearthOpening(localX, localZ, hearthOpenings))
+                return 0;
+
+            return PlaceChimneyRoofPiece(localX, localZ, localY, localYaw + 270f, origin, rotationDeg, prefab, player);
+        }
+
+        private int PlaceHearthChimneyLevel(
+            List<HearthOpening> hearthOpenings,
+            Vector3 origin,
+            float rotationDeg,
+            float levelBaseY,
+            float levelTopY,
+            float chimneyStartY,
+            GameObject wall2Prefab,
+            GameObject? wall1Prefab,
+            Player player)
+        {
+            int placed = 0;
+            float enclosedBaseY = Mathf.Max(levelBaseY, chimneyStartY);
+            if (enclosedBaseY >= levelTopY - 0.01f)
+                return 0;
+
+            int wallLayers = Mathf.Max(1, Mathf.RoundToInt(levelTopY - enclosedBaseY));
+
+            for (int i = 0; i < hearthOpenings.Count; i++)
+            {
+                var opening = hearthOpenings[i];
+                for (int layer = 0; layer < wallLayers; layer++)
+                {
+                    float wallY = enclosedBaseY + 0.5f + layer;
+                    placed += PlaceChimneyWallRun(opening.MinCol, opening.Width, opening.MinRow, true, wallY, origin, rotationDeg, wall2Prefab, wall1Prefab, player);
+                    placed += PlaceChimneyWallRun(opening.MinCol, opening.Width, opening.MaxRowExclusive, true, wallY, origin, rotationDeg, wall2Prefab, wall1Prefab, player);
+                    placed += PlaceChimneyWallRun(opening.MinRow, opening.Height, opening.MinCol, false, wallY, origin, rotationDeg, wall2Prefab, wall1Prefab, player);
+                    placed += PlaceChimneyWallRun(opening.MinRow, opening.Height, opening.MaxColExclusive, false, wallY, origin, rotationDeg, wall2Prefab, wall1Prefab, player);
+                }
+            }
+
+            return placed;
+        }
+
+        private int PlaceChimneyWallRun(
+            int startCell,
+            int spanCells,
+            int boundaryCell,
+            bool alongX,
+            float wallY,
+            Vector3 origin,
+            float rotationDeg,
+            GameObject wall2Prefab,
+            GameObject? wall1Prefab,
+            Player player)
+        {
+            int placed = 0;
+            int consumed = 0;
+
+            while (consumed < spanCells)
+            {
+                bool useOneMeterPiece = spanCells - consumed == 1 && wall1Prefab != null;
+                int desiredSpan = useOneMeterPiece ? 1 : Mathf.Min(2, spanCells - consumed);
+                float centerPrimary = startCell + consumed + desiredSpan * 0.5f;
+                GameObject prefab = useOneMeterPiece ? wall1Prefab! : wall2Prefab;
+                float localX = alongX ? centerPrimary : boundaryCell;
+                float localZ = alongX ? boundaryCell : centerPrimary;
+                float localYaw = alongX ? 0f : 90f;
+                Vector3 wallPos = PieceMap.TransformPlanPoint(origin, localX, localZ, wallY, rotationDeg);
+                Quaternion wallRot = Quaternion.Euler(0f, PieceMap.TransformLocalYaw(localYaw, rotationDeg), 0f);
+
+                SpawnRegisteredPiece(prefab, wallPos, wallRot, player);
+                placed++;
+                consumed += desiredSpan;
+            }
+
+            return placed;
+        }
+
+        private int PlaceHearthChimneyTop(
+            List<HearthOpening> hearthOpenings,
+            Vector3 origin,
+            float rotationDeg,
+            float chimneyBaseY,
+            float chimneyTopY,
+            GameObject wall2Prefab,
+            GameObject? wall1Prefab,
+            GameObject? roofPrefab,
+            Player player)
+        {
+            int placed = 0;
+            int wallLayers = Mathf.Max(1, Mathf.RoundToInt(chimneyTopY - chimneyBaseY));
+
+            for (int i = 0; i < hearthOpenings.Count; i++)
+            {
+                var opening = hearthOpenings[i];
+                bool closeWestEastSides = opening.Width >= opening.Height;
+
+                for (int layer = 0; layer < wallLayers; layer++)
+                {
+                    float wallY = chimneyBaseY + 0.5f + layer;
+                    if (closeWestEastSides)
+                    {
+                        placed += PlaceChimneyWallRun(opening.MinRow, opening.Height, opening.MinCol, false, wallY, origin, rotationDeg, wall2Prefab, wall1Prefab, player);
+                        placed += PlaceChimneyWallRun(opening.MinRow, opening.Height, opening.MaxColExclusive, false, wallY, origin, rotationDeg, wall2Prefab, wall1Prefab, player);
+                    }
+                    else
+                    {
+                        placed += PlaceChimneyWallRun(opening.MinCol, opening.Width, opening.MinRow, true, wallY, origin, rotationDeg, wall2Prefab, wall1Prefab, player);
+                        placed += PlaceChimneyWallRun(opening.MinCol, opening.Width, opening.MaxRowExclusive, true, wallY, origin, rotationDeg, wall2Prefab, wall1Prefab, player);
+                    }
+                }
+
+                placed += PlaceHearthChimneyRoofCap(
+                    opening,
+                    closeWestEastSides,
+                    origin,
+                    rotationDeg,
+                    chimneyTopY,
+                    roofPrefab,
+                    player);
+            }
+
+            return placed;
+        }
+
+        private int PlaceHearthChimneyRoofCap(
+            HearthOpening opening,
+            bool closeWestEastSides,
+            Vector3 origin,
+            float rotationDeg,
+            float roofBaseY,
+            GameObject? roofPrefab,
+            Player player)
+        {
+            int placed = 0;
+
+            if (roofPrefab != null)
+            {
+                if (closeWestEastSides)
+                {
+                    float westRoofX = opening.MinCol + 1f;
+                    float eastRoofX = opening.MaxColExclusive - 1f;
+                    for (int row = opening.MinRow; row < opening.MaxRowExclusive; row += 2)
+                    {
+                        int stripDepth = Mathf.Min(2, opening.MaxRowExclusive - row);
+                        float localZ = row + stripDepth * 0.5f;
+
+                        placed += PlaceChimneyRoofPiece(westRoofX, localZ, roofBaseY, 270f, origin, rotationDeg, roofPrefab, player);
+                        placed += PlaceChimneyRoofPiece(eastRoofX, localZ, roofBaseY, 90f, origin, rotationDeg, roofPrefab, player);
+                    }
+                }
+                else
+                {
+                    float southRoofZ = opening.MinRow + 1f;
+                    float northRoofZ = opening.MaxRowExclusive - 1f;
+                    for (int col = opening.MinCol; col < opening.MaxColExclusive; col += 2)
+                    {
+                        int stripWidth = Mathf.Min(2, opening.MaxColExclusive - col);
+                        float localX = col + stripWidth * 0.5f;
+
+                        placed += PlaceChimneyRoofPiece(localX, southRoofZ, roofBaseY, 180f, origin, rotationDeg, roofPrefab, player);
+                        placed += PlaceChimneyRoofPiece(localX, northRoofZ, roofBaseY, 0f, origin, rotationDeg, roofPrefab, player);
+                    }
+                }
+            }
+
+            return placed;
+        }
+
+        private int PlaceChimneyRoofPiece(
+            float localX,
+            float localZ,
+            float roofY,
+            float localYaw,
+            Vector3 origin,
+            float rotationDeg,
+            GameObject roofPrefab,
+            Player player)
+        {
+            Vector3 roofPos = PieceMap.TransformPlanPoint(origin, localX, localZ, roofY, rotationDeg);
+            Quaternion roofRot = Quaternion.Euler(0f, PieceMap.TransformLocalYaw(localYaw, rotationDeg), 0f);
+            SpawnRegisteredPiece(roofPrefab, roofPos, roofRot, player);
+            return 1;
+        }
+
+        private static List<HearthOpening> BuildHearthOpenings(FloorPlan plan)
+        {
+            var openings = new List<HearthOpening>();
+
+            foreach (var piece in plan.Pieces)
+            {
+                if (piece.Type != "Hearth")
+                    continue;
+
+                var def = PieceMap.GetDef(piece.Type);
+                if (def == null)
+                    continue;
+
+                int effW = def.EffW(piece.Rotation);
+                int effH = def.EffH(piece.Rotation);
+                openings.Add(new HearthOpening(
+                    piece.Col,
+                    piece.Row,
+                    piece.Col + effW,
+                    piece.Row + effH));
+            }
+
+            return openings;
+        }
+
+        private static bool IsBlockedByHearthOpening(int col, int row, List<HearthOpening> hearthOpenings)
+        {
+            for (int i = 0; i < hearthOpenings.Count; i++)
+            {
+                var opening = hearthOpenings[i];
+                if (col >= opening.MinCol && col < opening.MaxColExclusive &&
+                    row >= opening.MinRow && row < opening.MaxRowExclusive)
+                    return true;
+            }
+
+            return false;
+        }
+
+        private static bool IsInsideAnyHearthOpening(float localX, float localZ, List<HearthOpening> hearthOpenings)
+        {
+            for (int i = 0; i < hearthOpenings.Count; i++)
+            {
+                var opening = hearthOpenings[i];
+                if (localX >= opening.MinCol && localX <= opening.MaxColExclusive &&
+                    localZ >= opening.MinRow && localZ <= opening.MaxRowExclusive)
+                    return true;
+            }
+
+            return false;
         }
 
         /// <summary>
@@ -2606,7 +3102,7 @@ namespace ValheimFloorPlan
             List<float> poleParams, float width, float depth, float lMinX, float lMaxX, float lMinZ, float lMaxZ, float perimeter,
             List<float> doorJambParams, List<ScaffoldDoorSpan> blockedTransverseLocalZs, List<Vector2> doorCenters,
             List<ScaffoldFurnitureExclusion> supportFurnitureExclusions, List<Vector2> occupiedPoleLocals, Vector3 origin, float rotationDeg,
-            float scaffoldBaseY, float levelOffsetY, GameObject horizPrefab, GameObject vertPrefab, Player player)
+            float levelTopY, GameObject horizPrefab, GameObject vertPrefab, Player player)
         {
             int placed = 0;
 
@@ -2624,13 +3120,13 @@ namespace ValheimFloorPlan
 
                 if (t > width && t < width + depth)
                 {
-                    var point = BuildScaffoldPolePoint(t, lMinX, lMaxX, lMinZ, lMaxZ, perimeter, origin, rotationDeg, scaffoldBaseY, levelOffsetY);
+                    var point = BuildScaffoldPolePoint(t, lMinX, lMaxX, lMinZ, lMaxZ, perimeter, origin, rotationDeg, levelTopY);
                     if (!IsWithinAnyDoorSpan(point.Local.y, blockedTransverseLocalZs, 0.25f))
                         eastEdge.Add(point);
                 }
                 else if (t > 2f * width + depth && t < perimeter)
                 {
-                    var point = BuildScaffoldPolePoint(t, lMinX, lMaxX, lMinZ, lMaxZ, perimeter, origin, rotationDeg, scaffoldBaseY, levelOffsetY);
+                    var point = BuildScaffoldPolePoint(t, lMinX, lMaxX, lMinZ, lMaxZ, perimeter, origin, rotationDeg, levelTopY);
                     if (!IsWithinAnyDoorSpan(point.Local.y, blockedTransverseLocalZs, 0.25f))
                         westEdge.Add(point);
                 }
@@ -2661,7 +3157,6 @@ namespace ValheimFloorPlan
                 placed += PlaceScaffoldBeamSpan(
                     westEdge[wi].Local, eastEdge[bestEi].Local,
                     westEdge[wi].Pos, eastEdge[bestEi].Pos,
-                    scaffoldBaseY, levelOffsetY,
                     horizPrefab, vertPrefab, player, doorCenters, supportFurnitureExclusions, occupiedPoleLocals);
             }
 
@@ -2680,7 +3175,7 @@ namespace ValheimFloorPlan
             List<float> poleParams, float width, float depth, float lMinX, float lMaxX, float lMinZ, float lMaxZ, float perimeter,
             List<float> doorJambParams, List<ScaffoldDoorSpan> blockedLongitudinalLocalXs, List<Vector2> doorCenters,
             List<ScaffoldFurnitureExclusion> supportFurnitureExclusions, List<Vector2> occupiedPoleLocals, Vector3 origin, float rotationDeg,
-            float scaffoldBaseY, float levelOffsetY, GameObject horizPrefab, GameObject vertPrefab, Player player)
+            float levelTopY, GameObject horizPrefab, GameObject vertPrefab, Player player)
         {
             int placed = 0;
 
@@ -2698,13 +3193,13 @@ namespace ValheimFloorPlan
 
                 if (t > 0f && t < width)
                 {
-                    var point = BuildScaffoldPolePoint(t, lMinX, lMaxX, lMinZ, lMaxZ, perimeter, origin, rotationDeg, scaffoldBaseY, levelOffsetY);
+                    var point = BuildScaffoldPolePoint(t, lMinX, lMaxX, lMinZ, lMaxZ, perimeter, origin, rotationDeg, levelTopY);
                     if (!IsWithinAnyDoorSpan(point.Local.x, blockedLongitudinalLocalXs, 0.25f))
                         southEdge.Add(point);
                 }
                 else if (t > width + depth && t < 2f * width + depth)
                 {
-                    var point = BuildScaffoldPolePoint(t, lMinX, lMaxX, lMinZ, lMaxZ, perimeter, origin, rotationDeg, scaffoldBaseY, levelOffsetY);
+                    var point = BuildScaffoldPolePoint(t, lMinX, lMaxX, lMinZ, lMaxZ, perimeter, origin, rotationDeg, levelTopY);
                     if (!IsWithinAnyDoorSpan(point.Local.x, blockedLongitudinalLocalXs, 0.25f))
                         northEdge.Add(point);
                 }
@@ -2735,7 +3230,6 @@ namespace ValheimFloorPlan
                 placed += PlaceScaffoldBeamSpan(
                     southEdge[si].Local, northEdge[bestNi].Local,
                     southEdge[si].Pos, northEdge[bestNi].Pos,
-                    scaffoldBaseY, levelOffsetY,
                     horizPrefab, vertPrefab, player, doorCenters, supportFurnitureExclusions, occupiedPoleLocals);
             }
 
@@ -2747,16 +3241,14 @@ namespace ValheimFloorPlan
 
         private ScaffoldPolePoint BuildScaffoldPolePoint(
             float t, float lMinX, float lMaxX, float lMinZ, float lMaxZ, float perimeter,
-            Vector3 origin, float rotationDeg, float scaffoldBaseY, float levelOffsetY)
+            Vector3 origin, float rotationDeg, float levelTopY)
         {
-            float scaffoldFloorHeight = Mathf.Max(2f, ValheimFloorPlanPlugin.ScaffoldingFloorHeight);
-
             Vector2 local = ScaffoldParamToLocal(t, lMinX, lMaxX, lMinZ, lMaxZ, perimeter);
             Vector3 worldPos = PieceMap.TransformPlanPoint(
                 origin,
                 local.x,
                 local.y,
-                scaffoldBaseY + scaffoldFloorHeight + levelOffsetY,
+                levelTopY,
                 rotationDeg);
 
             return new ScaffoldPolePoint(t, local, worldPos);
@@ -2764,7 +3256,6 @@ namespace ValheimFloorPlan
 
         private int PlaceScaffoldBeamSpan(
             Vector2 localA, Vector2 localB, Vector3 pA, Vector3 pB,
-            float scaffoldBaseY, float levelOffsetY,
             GameObject horizPrefab, GameObject vertPrefab, Player player, List<Vector2> doorCenters,
             List<ScaffoldFurnitureExclusion> supportFurnitureExclusions, List<Vector2> occupiedPoleLocals)
         {
@@ -2852,6 +3343,25 @@ namespace ValheimFloorPlan
             {
                 Min = min;
                 Max = max;
+            }
+        }
+
+        private sealed class HearthOpening
+        {
+            public readonly int MinCol;
+            public readonly int MinRow;
+            public readonly int MaxColExclusive;
+            public readonly int MaxRowExclusive;
+
+            public int Width => MaxColExclusive - MinCol;
+            public int Height => MaxRowExclusive - MinRow;
+
+            public HearthOpening(int minCol, int minRow, int maxColExclusive, int maxRowExclusive)
+            {
+                MinCol = minCol;
+                MinRow = minRow;
+                MaxColExclusive = maxColExclusive;
+                MaxRowExclusive = maxRowExclusive;
             }
         }
 

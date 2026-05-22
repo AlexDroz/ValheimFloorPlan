@@ -35,6 +35,8 @@ namespace ValheimFloorPlan
         internal static bool RoofScaffolding { get; private set; } = false;
         internal static int ScaffoldingLevels { get; private set; } = 1;
         internal static int ScaffoldingFloorHeight { get; private set; } = 4;
+        internal static int ScaffoldingFloorHeight2 { get; private set; } = 4;
+        internal static int ScaffoldingFloorHeight3 { get; private set; } = 4;
         internal static bool ScaffoldingFloors { get; private set; } = false;
         internal static bool TransverseScaffoldingBeams { get; private set; } = false;
         internal static bool LongitudinalScaffoldingBeams { get; private set; } = false;
@@ -75,6 +77,8 @@ namespace ValheimFloorPlan
         private ConfigEntry<bool> _roofScaffolding = null!;
         private ConfigEntry<int> _scaffoldingLevels = null!;
         private ConfigEntry<int> _scaffoldingFloorHeight = null!;
+        private ConfigEntry<int> _scaffoldingFloorHeight2 = null!;
+        private ConfigEntry<int> _scaffoldingFloorHeight3 = null!;
         private ConfigEntry<bool> _scaffoldingFloors = null!;
         private ConfigEntry<bool> _transverseScaffoldingBeams = null!;
         private ConfigEntry<bool> _longitudinalScaffoldingBeams = null!;
@@ -94,6 +98,7 @@ namespace ValheimFloorPlan
         private ConfigEntry<KeyCode> _previewRotateRightKey = null!;
         private ConfigEntry<KeyCode> _previewCancelKey = null!;
         private ConfigEntry<KeyCode> _previewFineAdjustKey = null!;
+        private bool _applyingScaffoldingRules;
 
         private void Awake()
         {
@@ -135,116 +140,44 @@ namespace ValheimFloorPlan
                 WarningMessageType = ParseProgressMessageType(_warningMessagePosition.Value);
             WarningMessageType = ParseProgressMessageType(_warningMessagePosition.Value);
 
-            _terrainLevelPasses = Config.Bind(
-                "Terrain", "TerrainLevelPasses", 2,
-                new ConfigDescription(
-                    "Number of terrain leveling passes to run before spike cleanup. Lower is faster; higher can smooth stubborn areas.",
-                    new AcceptableValueRange<int>(1, 5)));
-            _terrainLevelPasses.SettingChanged += (_, _) =>
-                TerrainLevelPasses = Mathf.Clamp(_terrainLevelPasses.Value, 1, 5);
-            TerrainLevelPasses = Mathf.Clamp(_terrainLevelPasses.Value, 1, 5);
-
-            _terrainSpikeCleanupPasses = Config.Bind(
-                "Terrain", "TerrainSpikeCleanupPasses", 2,
-                new ConfigDescription(
-                    "Number of spike cleanup passes after leveling. Lower is faster; higher can reduce edge peaks on rough terrain.",
-                    new AcceptableValueRange<int>(1, 5)));
-            _terrainSpikeCleanupPasses.SettingChanged += (_, _) =>
-                TerrainSpikeCleanupPasses = Mathf.Clamp(_terrainSpikeCleanupPasses.Value, 1, 5);
-            TerrainSpikeCleanupPasses = Mathf.Clamp(_terrainSpikeCleanupPasses.Value, 1, 5);
-
-            _terrainStampRadius = Config.Bind(
-                "Terrain", "TerrainStampRadius", 3.0f,
-                new ConfigDescription(
-                    "Radius of each terrain leveling disc stamp in metres. Controls how wide the green preview border is and how far terrain is affected beyond the build pad edge. Larger = smoother blending but wider terrain disturbance; smaller = tighter edge but may leave small gaps.",
-                    new AcceptableValueRange<float>(3.0f, 6.0f)));
-            _terrainStampRadius.SettingChanged += (_, _) =>
-                TerrainStampRadius = Mathf.Clamp(_terrainStampRadius.Value, 3.0f, 6.0f);
-            TerrainStampRadius = Mathf.Clamp(_terrainStampRadius.Value, 3.0f, 6.0f);
-
-            _terrainHighPointDelta = Config.Bind(
-                "Terrain", "TerrainHighPointDelta", 0.0f,
-                new ConfigDescription(
-                    "Extra height in metres added to the sampled highest point for the terrain leveling target. Final target is HighestPoint + Delta.",
-                    new AcceptableValueRange<float>(0.0f, 4.0f)));
-            _terrainHighPointDelta.SettingChanged += (_, _) =>
-                TerrainHighPointDelta = Mathf.Clamp(_terrainHighPointDelta.Value, 0.0f, 4.0f);
-            TerrainHighPointDelta = Mathf.Clamp(_terrainHighPointDelta.Value, 0.0f, 4.0f);
-
-            _terrainUseStagedRaise = Config.Bind(
-                "Terrain", "TerrainUseStagedRaise", false,
-                "When enabled, leveling raises terrain in multiple vertical stages instead of a single full-height jump. Experimental: may help on some slopes but can worsen spikes on irregular edges.");
-            _terrainUseStagedRaise.SettingChanged += (_, _) =>
-                TerrainUseStagedRaise = _terrainUseStagedRaise.Value;
-            TerrainUseStagedRaise = _terrainUseStagedRaise.Value;
-
-            _terrainRaiseStepHeight = Config.Bind(
-                "Terrain", "TerrainRaiseStepHeight", 0.5f,
-                new ConfigDescription(
-                    "Maximum vertical raise per stage in metres when TerrainUseStagedRaise is enabled. Smaller values create more stages and gentler terrain transitions.",
-                    new AcceptableValueRange<float>(0.15f, 1.5f)));
-            _terrainRaiseStepHeight.SettingChanged += (_, _) =>
-                TerrainRaiseStepHeight = Mathf.Clamp(_terrainRaiseStepHeight.Value, 0.15f, 1.5f);
-            TerrainRaiseStepHeight = Mathf.Clamp(_terrainRaiseStepHeight.Value, 0.15f, 1.5f);
-
-            _terrainMaxRaiseStages = Config.Bind(
-                "Terrain", "TerrainMaxRaiseStages", 1,
-                new ConfigDescription(
-                    "Upper limit on the number of vertical raise stages when TerrainUseStagedRaise is enabled.",
-                    new AcceptableValueRange<int>(1, 16)));
-            _terrainMaxRaiseStages.SettingChanged += (_, _) =>
-                TerrainMaxRaiseStages = Mathf.Clamp(_terrainMaxRaiseStages.Value, 1, 16);
-            TerrainMaxRaiseStages = Mathf.Clamp(_terrainMaxRaiseStages.Value, 1, 16);
-
-            _terrainSkipSatisfiedCenterStamps = Config.Bind(
-                "Terrain", "TerrainSkipSatisfiedCenterStamps", true,
-                "When enabled, center leveling stamps are skipped if sampled terrain is already at/above target. Disable for exact legacy behavior (always stamp every center point each pass).");
-            _terrainSkipSatisfiedCenterStamps.SettingChanged += (_, _) =>
-                TerrainSkipSatisfiedCenterStamps = _terrainSkipSatisfiedCenterStamps.Value;
-            TerrainSkipSatisfiedCenterStamps = _terrainSkipSatisfiedCenterStamps.Value;
-
-            _externalWallHeight = Config.Bind(
-                "Building", "ExternalWallHeight", 1,
-                new ConfigDescription(
-                    "How many levels high external Wall/Pillar pieces should be stacked.",
-                    new AcceptableValueRange<int>(1, 18)));
-            _externalWallHeight.SettingChanged += (_, _) =>
-                ExternalWallHeight = Mathf.Clamp(_externalWallHeight.Value, 1, 18);
-            ExternalWallHeight = Mathf.Clamp(_externalWallHeight.Value, 1, 18);
-
-            _wallPillarMaterial = Config.Bind(
-                "Building", "WallPillarMaterial", "Stone",
-                new ConfigDescription(
-                    "Material used for Wall and Pillar types. Allowed: Stone, Wood.",
-                    new AcceptableValueList<string>("Stone", "Wood")));
-            _wallPillarMaterial.SettingChanged += (_, _) =>
-                WallPillarMaterial = ParseStructuralMaterial(_wallPillarMaterial.Value);
-            WallPillarMaterial = ParseStructuralMaterial(_wallPillarMaterial.Value);
-
-            _roofScaffolding = Config.Bind(
-                "Scaffolding", "RoofScaffolding", false,
-                "When enabled, places a ring of vertical 4m log poles at each corner, adjacent to each door, and at midpoints where spacing exceeds 8m, then connects their tops with horizontal 4m log poles forming a rectangular scaffold frame.");
-            _roofScaffolding.SettingChanged += (_, _) => RoofScaffolding = _roofScaffolding.Value;
-            RoofScaffolding = _roofScaffolding.Value;
-
             _scaffoldingLevels = Config.Bind(
                 "Scaffolding", "ScaffoldingLevels", 1,
                 new ConfigDescription(
                     "How many stacked 4m scaffolding levels to build when RoofScaffolding is enabled. 1 builds only the ground level. Higher values repeat the same scaffold pattern every +4m, up to 3 levels to stay within core-wood height limits.",
                     new AcceptableValueRange<int>(1, 3)));
-            _scaffoldingLevels.SettingChanged += (_, _) =>
-                ScaffoldingLevels = Mathf.Clamp(_scaffoldingLevels.Value, 1, 3);
+            _scaffoldingLevels.SettingChanged += (_, _) => ApplyScaffoldingRules();
             ScaffoldingLevels = Mathf.Clamp(_scaffoldingLevels.Value, 1, 3);
 
             var validScaffoldHeights = new AcceptableValueList<int>(2, 4, 6);
             _scaffoldingFloorHeight = Config.Bind(
                 "Scaffolding", "ScaffoldingFloorHeight", 4,
                 new ConfigDescription(
-                    "Vertical height in metres between scaffold levels. Must be a multiple of 2m so stacked wood-iron support segments line up correctly.",
+                    "Vertical height in metres for the first scaffold level. Must be a multiple of 2m so stacked wood-iron support segments line up correctly.",
                     validScaffoldHeights));
-            _scaffoldingFloorHeight.SettingChanged += (_, _) =>
-                ScaffoldingFloorHeight = _scaffoldingFloorHeight.Value;
+            _scaffoldingFloorHeight.SettingChanged += (_, _) => ApplyScaffoldingRules();
             ScaffoldingFloorHeight = _scaffoldingFloorHeight.Value;
+
+            _scaffoldingFloorHeight2 = Config.Bind(
+                "Scaffolding", "ScaffoldingFloorHeight#2", 4,
+                new ConfigDescription(
+                    "Vertical height in metres for the second scaffold level. Used when ScaffoldingLevels is 2 or 3.",
+                    validScaffoldHeights));
+            _scaffoldingFloorHeight2.SettingChanged += (_, _) => ApplyScaffoldingRules();
+            ScaffoldingFloorHeight2 = _scaffoldingFloorHeight2.Value;
+
+            _scaffoldingFloorHeight3 = Config.Bind(
+                "Scaffolding", "ScaffoldingFloorHeight#3", 4,
+                new ConfigDescription(
+                    "Vertical height in metres for the third scaffold level. Used when ScaffoldingLevels is 3.",
+                    validScaffoldHeights));
+            _scaffoldingFloorHeight3.SettingChanged += (_, _) => ApplyScaffoldingRules();
+            ScaffoldingFloorHeight3 = _scaffoldingFloorHeight3.Value;
+
+            _roofScaffolding = Config.Bind(
+                "Scaffolding", "RoofScaffolding", false,
+                "When enabled, places a ring of vertical 4m log poles at each corner, adjacent to each door, and at midpoints where spacing exceeds 8m, then connects their tops with horizontal 4m log poles forming a rectangular scaffold frame.");
+            _roofScaffolding.SettingChanged += (_, _) => RoofScaffolding = _roofScaffolding.Value;
+            RoofScaffolding = _roofScaffolding.Value;
 
             _scaffoldingFloors = Config.Bind(
                 "Scaffolding", "ScaffoldingFloors", false,
@@ -255,14 +188,35 @@ namespace ValheimFloorPlan
             _transverseScaffoldingBeams = Config.Bind(
                 "Scaffolding", "TransverseScaffoldingBeams", false,
                 "When enabled (requires RoofScaffolding), places horizontal 4m log beams connecting vertical poles from the West edge to the East edge. Beams are placed at each vertical pole's Z position.");
-            _transverseScaffoldingBeams.SettingChanged += (_, _) => TransverseScaffoldingBeams = _transverseScaffoldingBeams.Value;
+            _transverseScaffoldingBeams.SettingChanged += (_, _) => ApplyScaffoldingRules();
             TransverseScaffoldingBeams = _transverseScaffoldingBeams.Value;
 
             _longitudinalScaffoldingBeams = Config.Bind(
                 "Scaffolding", "LongitudinalScaffoldingBeams", false,
                 "When enabled (requires RoofScaffolding), places horizontal 4m log beams connecting vertical poles from the North edge to the South edge. Beams are placed at each vertical pole's X position.");
-            _longitudinalScaffoldingBeams.SettingChanged += (_, _) => LongitudinalScaffoldingBeams = _longitudinalScaffoldingBeams.Value;
+            _longitudinalScaffoldingBeams.SettingChanged += (_, _) => ApplyScaffoldingRules();
             LongitudinalScaffoldingBeams = _longitudinalScaffoldingBeams.Value;
+
+            ApplyScaffoldingRules();
+
+            _externalWallHeight = Config.Bind(
+                "Building", "ExternalWallHeight", 1,
+                new ConfigDescription(
+                    "How many levels high external Wall/Pillar pieces should be stacked. Maximum is the sum of the active scaffold floor heights.",
+                    new AcceptableValueRange<int>(1, 18)));
+            _externalWallHeight.SettingChanged += (_, _) => ApplyScaffoldingRules();
+            ExternalWallHeight = Mathf.Clamp(_externalWallHeight.Value, 1, 18);
+
+            ApplyScaffoldingRules();
+
+            _wallPillarMaterial = Config.Bind(
+                "Building", "WallPillarMaterial", "Stone",
+                new ConfigDescription(
+                    "Material used for Wall and Pillar types. Allowed: Stone, Wood.",
+                    new AcceptableValueList<string>("Stone", "Wood")));
+            _wallPillarMaterial.SettingChanged += (_, _) =>
+                WallPillarMaterial = ParseStructuralMaterial(_wallPillarMaterial.Value);
+            WallPillarMaterial = ParseStructuralMaterial(_wallPillarMaterial.Value);
 
             _disableWelcomePost = Config.Bind(
                 "Building", "DisableWelcomePost", false,
@@ -381,6 +335,74 @@ namespace ValheimFloorPlan
             PreviewCancelKey = _previewCancelKey.Value;
             PreviewFineAdjustKey = _previewFineAdjustKey.Value;
 
+            _terrainLevelPasses = Config.Bind(
+                "Terrain", "TerrainLevelPasses", 2,
+                new ConfigDescription(
+                    "Number of terrain leveling passes to run before spike cleanup. Lower is faster; higher can smooth stubborn areas.",
+                    new AcceptableValueRange<int>(1, 5)));
+            _terrainLevelPasses.SettingChanged += (_, _) =>
+                TerrainLevelPasses = Mathf.Clamp(_terrainLevelPasses.Value, 1, 5);
+            TerrainLevelPasses = Mathf.Clamp(_terrainLevelPasses.Value, 1, 5);
+
+            _terrainSpikeCleanupPasses = Config.Bind(
+                "Terrain", "TerrainSpikeCleanupPasses", 2,
+                new ConfigDescription(
+                    "Number of spike cleanup passes after leveling. Lower is faster; higher can reduce edge peaks on rough terrain.",
+                    new AcceptableValueRange<int>(1, 5)));
+            _terrainSpikeCleanupPasses.SettingChanged += (_, _) =>
+                TerrainSpikeCleanupPasses = Mathf.Clamp(_terrainSpikeCleanupPasses.Value, 1, 5);
+            TerrainSpikeCleanupPasses = Mathf.Clamp(_terrainSpikeCleanupPasses.Value, 1, 5);
+
+            _terrainStampRadius = Config.Bind(
+                "Terrain", "TerrainStampRadius", 3.0f,
+                new ConfigDescription(
+                    "Radius of each terrain leveling disc stamp in metres. Controls how wide the green preview border is and how far terrain is affected beyond the build pad edge. Larger = smoother blending but wider terrain disturbance; smaller = tighter edge but may leave small gaps.",
+                    new AcceptableValueRange<float>(3.0f, 6.0f)));
+            _terrainStampRadius.SettingChanged += (_, _) =>
+                TerrainStampRadius = Mathf.Clamp(_terrainStampRadius.Value, 3.0f, 6.0f);
+            TerrainStampRadius = Mathf.Clamp(_terrainStampRadius.Value, 3.0f, 6.0f);
+
+            _terrainHighPointDelta = Config.Bind(
+                "Terrain", "TerrainHighPointDelta", 0.0f,
+                new ConfigDescription(
+                    "Extra height in metres added to the sampled highest point for the terrain leveling target. Final target is HighestPoint + Delta.",
+                    new AcceptableValueRange<float>(0.0f, 4.0f)));
+            _terrainHighPointDelta.SettingChanged += (_, _) =>
+                TerrainHighPointDelta = Mathf.Clamp(_terrainHighPointDelta.Value, 0.0f, 4.0f);
+            TerrainHighPointDelta = Mathf.Clamp(_terrainHighPointDelta.Value, 0.0f, 4.0f);
+
+            _terrainUseStagedRaise = Config.Bind(
+                "Terrain", "TerrainUseStagedRaise", false,
+                "When enabled, leveling raises terrain in multiple vertical stages instead of a single full-height jump. Experimental: may help on some slopes but can worsen spikes on irregular edges.");
+            _terrainUseStagedRaise.SettingChanged += (_, _) =>
+                TerrainUseStagedRaise = _terrainUseStagedRaise.Value;
+            TerrainUseStagedRaise = _terrainUseStagedRaise.Value;
+
+            _terrainRaiseStepHeight = Config.Bind(
+                "Terrain", "TerrainRaiseStepHeight", 0.5f,
+                new ConfigDescription(
+                    "Maximum vertical raise per stage in metres when TerrainUseStagedRaise is enabled. Smaller values create more stages and gentler terrain transitions.",
+                    new AcceptableValueRange<float>(0.15f, 1.5f)));
+            _terrainRaiseStepHeight.SettingChanged += (_, _) =>
+                TerrainRaiseStepHeight = Mathf.Clamp(_terrainRaiseStepHeight.Value, 0.15f, 1.5f);
+            TerrainRaiseStepHeight = Mathf.Clamp(_terrainRaiseStepHeight.Value, 0.15f, 1.5f);
+
+            _terrainMaxRaiseStages = Config.Bind(
+                "Terrain", "TerrainMaxRaiseStages", 1,
+                new ConfigDescription(
+                    "Upper limit on the number of vertical raise stages when TerrainUseStagedRaise is enabled.",
+                    new AcceptableValueRange<int>(1, 16)));
+            _terrainMaxRaiseStages.SettingChanged += (_, _) =>
+                TerrainMaxRaiseStages = Mathf.Clamp(_terrainMaxRaiseStages.Value, 1, 16);
+            TerrainMaxRaiseStages = Mathf.Clamp(_terrainMaxRaiseStages.Value, 1, 16);
+
+            _terrainSkipSatisfiedCenterStamps = Config.Bind(
+                "Terrain", "TerrainSkipSatisfiedCenterStamps", true,
+                "When enabled, center leveling stamps are skipped if sampled terrain is already at/above target. Disable for exact legacy behavior (always stamp every center point each pass).");
+            _terrainSkipSatisfiedCenterStamps.SettingChanged += (_, _) =>
+                TerrainSkipSatisfiedCenterStamps = _terrainSkipSatisfiedCenterStamps.Value;
+            TerrainSkipSatisfiedCenterStamps = _terrainSkipSatisfiedCenterStamps.Value;
+
             gameObject.AddComponent<FloorPlanBuilder>();
 
             Log.LogInfo($"{PluginName} v{PluginVersion} loaded! " +
@@ -479,6 +501,105 @@ namespace ValheimFloorPlan
             Log?.LogWarning(
                 $"Unknown ProgressMessagePosition '{value}'. Falling back to Center.");
             return MessageHud.MessageType.Center;
+        }
+
+        private void ApplyScaffoldingRules()
+        {
+            if (_applyingScaffoldingRules)
+                return;
+
+            _applyingScaffoldingRules = true;
+            try
+            {
+                int clampedLevels = Mathf.Clamp(_scaffoldingLevels.Value, 1, 3);
+                if (_scaffoldingLevels.Value != clampedLevels)
+                    _scaffoldingLevels.Value = clampedLevels;
+
+                int floorHeight = _scaffoldingFloorHeight.Value;
+                int floorHeight2 = _scaffoldingFloorHeight2.Value;
+                int floorHeight3 = _scaffoldingFloorHeight3.Value;
+
+                if (clampedLevels > 1)
+                {
+                    if (!_transverseScaffoldingBeams.Value)
+                        _transverseScaffoldingBeams.Value = true;
+
+                    if (!_longitudinalScaffoldingBeams.Value)
+                        _longitudinalScaffoldingBeams.Value = true;
+                }
+
+                ScaffoldingLevels = clampedLevels;
+                ScaffoldingFloorHeight = floorHeight;
+                ScaffoldingFloorHeight2 = floorHeight2;
+                ScaffoldingFloorHeight3 = floorHeight3;
+                TransverseScaffoldingBeams = _transverseScaffoldingBeams.Value;
+                LongitudinalScaffoldingBeams = _longitudinalScaffoldingBeams.Value;
+
+                if (_externalWallHeight != null)
+                {
+                    int clampedExternalWallHeight = Mathf.Clamp(_externalWallHeight.Value, 1, GetMaxExternalWallHeight(clampedLevels, floorHeight, floorHeight2, floorHeight3));
+                    if (_externalWallHeight.Value != clampedExternalWallHeight)
+                        _externalWallHeight.Value = clampedExternalWallHeight;
+
+                    ExternalWallHeight = clampedExternalWallHeight;
+                }
+            }
+            finally
+            {
+                _applyingScaffoldingRules = false;
+            }
+        }
+
+        internal static int GetScaffoldingFloorHeightForLevel(int levelIndex)
+        {
+            switch (levelIndex)
+            {
+                case 0:
+                    return ScaffoldingFloorHeight;
+                case 1:
+                    return ScaffoldingFloorHeight2;
+                default:
+                    return ScaffoldingFloorHeight3;
+            }
+        }
+
+        internal static int GetMaxExternalWallHeight(int scaffoldingLevels)
+        {
+            return GetMaxExternalWallHeight(
+                scaffoldingLevels,
+                ScaffoldingFloorHeight,
+                ScaffoldingFloorHeight2,
+                ScaffoldingFloorHeight3);
+        }
+
+        internal static int GetMaxExternalWallHeight(int scaffoldingLevels, int scaffoldingFloorHeight, int scaffoldingFloorHeight2, int scaffoldingFloorHeight3)
+        {
+            int clampedLevels = Mathf.Clamp(scaffoldingLevels, 1, 3);
+            int totalHeight = 0;
+
+            if (clampedLevels >= 1)
+                totalHeight += scaffoldingFloorHeight;
+            if (clampedLevels >= 2)
+                totalHeight += scaffoldingFloorHeight2;
+            if (clampedLevels >= 3)
+                totalHeight += scaffoldingFloorHeight3;
+
+            return Mathf.Max(1, totalHeight);
+        }
+
+        internal static bool GetEffectiveTransverseScaffoldingBeams(int scaffoldingLevels)
+        {
+            return Mathf.Clamp(scaffoldingLevels, 1, 3) > 1 || TransverseScaffoldingBeams;
+        }
+
+        internal static bool GetEffectiveLongitudinalScaffoldingBeams(int scaffoldingLevels)
+        {
+            return Mathf.Clamp(scaffoldingLevels, 1, 3) > 1 || LongitudinalScaffoldingBeams;
+        }
+
+        internal static void RefreshScaffoldingRules()
+        {
+            Instance?.ApplyScaffoldingRules();
         }
 
         private static StructuralMaterial ParseStructuralMaterial(string value)

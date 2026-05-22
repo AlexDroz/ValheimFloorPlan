@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- **Scaffolding beam options now auto-enable for multi-level scaffolds:** when `ScaffoldingLevels` is set above `1`, `TransverseScaffoldingBeams` and `LongitudinalScaffoldingBeams` are automatically forced to `true` and written back to config so the saved settings match the required build behavior.
+- **External wall height now follows scaffold capacity:** `ExternalWallHeight` is now capped at `ScaffoldingLevels x ScaffoldingFloorHeight`, and oversized values are clamped back to the maximum allowed by the current scaffold setup.
+- **Scaffold levels can now use different heights:** added `ScaffoldingFloorHeight#2` and `ScaffoldingFloorHeight#3` so each scaffold story can use its own validated height, and `ExternalWallHeight` now caps against the sum of the active scaffold floor heights.
+- **Hearths now cut scaffold floor openings and vent through wood chimneys:** scaffold decks leave open space above Hearth footprints, and a wood chimney stack starts about 3m above the Hearth so the fire remains accessible while smoke can exit above the top scaffold level.
+- **Top scaffold levels now build as gable roofs:** when scaffold floors are enabled, the uppermost scaffold level now uses a pitched gable roof layout instead of a flat top deck.
+
 ## 1.0.9
 
 - **Added Workbench support in Designer and Builder:** new `Workbench` tool can be placed in the Designer with rotation support and is built in-game using the mapped workstation footprint.
