@@ -1827,6 +1827,10 @@ namespace ValheimFloorPlan
 
         private IEnumerator PlacePieces(FloorPlan plan, Vector3 origin, float rotationDeg = 0f)
         {
+            const string STAIR_POLE_PREFAB = "woodiron_pole";
+            const string STAIR_STEP_PREFAB = "wood_beam";
+            const float STAIR_FLIGHT_RISE = 2f;  // kept for API compat
+
             var player = Player.m_localPlayer;
             if (player == null)
             {
@@ -1862,6 +1866,41 @@ namespace ValheimFloorPlan
                 {
                     ValheimFloorPlanPlugin.Log.LogWarning($"Unknown piece type '{piece.Type}' — skipped.");
                     skipped++;
+                    continue;
+                }
+
+                if (piece.Type == "Staircase")
+                {
+                    int staircasePlaced = PlaceStaircaseComposite(
+                        piece,
+                        def,
+                        origin,
+                        rotationDeg,
+                        STAIR_POLE_PREFAB,
+                        STAIR_STEP_PREFAB,
+                        STAIR_FLIGHT_RISE,
+                        player);
+
+                    if (staircasePlaced == 0)
+                    {
+                        skipped++;
+                    }
+                    else
+                    {
+                        placed += staircasePlaced;
+                    }
+
+                    processed++;
+                    if (totalPieces > 0)
+                    {
+                        int pct = Mathf.FloorToInt((processed * 100f) / totalPieces);
+                        if (pct >= nextProgressPct)
+                        {
+                            ShowBuildProgress($"Placing pieces... {processed}/{totalPieces}");
+                            nextProgressPct += 10;
+                        }
+                    }
+
                     continue;
                 }
 
@@ -1992,6 +2031,396 @@ namespace ValheimFloorPlan
             ShowBuildProgress($"Placing pieces... done ({placed}/{totalPieces})");
             player.Message(MessageHud.MessageType.Center,
                 $"Floor plan built: {placed} pieces placed, {skipped} skipped. Check log for position info.");
+        }
+
+        private int PlaceStaircaseComposite(
+            FloorPlanPiece piece,
+            PieceDef def,
+            Vector3 origin,
+            float rotationDeg,
+            string polePrefabName,
+            string stepPrefabName,
+            float unused_flightRise,
+            Player player)
+        {
+            const float STEP_RISE      = 0.25f;
+            const float STEP_ANGLE_DEG = 15f;
+            // 2m beam used as tread: center radius chosen so inner end joins center pole.
+            const float STEP_RADIUS    = 1.1f;
+            const float POLE_FALLBACK_HEIGHT = 4f;
+            // Must match PlaceRoofScaffolding.
+            const float FLOOR_DECK_LIFT = 0.14f;
+
+            // ── Prefab resolution ──────────────────────────────────────────────
+            var scene = ZNetScene.instance;
+            if (scene == null) return 0;
+
+            var polePrefab = scene.GetPrefab(polePrefabName)
+                          ?? scene.GetPrefab("woodiron_pole")
+                          ?? scene.GetPrefab("wood_pole_log")
+                          ?? scene.GetPrefab("wood_pole2")
+                          ?? scene.GetPrefab("wood_pole");
+            var stepPrefab = scene.GetPrefab(stepPrefabName)
+                          ?? scene.GetPrefab("wood_beam")
+                          ?? scene.GetPrefab("wood_beam_2")
+                          ?? scene.GetPrefab("wood_beam_1")
+                          ?? scene.GetPrefab("wood_pole2")
+                          ?? scene.GetPrefab("wood_pole")
+                          ?? scene.GetPrefab("woodiron_beam_26")
+                          ?? scene.GetPrefab("wood_floor_1x1")
+                          ?? scene.GetPrefab("wood_floor");
+
+            if (polePrefab == null || stepPrefab == null)
+            {
+                ValheimFloorPlanPlugin.Log.LogWarning(
+                    $"[Staircase] Prefab '{polePrefabName}' or '{stepPrefabName}' not found in ZNetScene — skipped.");
+                return 0;
+            }
+
+            // ── Centre of the 3×3 staircase footprint ─────────────────────────
+            int effW = def.EffW(piece.Rotation);
+            int effH = def.EffH(piece.Rotation);
+            float centerLocalX = (piece.Col + effW * 0.5f) * PieceMap.CELL_SIZE;
+            float centerLocalZ = (piece.Row + effH * 0.5f) * PieceMap.CELL_SIZE;
+
+            Vector3 centerPos = PieceMap.TransformPlanPoint(
+                origin, centerLocalX, centerLocalZ, TerrainLeveler.TargetLevelY, rotationDeg);
+
+            float terrainY = TerrainLeveler.TargetLevelY;
+            if (Physics.Raycast(
+                    new Vector3(centerPos.x, TerrainLeveler.TargetLevelY + 300f, centerPos.z),
+                    Vector3.down, out var terrainHit, 600f, 1 << 11))
+                terrainY = terrainHit.point.y;
+
+            float targetRise = GetStaircaseTargetRise();
+            float targetTopY = terrainY + targetRise;
+
+            Quaternion floorRot = Quaternion.Euler(0f, PieceMap.TransformLocalYaw(0f, rotationDeg), 0f);
+
+            // ── Scaffold deck snap heights (same formula as PlaceRoofScaffolding) ─
+            float[]? deckYValues = null;
+            if (ValheimFloorPlanPlugin.ScaffoldingFloors)
+            {
+                int scaffoldLevels = Mathf.Clamp(ValheimFloorPlanPlugin.ScaffoldingLevels, 1, 3);
+                deckYValues = new float[scaffoldLevels];
+                float accumY = terrainY;
+                for (int lv = 0; lv < scaffoldLevels; lv++)
+                {
+                    accumY += Mathf.Max(2f, ValheimFloorPlanPlugin.GetScaffoldingFloorHeightForLevel(lv));
+                    deckYValues[lv] = accumY + FLOOR_DECK_LIFT;
+                }
+            }
+
+            int placed = 0;
+
+            // ── Central pole: stack from terrainY to targetTopY ────────────────
+            float poleBaseY  = terrainY;
+            float poleHeight = POLE_FALLBACK_HEIGHT;
+            bool  firstPole  = true;
+            while (poleBaseY < targetTopY - 0.1f)
+            {
+                Vector3 polePos = PieceMap.TransformPlanPoint(
+                    origin, centerLocalX, centerLocalZ, poleBaseY, rotationDeg);
+                var poleGo = SpawnRegisteredPiece(polePrefab, polePos, floorRot, player);
+                placed++;
+
+                if (firstPole)
+                {
+                    firstPole = false;
+                    if (TryGetObjectBoundsTopY(poleGo, out float pTop))
+                        poleHeight = Mathf.Max(0.5f, pTop - poleBaseY);
+                }
+                poleBaseY += poleHeight;
+            }
+
+            // ── Spiral steps ──────────────────────────────────────────────────
+            // Entry side is opposite to the piece's facing direction:
+            //   rotation 0   (N) → entry from S → start angle 270°
+            //   rotation 90  (E) → entry from W → start angle 180°
+            //   rotation 180 (S) → entry from N → start angle  90°
+            //   rotation 270 (W) → entry from E → start angle   0°
+            float startAngleDeg   = (270f - piece.Rotation + 360f) % 360f;
+            float currentAngleDeg = startAngleDeg;
+            float stepY   = terrainY + STEP_RISE;
+            int   deckIdx = 0;
+
+            // Spiral upward; exit after placing a step at or above targetTopY.
+            while (stepY <= targetTopY + STEP_RISE)
+            {
+                // Snap to exact scaffold deck Y when within reach.
+                if (deckYValues != null && deckIdx < deckYValues.Length &&
+                    stepY >= deckYValues[deckIdx] - STEP_RISE * 0.6f)
+                {
+                    stepY = deckYValues[deckIdx];
+                    deckIdx++;
+                }
+
+                float angleRad  = currentAngleDeg * Mathf.Deg2Rad;
+                float offsetX   = Mathf.Cos(angleRad) * STEP_RADIUS;
+                float offsetZ   = Mathf.Sin(angleRad) * STEP_RADIUS;
+
+                // Orient each beam so its INNER END (not long edge) points to the pole.
+                float localStepYaw = Mathf.Atan2(offsetX, offsetZ) * Mathf.Rad2Deg + 90f;
+                Quaternion stepRot = Quaternion.Euler(0f, PieceMap.TransformLocalYaw(localStepYaw, rotationDeg), 0f);
+
+                // Single 2m beam tread; inner end joins the center pole.
+
+                Vector3 stepPos = PieceMap.TransformPlanPoint(
+                    origin,
+                    centerLocalX + offsetX,
+                    centerLocalZ + offsetZ,
+                    stepY,
+                    rotationDeg);
+
+                SpawnRegisteredPiece(stepPrefab, stepPos, stepRot, player);
+                placed++;
+
+                if (stepY >= targetTopY - 0.01f)
+                    break;
+
+                currentAngleDeg += STEP_ANGLE_DEG;
+                stepY           += STEP_RISE;
+            }
+
+            return placed;
+        }
+
+        private static bool TryGetObjectBoundsTopY(GameObject go, out float topY)
+        {
+            bool haveBounds = false;
+            Bounds combined = default;
+
+            var colliders = go.GetComponentsInChildren<Collider>();
+            for (int i = 0; i < colliders.Length; i++)
+            {
+                var collider = colliders[i];
+                if (collider == null || !collider.enabled)
+                    continue;
+
+                if (!haveBounds)
+                {
+                    combined = collider.bounds;
+                    haveBounds = true;
+                }
+                else
+                {
+                    combined.Encapsulate(collider.bounds);
+                }
+            }
+
+            if (!haveBounds)
+            {
+                var renderers = go.GetComponentsInChildren<Renderer>();
+                for (int i = 0; i < renderers.Length; i++)
+                {
+                    var renderer = renderers[i];
+                    if (renderer == null || !renderer.enabled)
+                        continue;
+
+                    if (!haveBounds)
+                    {
+                        combined = renderer.bounds;
+                        haveBounds = true;
+                    }
+                    else
+                    {
+                        combined.Encapsulate(renderer.bounds);
+                    }
+                }
+            }
+
+            if (!haveBounds)
+            {
+                topY = go.transform.position.y;
+                return false;
+            }
+
+            topY = combined.max.y;
+            return true;
+        }
+
+        private static Vector2 StairDirectionFromRotation(int rotation)
+        {
+            int snapped = ((rotation % 360) + 360) % 360;
+            snapped = ((snapped + 45) / 90) * 90;
+            snapped %= 360;
+
+            if (snapped == 0) return new Vector2(0f, 1f);
+            if (snapped == 90) return new Vector2(1f, 0f);
+            if (snapped == 180) return new Vector2(0f, -1f);
+            return new Vector2(-1f, 0f);
+        }
+
+        private static int StairRotationFromDirection(Vector2 dir)
+        {
+            if (Mathf.Abs(dir.x) > Mathf.Abs(dir.y))
+                return dir.x >= 0f ? 90 : 270;
+
+            return dir.y >= 0f ? 0 : 180;
+        }
+
+        private static GameObject? ResolveStaircasePrefab(
+            string role,
+            string preferredName,
+            string[] fallbackNames,
+            string[] tokenHints)
+        {
+            var scene = ZNetScene.instance;
+            if (scene == null)
+                return null;
+
+            var preferred = scene.GetPrefab(preferredName);
+            if (preferred != null)
+                return preferred;
+
+            for (int i = 0; i < fallbackNames.Length; i++)
+            {
+                string candidate = fallbackNames[i];
+                if (candidate == preferredName)
+                    continue;
+
+                var exact = scene.GetPrefab(candidate);
+                if (exact != null)
+                {
+                    ValheimFloorPlanPlugin.Log.LogWarning(
+                        $"[Staircase] Using fallback {role} prefab '{candidate}' (missing '{preferredName}').");
+                    return exact;
+                }
+            }
+
+            var discovered = FindPrefabByTokenHints(scene, tokenHints);
+            if (discovered != null)
+            {
+                ValheimFloorPlanPlugin.Log.LogWarning(
+                    $"[Staircase] Using discovered {role} prefab '{discovered.name}' (missing '{preferredName}').");
+            }
+
+            return discovered;
+        }
+
+        private static GameObject? FindPrefabByTokenHints(ZNetScene scene, string[] tokenHints)
+        {
+            if (scene == null || scene.m_prefabs == null || tokenHints == null || tokenHints.Length == 0)
+                return null;
+
+            for (int i = 0; i < scene.m_prefabs.Count; i++)
+            {
+                var prefab = scene.m_prefabs[i];
+                if (prefab == null)
+                    continue;
+
+                string name = prefab.name == null ? string.Empty : prefab.name.ToLowerInvariant();
+                bool allMatch = true;
+                for (int t = 0; t < tokenHints.Length; t++)
+                {
+                    string token = tokenHints[t];
+                    if (string.IsNullOrEmpty(token))
+                        continue;
+
+                    if (!name.Contains(token))
+                    {
+                        allMatch = false;
+                        break;
+                    }
+                }
+
+                if (allMatch)
+                    return prefab;
+            }
+
+            // Relaxed match: if strict tokens fail, allow any single token hit.
+            for (int i = 0; i < scene.m_prefabs.Count; i++)
+            {
+                var prefab = scene.m_prefabs[i];
+                if (prefab == null)
+                    continue;
+
+                string name = prefab.name == null ? string.Empty : prefab.name.ToLowerInvariant();
+                for (int t = 0; t < tokenHints.Length; t++)
+                {
+                    string token = tokenHints[t];
+                    if (!string.IsNullOrEmpty(token) && name.Contains(token))
+                        return prefab;
+                }
+            }
+
+            return null;
+        }
+
+        private static float GetStaircaseTargetRise()
+        {
+            if (ValheimFloorPlanPlugin.ScaffoldingFloors)
+            {
+                int scaffoldLevels = Mathf.Clamp(ValheimFloorPlanPlugin.ScaffoldingLevels, 1, 3);
+                float totalRise = 0f;
+                for (int level = 0; level < scaffoldLevels; level++)
+                {
+                    totalRise += Mathf.Max(2f, ValheimFloorPlanPlugin.GetScaffoldingFloorHeightForLevel(level));
+                }
+
+                return Mathf.Max(2f, totalRise);
+            }
+
+            // Match the existing two-storey default when scaffold floors are disabled.
+            return 4f;
+        }
+
+        private void RemoveInterferingUpperFloorPieces(
+            Vector3 origin,
+            float rotationDeg,
+            float landingACol,
+            float landingARow,
+            float landingBCol,
+            float landingBRow,
+            float targetY)
+        {
+            Vector3 aWorld = PieceMap.TransformPlanPoint(
+                origin,
+                landingACol * PieceMap.CELL_SIZE,
+                landingARow * PieceMap.CELL_SIZE,
+                targetY,
+                rotationDeg);
+            Vector3 bWorld = PieceMap.TransformPlanPoint(
+                origin,
+                landingBCol * PieceMap.CELL_SIZE,
+                landingBRow * PieceMap.CELL_SIZE,
+                targetY,
+                rotationDeg);
+
+            const float yTolerance = 0.35f;
+            const float xzTolerance = 0.45f;
+
+            for (int i = _lastPlaced.Count - 1; i >= 0; i--)
+            {
+                var placedGo = _lastPlaced[i];
+                if (placedGo == null)
+                {
+                    _lastPlaced.RemoveAt(i);
+                    continue;
+                }
+
+                string goName = placedGo.name.ToLowerInvariant();
+                bool looksLikeFloor = goName.Contains("wood_floor") || goName.Contains("floor_1x1");
+                if (!looksLikeFloor)
+                    continue;
+
+                Vector3 p = placedGo.transform.position;
+                if (Mathf.Abs(p.y - targetY) > yTolerance)
+                    continue;
+
+                bool overlapsLanding =
+                    Mathf.Abs(p.x - aWorld.x) <= xzTolerance && Mathf.Abs(p.z - aWorld.z) <= xzTolerance ||
+                    Mathf.Abs(p.x - bWorld.x) <= xzTolerance && Mathf.Abs(p.z - bWorld.z) <= xzTolerance;
+                if (!overlapsLanding)
+                    continue;
+
+                if (ZNetScene.instance != null)
+                    ZNetScene.instance.Destroy(placedGo);
+                else
+                    Destroy(placedGo);
+
+                _lastPlaced.RemoveAt(i);
+            }
         }
 
         private static void CenterPieceOnRenderedBoundsXZ(GameObject go, Vector3 desiredCenter)
@@ -2434,6 +2863,7 @@ namespace ValheimFloorPlan
 
             var supportFurnitureExclusions = BuildScaffoldFurnitureExclusions(plan);
             var hearthOpenings = BuildHearthOpenings(plan);
+            var deckOpenings = BuildScaffoldDeckOpenings(plan);
 
             // Add intermediate edge-join poles once to establish full anchor set used by
             // all levels. The same anchor topology is then repeated upward every 4m.
@@ -2559,7 +2989,7 @@ namespace ValheimFloorPlan
                 {
                     placed += PlaceTransverseBeams(
                         poleParams, width, depth, lMinX, lMaxX, lMinZ, lMaxZ, perimeter,
-                        doorJambParams, blockedTransverseLocalZs, doorCenters, supportFurnitureExclusions, occupiedPoleLocals, origin, rotationDeg,
+                        doorJambParams, blockedTransverseLocalZs, deckOpenings, doorCenters, supportFurnitureExclusions, occupiedPoleLocals, origin, rotationDeg,
                         levelTopY, horizPrefab, vertPrefab, player);
                 }
 
@@ -2568,7 +2998,7 @@ namespace ValheimFloorPlan
                 {
                     placed += PlaceLongitudinalBeams(
                         poleParams, width, depth, lMinX, lMaxX, lMinZ, lMaxZ, perimeter,
-                        doorJambParams, blockedLongitudinalLocalXs, doorCenters, supportFurnitureExclusions, occupiedPoleLocals, origin, rotationDeg,
+                        doorJambParams, blockedLongitudinalLocalXs, deckOpenings, doorCenters, supportFurnitureExclusions, occupiedPoleLocals, origin, rotationDeg,
                         levelTopY, horizPrefab, vertPrefab, player);
                 }
 
@@ -2582,7 +3012,7 @@ namespace ValheimFloorPlan
                         floor2Prefab, floor1Prefab, roofTopPrefab,
                         topLowerRoofPrefab, topLowerSupportPrefab, vertPrefab, horizPrefab,
                         levelTopY,
-                        isTopmostLevel, hearthOpenings, player);
+                        isTopmostLevel, deckOpenings, player);
                 }
 
                 if (hearthOpenings.Count > 0 && chimneyWall2Prefab != null)
@@ -2723,36 +3153,44 @@ namespace ValheimFloorPlan
             int placed = 0;
             Quaternion deckRot = Quaternion.Euler(0f, rotationDeg, 0f);
 
-            for (int row = minRow; row < maxRowExclusive; row++)
+            for (int row = minRow; row < maxRowExclusive; row += 2)
             {
-                for (int col = minCol; col < maxColExclusive; )
+                for (int col = minCol; col < maxColExclusive; col += 2)
                 {
-                    if (IsBlockedByHearthOpening(col, row, hearthOpenings))
-                    {
-                        col++;
-                        continue;
-                    }
-
-                    bool useFloor2 =
-                        col + 1 < maxColExclusive &&
-                        row + 1 < maxRowExclusive &&
+                    bool fullTile = col + 1 < maxColExclusive && row + 1 < maxRowExclusive;
+                    bool tileClear =
+                        fullTile &&
+                        !IsBlockedByHearthOpening(col, row, hearthOpenings) &&
                         !IsBlockedByHearthOpening(col + 1, row, hearthOpenings) &&
                         !IsBlockedByHearthOpening(col, row + 1, hearthOpenings) &&
                         !IsBlockedByHearthOpening(col + 1, row + 1, hearthOpenings);
 
-                    int tileWidth = useFloor2 ? 2 : 1;
-                    int tileDepth = useFloor2 ? 2 : 1;
-                    var prefab = useFloor2
-                        ? floor2Prefab
-                        : floor1Prefab;
+                    if (tileClear)
+                    {
+                        float dx = (col + 1f) * PieceMap.CELL_SIZE;
+                        float dz = (row + 1f) * PieceMap.CELL_SIZE;
+                        Vector3 deckPos = PieceMap.TransformPlanPoint(origin, dx, dz, deckY, rotationDeg);
+                        SpawnRegisteredPiece(floor2Prefab, deckPos, deckRot, player);
+                        placed++;
+                        continue;
+                    }
 
-                    float dx = (col + tileWidth * 0.5f) * PieceMap.CELL_SIZE;
-                    float dz = (row + tileDepth * 0.5f) * PieceMap.CELL_SIZE;
-                    Vector3 deckPos = PieceMap.TransformPlanPoint(origin, dx, dz, deckY, rotationDeg);
+                    int rowMax = Mathf.Min(row + 2, maxRowExclusive);
+                    int colMax = Mathf.Min(col + 2, maxColExclusive);
+                    for (int rr = row; rr < rowMax; rr++)
+                    {
+                        for (int cc = col; cc < colMax; cc++)
+                        {
+                            if (IsBlockedByHearthOpening(cc, rr, hearthOpenings))
+                                continue;
 
-                    SpawnRegisteredPiece(prefab, deckPos, deckRot, player);
-                    placed++;
-                    col += tileWidth;
+                            float dx = (cc + 0.5f) * PieceMap.CELL_SIZE;
+                            float dz = (rr + 0.5f) * PieceMap.CELL_SIZE;
+                            Vector3 deckPos = PieceMap.TransformPlanPoint(origin, dx, dz, deckY, rotationDeg);
+                            SpawnRegisteredPiece(floor1Prefab, deckPos, deckRot, player);
+                            placed++;
+                        }
+                    }
                 }
 
             }
@@ -3325,6 +3763,31 @@ namespace ValheimFloorPlan
             return openings;
         }
 
+        private static List<HearthOpening> BuildScaffoldDeckOpenings(FloorPlan plan)
+        {
+            var openings = BuildHearthOpenings(plan);
+
+            foreach (var piece in plan.Pieces)
+            {
+                if (piece.Type != "Staircase")
+                    continue;
+
+                var def = PieceMap.GetDef(piece.Type);
+                if (def == null)
+                    continue;
+
+                int effW = def.EffW(piece.Rotation);
+                int effH = def.EffH(piece.Rotation);
+                openings.Add(new HearthOpening(
+                    piece.Col,
+                    piece.Row,
+                    piece.Col + effW,
+                    piece.Row + effH));
+            }
+
+            return openings;
+        }
+
         private static bool IsBlockedByHearthOpening(int col, int row, List<HearthOpening> hearthOpenings)
         {
             for (int i = 0; i < hearthOpenings.Count; i++)
@@ -3358,7 +3821,7 @@ namespace ValheimFloorPlan
         /// </summary>
         private int PlaceTransverseBeams(
             List<float> poleParams, float width, float depth, float lMinX, float lMaxX, float lMinZ, float lMaxZ, float perimeter,
-            List<float> doorJambParams, List<ScaffoldDoorSpan> blockedTransverseLocalZs, List<Vector2> doorCenters,
+            List<float> doorJambParams, List<ScaffoldDoorSpan> blockedTransverseLocalZs, List<HearthOpening> blockedOpenings, List<Vector2> doorCenters,
             List<ScaffoldFurnitureExclusion> supportFurnitureExclusions, List<Vector2> occupiedPoleLocals, Vector3 origin, float rotationDeg,
             float levelTopY, GameObject horizPrefab, GameObject vertPrefab, Player player)
         {
@@ -3411,11 +3874,14 @@ namespace ValheimFloorPlan
 
                 if (bestEi < 0 || bestDelta > 0.25f) continue;
 
+                if (IsBeamSpanBlockedByOpenings(westEdge[wi].Local, eastEdge[bestEi].Local, blockedOpenings))
+                    continue;
+
                 usedEast[bestEi] = true;
                 placed += PlaceScaffoldBeamSpan(
                     westEdge[wi].Local, eastEdge[bestEi].Local,
                     westEdge[wi].Pos, eastEdge[bestEi].Pos,
-                    horizPrefab, vertPrefab, player, doorCenters, supportFurnitureExclusions, occupiedPoleLocals);
+                    horizPrefab, vertPrefab, player, doorCenters, supportFurnitureExclusions, occupiedPoleLocals, blockedOpenings);
             }
 
             ValheimFloorPlanPlugin.Log.LogInfo(
@@ -3431,7 +3897,7 @@ namespace ValheimFloorPlan
         /// </summary>
         private int PlaceLongitudinalBeams(
             List<float> poleParams, float width, float depth, float lMinX, float lMaxX, float lMinZ, float lMaxZ, float perimeter,
-            List<float> doorJambParams, List<ScaffoldDoorSpan> blockedLongitudinalLocalXs, List<Vector2> doorCenters,
+            List<float> doorJambParams, List<ScaffoldDoorSpan> blockedLongitudinalLocalXs, List<HearthOpening> blockedOpenings, List<Vector2> doorCenters,
             List<ScaffoldFurnitureExclusion> supportFurnitureExclusions, List<Vector2> occupiedPoleLocals, Vector3 origin, float rotationDeg,
             float levelTopY, GameObject horizPrefab, GameObject vertPrefab, Player player)
         {
@@ -3484,11 +3950,14 @@ namespace ValheimFloorPlan
 
                 if (bestNi < 0 || bestDelta > 0.25f) continue;
 
+                if (IsBeamSpanBlockedByOpenings(southEdge[si].Local, northEdge[bestNi].Local, blockedOpenings))
+                    continue;
+
                 usedNorth[bestNi] = true;
                 placed += PlaceScaffoldBeamSpan(
                     southEdge[si].Local, northEdge[bestNi].Local,
                     southEdge[si].Pos, northEdge[bestNi].Pos,
-                    horizPrefab, vertPrefab, player, doorCenters, supportFurnitureExclusions, occupiedPoleLocals);
+                    horizPrefab, vertPrefab, player, doorCenters, supportFurnitureExclusions, occupiedPoleLocals, blockedOpenings);
             }
 
             ValheimFloorPlanPlugin.Log.LogInfo(
@@ -3515,11 +3984,14 @@ namespace ValheimFloorPlan
         private int PlaceScaffoldBeamSpan(
             Vector2 localA, Vector2 localB, Vector3 pA, Vector3 pB,
             GameObject horizPrefab, GameObject vertPrefab, Player player, List<Vector2> doorCenters,
-            List<ScaffoldFurnitureExclusion> supportFurnitureExclusions, List<Vector2> occupiedPoleLocals)
+            List<ScaffoldFurnitureExclusion> supportFurnitureExclusions, List<Vector2> occupiedPoleLocals, List<HearthOpening> blockedOpenings)
         {
             const float HORIZ_LEN  = 2f;
             const float HORIZ_HALF = HORIZ_LEN * 0.5f;
             const float JOINT_OVERLAP = 0.08f;
+
+            if (IsBeamSpanBlockedByOpenings(localA, localB, blockedOpenings))
+                return 0;
 
             float dx = pB.x - pA.x;
             float dz = pB.z - pA.z;
@@ -3551,6 +4023,28 @@ namespace ValheimFloorPlan
             }
 
             return placed;
+        }
+
+        private static bool IsBeamSpanBlockedByOpenings(Vector2 localA, Vector2 localB, List<HearthOpening> openings)
+        {
+            if (openings == null || openings.Count == 0)
+                return false;
+
+            float beamMinX = Mathf.Min(localA.x, localB.x);
+            float beamMaxX = Mathf.Max(localA.x, localB.x);
+            float beamMinZ = Mathf.Min(localA.y, localB.y);
+            float beamMaxZ = Mathf.Max(localA.y, localB.y);
+
+            for (int i = 0; i < openings.Count; i++)
+            {
+                var opening = openings[i];
+                bool overlapsX = beamMaxX > opening.MinCol && beamMinX < opening.MaxColExclusive;
+                bool overlapsZ = beamMaxZ > opening.MinRow && beamMinZ < opening.MaxRowExclusive;
+                if (overlapsX && overlapsZ)
+                    return true;
+            }
+
+            return false;
         }
 
         private sealed class ScaffoldPolePoint

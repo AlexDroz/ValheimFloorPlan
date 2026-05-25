@@ -17,6 +17,7 @@ const state = {
 const pieceColors = {
   Floor2x2: "#b68d56",
   Floor1x1: "#d0ad78",
+  Staircase: "#6d8f48",
   Bed: "#7b5c49",
   Workbench: "#8d5a32",
   Hearth: "#8a4b3a",
@@ -28,6 +29,7 @@ const pieceColors = {
 const pieceDefs = {
   Floor2x2: { w: 2, h: 2 },
   Floor1x1: { w: 1, h: 1 },
+  Staircase: { w: 3, h: 3 },
   Bed: { w: 2, h: 4 },
   Workbench: { w: 4, h: 4 },
   Hearth: { w: 4, h: 3 },
@@ -142,6 +144,8 @@ function pieceLayerOrder(type) {
     case "Floor2x2":
     case "Floor1x1":
       return 1;
+    case "Staircase":
+      return 2;
     case "Bed":
       return 2;
     case "Workbench":
@@ -184,7 +188,7 @@ function pieceOccupiesCell(piece, col, row) {
 }
 
 function pieceShowsOrientation(type) {
-  return type === "Workbench";
+  return type === "Workbench" || type === "Staircase";
 }
 
 function drawPieceOrientation(type, rotation, x, y, wPx, hPx, isPreview = false) {
@@ -204,6 +208,56 @@ function drawPieceOrientation(type, rotation, x, y, wPx, hPx, isPreview = false)
   const shaftX = 0;
   const backY = -hPx * 0.5 + backInset;
   const frontY = hPx * 0.5 - frontInset;
+
+  if (type === "Staircase") {
+    const accent = isPreview ? "rgba(38, 43, 23, 0.85)" : "rgba(246, 251, 228, 0.96)";
+    const subAccent = isPreview ? "rgba(38, 43, 23, 0.62)" : "rgba(246, 251, 228, 0.76)";
+    const shaftWidth = Math.max(3, Math.min(wPx, hPx) * 0.075);
+    const stepCount = 4;
+    const sideInset = Math.max(6, wPx * 0.15);
+    const stepLeft = -wPx * 0.5 + sideInset;
+    const stepRight = wPx * 0.5 - sideInset;
+    const runLength = Math.max(12, frontY - backY);
+
+    // Draw step treads so staircase pieces read differently from plain rectangles.
+    ctx.strokeStyle = subAccent;
+    ctx.lineWidth = Math.max(2, Math.min(wPx, hPx) * 0.045);
+    ctx.lineCap = "round";
+    for (let i = 0; i < stepCount; i += 1) {
+      const t = (i + 1) / (stepCount + 1);
+      const yPos = backY + runLength * t;
+      ctx.beginPath();
+      ctx.moveTo(stepLeft, yPos);
+      ctx.lineTo(stepRight, yPos);
+      ctx.stroke();
+    }
+
+    // Draw a bold arrow pointing upward travel direction.
+    ctx.strokeStyle = accent;
+    ctx.fillStyle = accent;
+    ctx.lineWidth = shaftWidth;
+    ctx.beginPath();
+    ctx.moveTo(0, backY + 3);
+    ctx.lineTo(0, frontY - arrowHead * 0.55);
+    ctx.stroke();
+
+    ctx.beginPath();
+    ctx.moveTo(0, frontY);
+    ctx.lineTo(-arrowHead * 1.15, frontY - arrowHead * 1.25);
+    ctx.lineTo(arrowHead * 1.15, frontY - arrowHead * 1.25);
+    ctx.closePath();
+    ctx.fill();
+
+    // Label reinforces direction at small zoom levels.
+    ctx.fillStyle = accent;
+    ctx.font = `bold ${Math.max(9, Math.min(wPx, hPx) * 0.16)}px sans-serif`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText("UP", 0, backY + 2);
+
+    ctx.restore();
+    return;
+  }
 
   ctx.strokeStyle = isPreview ? "rgba(60, 35, 18, 0.78)" : "rgba(255, 245, 220, 0.95)";
   ctx.fillStyle = ctx.strokeStyle;
