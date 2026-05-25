@@ -6,7 +6,8 @@
 - **External wall height now follows scaffold capacity:** `ExternalWallHeight` is now capped at `ScaffoldingLevels x ScaffoldingFloorHeight`, and oversized values are clamped back to the maximum allowed by the current scaffold setup.
 - **Scaffold levels can now use different heights:** added `ScaffoldingFloorHeight#2` and `ScaffoldingFloorHeight#3` so each scaffold story can use its own validated height, and `ExternalWallHeight` now caps against the sum of the active scaffold floor heights.
 - **Hearths now cut scaffold floor openings and vent through wood chimneys:** scaffold decks leave open space above Hearth footprints, and a wood chimney stack starts about 3m above the Hearth so the fire remains accessible while smoke can exit above the top scaffold level.
-- **Top scaffold levels now build as gable roofs:** when scaffold floors are enabled, the uppermost scaffold level now uses a pitched gable roof layout instead of a flat top deck.
+- **Top scaffold roof mode is now configurable:** added `RoofScaffoldingType` with `Gable` (default) and `Flat` options for the topmost scaffold level when `ScaffoldingFloors` is enabled.
+- **Gable top surface is now configurable:** added `RoofScaffoldingGableFlooring` for `RoofScaffoldingType=Gable`, with `RoofWithFloorUnderlay` (default) and `RoofOnly` options.
 
 ## 1.0.9
 

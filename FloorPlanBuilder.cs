@@ -2272,7 +2272,8 @@ namespace ValheimFloorPlan
             const float  POLE_SPACING   = 4f;
             const float  HORIZ_LEN      = 2f;
             const float  HORIZ_HALF     = HORIZ_LEN * 0.5f;
-            const float  FLOOR_DECK_DROP = 0.05f;
+            const float  BEAM_JOINT_OVERLAP = 0.08f;
+            const float  FLOOR_DECK_LIFT = 0.14f;
 
             var player = Player.m_localPlayer;
             if (player == null) yield break;
@@ -2536,7 +2537,7 @@ namespace ValheimFloorPlan
 
                     for (int b = 0; b < nFull; b++)
                     {
-                        Vector3 center = cA + dir * (b * HORIZ_LEN + HORIZ_HALF);
+                        Vector3 center = cA + dir * (b * HORIZ_LEN + HORIZ_HALF - BEAM_JOINT_OVERLAP * 0.5f);
                         center.y = beamY;
                         SpawnScaffoldPole(horizPrefab, center, beamRot, player);
                         placed++;
@@ -2545,7 +2546,7 @@ namespace ValheimFloorPlan
 
                     if (remainder > 0.05f)
                     {
-                        Vector3 center = cB - dir * HORIZ_HALF;
+                        Vector3 center = cB - dir * (HORIZ_HALF - BEAM_JOINT_OVERLAP * 0.5f);
                         center.y = beamY;
                         SpawnScaffoldPole(horizPrefab, center, beamRot, player);
                         placed++;
@@ -2577,9 +2578,10 @@ namespace ValheimFloorPlan
                     placed += PlaceScaffoldLevelFloorDeck(
                         minCol, maxColExclusive, minRow, maxRowExclusive,
                         origin, rotationDeg,
-                        levelTopY - FLOOR_DECK_DROP,
+                        levelTopY + FLOOR_DECK_LIFT,
                         floor2Prefab, floor1Prefab, roofTopPrefab,
-                        topLowerRoofPrefab, topLowerSupportPrefab,
+                        topLowerRoofPrefab, topLowerSupportPrefab, vertPrefab, horizPrefab,
+                        levelTopY,
                         isTopmostLevel, hearthOpenings, player);
                 }
 
@@ -2624,13 +2626,40 @@ namespace ValheimFloorPlan
             int minCol, int maxColExclusive, int minRow, int maxRowExclusive,
             Vector3 origin, float rotationDeg, float deckY,
             GameObject floor2Prefab, GameObject floor1Prefab, GameObject? roofTopPrefab,
-            GameObject? topLowerRoofPrefab, GameObject? topLowerSupportPrefab,
+            GameObject? topLowerRoofPrefab, GameObject? topLowerSupportPrefab, GameObject? gableApexPolePrefab, GameObject? gableApexRidgeBeamPrefab,
+            float gableApexPoleBaseY,
             bool useRoofTop,
             List<HearthOpening> hearthOpenings, Player player)
         {
-            if (useRoofTop && topLowerRoofPrefab != null)
+            bool useFlatRidgeTop =
+                useRoofTop &&
+                ValheimFloorPlanPlugin.RoofScaffoldingType == ValheimFloorPlanPlugin.RoofScaffoldingTypeOption.Flat &&
+                roofTopPrefab != null;
+            bool useGableTop =
+                useRoofTop &&
+                ValheimFloorPlanPlugin.RoofScaffoldingType == ValheimFloorPlanPlugin.RoofScaffoldingTypeOption.Gable &&
+                topLowerRoofPrefab != null;
+
+            if (useGableTop)
             {
-                return PlaceTopScaffoldGableRoof(
+                int placed = 0;
+                if (ValheimFloorPlanPlugin.UseGableFloorUnderlay())
+                {
+                    placed += PlaceScaffoldFlatDeckTiles(
+                        minCol,
+                        maxColExclusive,
+                        minRow,
+                        maxRowExclusive,
+                        origin,
+                        rotationDeg,
+                        deckY,
+                        floor2Prefab,
+                        floor1Prefab,
+                        hearthOpenings,
+                        player);
+                }
+
+                placed += PlaceTopScaffoldGableRoof(
                     minCol,
                     maxColExclusive,
                     minRow,
@@ -2638,12 +2667,59 @@ namespace ValheimFloorPlan
                     origin,
                     rotationDeg,
                     deckY,
-                    topLowerRoofPrefab,
+                    topLowerRoofPrefab!,
                     topLowerSupportPrefab,
+                    gableApexPolePrefab,
+                    gableApexRidgeBeamPrefab,
+                    gableApexPoleBaseY,
+                    hearthOpenings,
+                    player);
+                    return placed;
+            }
+
+            if (useFlatRidgeTop)
+            {
+                return PlaceTopScaffoldFlatRidgeRoof(
+                    minCol,
+                    maxColExclusive,
+                    minRow,
+                    maxRowExclusive,
+                    origin,
+                    rotationDeg,
+                    deckY,
+                    roofTopPrefab!,
+                    floor1Prefab,
                     hearthOpenings,
                     player);
             }
 
+            return PlaceScaffoldFlatDeckTiles(
+                minCol,
+                maxColExclusive,
+                minRow,
+                maxRowExclusive,
+                origin,
+                rotationDeg,
+                deckY,
+                floor2Prefab,
+                floor1Prefab,
+                hearthOpenings,
+                player);
+        }
+
+        private int PlaceScaffoldFlatDeckTiles(
+            int minCol,
+            int maxColExclusive,
+            int minRow,
+            int maxRowExclusive,
+            Vector3 origin,
+            float rotationDeg,
+            float deckY,
+            GameObject floor2Prefab,
+            GameObject floor1Prefab,
+            List<HearthOpening> hearthOpenings,
+            Player player)
+        {
             int placed = 0;
             Quaternion deckRot = Quaternion.Euler(0f, rotationDeg, 0f);
 
@@ -2667,7 +2743,7 @@ namespace ValheimFloorPlan
                     int tileWidth = useFloor2 ? 2 : 1;
                     int tileDepth = useFloor2 ? 2 : 1;
                     var prefab = useFloor2
-                        ? (useRoofTop && roofTopPrefab != null ? roofTopPrefab : floor2Prefab)
+                        ? floor2Prefab
                         : floor1Prefab;
 
                     float dx = (col + tileWidth * 0.5f) * PieceMap.CELL_SIZE;
@@ -2684,6 +2760,71 @@ namespace ValheimFloorPlan
             return placed;
         }
 
+        private int PlaceTopScaffoldFlatRidgeRoof(
+            int minCol,
+            int maxColExclusive,
+            int minRow,
+            int maxRowExclusive,
+            Vector3 origin,
+            float rotationDeg,
+            float deckY,
+            GameObject ridgeRoofPrefab,
+            GameObject fallbackFloor1Prefab,
+            List<HearthOpening> hearthOpenings,
+            Player player)
+        {
+            int placed = 0;
+
+            // Flat ridge mode intentionally places one ridge cap per 2x2 tile.
+            // This prevents double-density overlap and keeps long edges touching.
+            bool longEdgeAlongX = (maxColExclusive - minCol) >= (maxRowExclusive - minRow);
+            Quaternion ridgeRot = Quaternion.Euler(0f, longEdgeAlongX ? rotationDeg : rotationDeg + 90f, 0f);
+            Quaternion floorRot = Quaternion.Euler(0f, rotationDeg, 0f);
+
+            for (int row = minRow; row < maxRowExclusive; row += 2)
+            {
+                for (int col = minCol; col < maxColExclusive; col += 2)
+                {
+                    bool fullTile = col + 1 < maxColExclusive && row + 1 < maxRowExclusive;
+                    bool tileClear =
+                        fullTile &&
+                        !IsBlockedByHearthOpening(col, row, hearthOpenings) &&
+                        !IsBlockedByHearthOpening(col + 1, row, hearthOpenings) &&
+                        !IsBlockedByHearthOpening(col, row + 1, hearthOpenings) &&
+                        !IsBlockedByHearthOpening(col + 1, row + 1, hearthOpenings);
+
+                    if (tileClear)
+                    {
+                        float dx = (col + 1f) * PieceMap.CELL_SIZE;
+                        float dz = (row + 1f) * PieceMap.CELL_SIZE;
+                        Vector3 roofPos = PieceMap.TransformPlanPoint(origin, dx, dz, deckY, rotationDeg);
+                        SpawnRegisteredPiece(ridgeRoofPrefab, roofPos, ridgeRot, player);
+                        placed++;
+                        continue;
+                    }
+
+                    int rowMax = Mathf.Min(row + 2, maxRowExclusive);
+                    int colMax = Mathf.Min(col + 2, maxColExclusive);
+                    for (int rr = row; rr < rowMax; rr++)
+                    {
+                        for (int cc = col; cc < colMax; cc++)
+                        {
+                            if (IsBlockedByHearthOpening(cc, rr, hearthOpenings))
+                                continue;
+
+                            float dx = (cc + 0.5f) * PieceMap.CELL_SIZE;
+                            float dz = (rr + 0.5f) * PieceMap.CELL_SIZE;
+                            Vector3 floorPos = PieceMap.TransformPlanPoint(origin, dx, dz, deckY, rotationDeg);
+                            SpawnRegisteredPiece(fallbackFloor1Prefab, floorPos, floorRot, player);
+                            placed++;
+                        }
+                    }
+                }
+            }
+
+            return placed;
+        }
+
         private int PlaceTopScaffoldGableRoof(
             int minCol,
             int maxColExclusive,
@@ -2694,6 +2835,9 @@ namespace ValheimFloorPlan
             float roofBaseY,
             GameObject roofPrefab,
             GameObject? supportPrefab,
+            GameObject? apexPolePrefab,
+            GameObject? apexRidgeBeamPrefab,
+            float apexPoleBaseY,
             List<HearthOpening> hearthOpenings,
             Player player)
         {
@@ -2705,9 +2849,10 @@ namespace ValheimFloorPlan
 
             if (ridgeRunsAlongX)
             {
-                float centerZ = (minRow + maxRowExclusive) * 0.5f;
                 float southEdgeZ = minRow;
                 float northEdgeZ = maxRowExclusive;
+                float centerZ = (minRow + maxRowExclusive) * 0.5f;
+                float centerX = (minCol + maxColExclusive) * 0.5f;
                 float halfSpan = Mathf.Abs(centerZ - southEdgeZ);
                 float ridgeY = roofBaseY + Mathf.Tan(pitchRadians) * halfSpan;
 
@@ -2743,10 +2888,25 @@ namespace ValheimFloorPlan
                         hearthOpenings,
                         player);
                 }
+
+                placed += PlaceGableApexSupportColumnIfClear(centerX, southEdgeZ, apexPoleBaseY, ridgeY, origin, rotationDeg, apexPolePrefab, hearthOpenings, player);
+                placed += PlaceGableApexSupportColumnIfClear(centerX, northEdgeZ, apexPoleBaseY, ridgeY, origin, rotationDeg, apexPolePrefab, hearthOpenings, player);
+                placed += PlaceGableApexSupportColumnIfClear(centerX, centerZ, apexPoleBaseY, ridgeY, origin, rotationDeg, apexPolePrefab, hearthOpenings, player);
+                placed += PlaceGableApexRidgePoleSpan(
+                    new Vector2(minCol, centerZ),
+                    new Vector2(maxColExclusive, centerZ),
+                    ridgeY,
+                    origin,
+                    rotationDeg,
+                    apexRidgeBeamPrefab,
+                    player);
             }
             else
             {
                 float centerX = (minCol + maxColExclusive) * 0.5f;
+                float southEdgeZ = minRow;
+                float northEdgeZ = maxRowExclusive;
+                float centerZ = (minRow + maxRowExclusive) * 0.5f;
                 float westEdgeX = minCol;
                 float eastEdgeX = maxColExclusive;
                 float halfSpan = Mathf.Abs(centerX - westEdgeX);
@@ -2784,9 +2944,107 @@ namespace ValheimFloorPlan
                         hearthOpenings,
                         player);
                 }
+
+                placed += PlaceGableApexSupportColumnIfClear(centerX, southEdgeZ, apexPoleBaseY, ridgeY, origin, rotationDeg, apexPolePrefab, hearthOpenings, player);
+                placed += PlaceGableApexSupportColumnIfClear(centerX, northEdgeZ, apexPoleBaseY, ridgeY, origin, rotationDeg, apexPolePrefab, hearthOpenings, player);
+                placed += PlaceGableApexSupportColumnIfClear(centerX, centerZ, apexPoleBaseY, ridgeY, origin, rotationDeg, apexPolePrefab, hearthOpenings, player);
+                placed += PlaceGableApexRidgePoleSpan(
+                    new Vector2(centerX, minRow),
+                    new Vector2(centerX, maxRowExclusive),
+                    ridgeY,
+                    origin,
+                    rotationDeg,
+                    apexRidgeBeamPrefab,
+                    player);
             }
 
             return placed;
+        }
+
+        private int PlaceGableApexRidgePoleSpan(
+            Vector2 startLocal,
+            Vector2 endLocal,
+            float ridgeY,
+            Vector3 origin,
+            float rotationDeg,
+            GameObject? beamPrefab,
+            Player player)
+        {
+            const float RIDGE_POLE_LEN = 2f;
+            const float RIDGE_POLE_HALF = RIDGE_POLE_LEN * 0.5f;
+            const float RIDGE_VERTICAL_OFFSET = 0.06f; // Keep the pole just under the roof seam.
+            const float RIDGE_JOINT_OVERLAP = 0.08f;
+
+            if (beamPrefab == null)
+                return 0;
+
+            Vector3 pA = PieceMap.TransformPlanPoint(origin, startLocal.x, startLocal.y, ridgeY - RIDGE_VERTICAL_OFFSET, rotationDeg);
+            Vector3 pB = PieceMap.TransformPlanPoint(origin, endLocal.x, endLocal.y, ridgeY - RIDGE_VERTICAL_OFFSET, rotationDeg);
+
+            float dx = pB.x - pA.x;
+            float dz = pB.z - pA.z;
+            float dist = Mathf.Sqrt(dx * dx + dz * dz);
+            if (dist < 0.1f)
+                return 0;
+
+            int placed = 0;
+            Vector3 dir = new Vector3(dx / dist, 0f, dz / dist);
+            Quaternion beamRot = Quaternion.Euler(0f, Mathf.Atan2(-dir.z, dir.x) * Mathf.Rad2Deg, 0f);
+
+            int nFull = Mathf.FloorToInt(dist / RIDGE_POLE_LEN);
+            float remainder = dist - nFull * RIDGE_POLE_LEN;
+
+            for (int b = 0; b < nFull; b++)
+            {
+                Vector3 center = pA + dir * (b * RIDGE_POLE_LEN + RIDGE_POLE_HALF - RIDGE_JOINT_OVERLAP * 0.5f);
+                SpawnScaffoldPole(beamPrefab, center, beamRot, player);
+                placed++;
+            }
+
+            if (remainder > 0.05f)
+            {
+                Vector3 center = pB - dir * (RIDGE_POLE_HALF - RIDGE_JOINT_OVERLAP * 0.5f);
+                SpawnScaffoldPole(beamPrefab, center, beamRot, player);
+                placed++;
+            }
+
+            return placed;
+        }
+
+        private int PlaceGableApexSupportColumnIfClear(
+            float localX,
+            float localZ,
+            float baseY,
+            float apexY,
+            Vector3 origin,
+            float rotationDeg,
+            GameObject? polePrefab,
+            List<HearthOpening> hearthOpenings,
+            Player player)
+        {
+            const float POLE_SEGMENT_HEIGHT = 2f;
+
+            if (polePrefab == null || apexY <= baseY + 0.01f)
+                return 0;
+
+            if (IsInsideAnyHearthOpening(localX, localZ, hearthOpenings))
+                return 0;
+
+            float extensionHeight = apexY - baseY;
+            Vector3 centerPos = PieceMap.TransformPlanPoint(
+                origin,
+                localX,
+                localZ,
+                baseY + extensionHeight * 0.5f,
+                rotationDeg);
+
+            return SpawnScaffoldColumn(
+                polePrefab,
+                centerPos,
+                Quaternion.Euler(0f, rotationDeg, 0f),
+                player,
+                extensionHeight,
+                POLE_SEGMENT_HEIGHT);
         }
 
         private int PlaceSlopedRoofRun(
@@ -2860,7 +3118,7 @@ namespace ValheimFloorPlan
             List<HearthOpening> hearthOpenings,
             Player player)
         {
-            if (prefab == null || IsInsideAnyHearthOpening(localX, localZ, hearthOpenings))
+            if (prefab == null)
                 return 0;
 
             return PlaceChimneyRoofPiece(localX, localZ, localY, localYaw + 270f, origin, rotationDeg, prefab, player);
@@ -3261,6 +3519,7 @@ namespace ValheimFloorPlan
         {
             const float HORIZ_LEN  = 2f;
             const float HORIZ_HALF = HORIZ_LEN * 0.5f;
+            const float JOINT_OVERLAP = 0.08f;
 
             float dx = pB.x - pA.x;
             float dz = pB.z - pA.z;
@@ -3277,7 +3536,7 @@ namespace ValheimFloorPlan
 
             for (int b = 0; b < nFull; b++)
             {
-                Vector3 center = pA + dir * (b * HORIZ_LEN + HORIZ_HALF);
+                Vector3 center = pA + dir * (b * HORIZ_LEN + HORIZ_HALF - JOINT_OVERLAP * 0.5f);
                 center.y = beamY;
                 SpawnScaffoldPole(horizPrefab, center, beamRot, player);
                 placed++;
@@ -3285,7 +3544,7 @@ namespace ValheimFloorPlan
 
             if (remainder > 0.05f)
             {
-                Vector3 center = pB - dir * HORIZ_HALF;
+                Vector3 center = pB - dir * (HORIZ_HALF - JOINT_OVERLAP * 0.5f);
                 center.y = beamY;
                 SpawnScaffoldPole(horizPrefab, center, beamRot, player);
                 placed++;

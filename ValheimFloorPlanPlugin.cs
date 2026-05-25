@@ -14,6 +14,18 @@ namespace ValheimFloorPlan
             Wood
         }
 
+        internal enum RoofScaffoldingTypeOption
+        {
+            Gable,
+            Flat
+        }
+
+        internal enum RoofScaffoldingGableFlooringOption
+        {
+            RoofWithFloorUnderlay,
+            RoofOnly
+        }
+
         public const string PluginGUID = "com.alexdroz.valheimfloorplan";
         public const string PluginName = "ValheimFloorPlan";
         public const string PluginVersion = "1.0.9";
@@ -33,6 +45,8 @@ namespace ValheimFloorPlan
         internal static int ExternalWallHeight { get; private set; } = 1;
         internal static StructuralMaterial WallPillarMaterial { get; private set; } = StructuralMaterial.Stone;
         internal static bool RoofScaffolding { get; private set; } = false;
+        internal static RoofScaffoldingTypeOption RoofScaffoldingType { get; private set; } = RoofScaffoldingTypeOption.Gable;
+        internal static RoofScaffoldingGableFlooringOption RoofScaffoldingGableFlooring { get; private set; } = RoofScaffoldingGableFlooringOption.RoofWithFloorUnderlay;
         internal static int ScaffoldingLevels { get; private set; } = 1;
         internal static int ScaffoldingFloorHeight { get; private set; } = 4;
         internal static int ScaffoldingFloorHeight2 { get; private set; } = 4;
@@ -75,6 +89,8 @@ namespace ValheimFloorPlan
         private ConfigEntry<int> _externalWallHeight = null!;
         private ConfigEntry<string> _wallPillarMaterial = null!;
         private ConfigEntry<bool> _roofScaffolding = null!;
+        private ConfigEntry<string> _roofScaffoldingType = null!;
+        private ConfigEntry<string> _roofScaffoldingGableFlooring = null!;
         private ConfigEntry<int> _scaffoldingLevels = null!;
         private ConfigEntry<int> _scaffoldingFloorHeight = null!;
         private ConfigEntry<int> _scaffoldingFloorHeight2 = null!;
@@ -178,6 +194,24 @@ namespace ValheimFloorPlan
                 "When enabled, places a ring of vertical 4m log poles at each corner, adjacent to each door, and at midpoints where spacing exceeds 8m, then connects their tops with horizontal 4m log poles forming a rectangular scaffold frame.");
             _roofScaffolding.SettingChanged += (_, _) => RoofScaffolding = _roofScaffolding.Value;
             RoofScaffolding = _roofScaffolding.Value;
+
+            _roofScaffoldingType = Config.Bind(
+                "Scaffolding", "RoofScaffoldingType", "Gable",
+                new ConfigDescription(
+                    "Topmost scaffold deck shape when ScaffoldingFloors is enabled. Gable builds the current pitched roof. Flat tiles the topmost level with ridge roof pieces aligned edge-to-edge along their long edges.",
+                    new AcceptableValueList<string>("Gable", "Flat")));
+            _roofScaffoldingType.SettingChanged += (_, _) =>
+                RoofScaffoldingType = ParseRoofScaffoldingType(_roofScaffoldingType.Value);
+            RoofScaffoldingType = ParseRoofScaffoldingType(_roofScaffoldingType.Value);
+
+            _roofScaffoldingGableFlooring = Config.Bind(
+                "Scaffolding", "RoofScaffoldingGableFlooring", "RoofWithFloorUnderlay",
+                new ConfigDescription(
+                    "Top-surface behavior for Gable mode only. RoofWithFloorUnderlay places floor tiles under the top gable roof. RoofOnly places only gable roof pieces.",
+                    new AcceptableValueList<string>("RoofWithFloorUnderlay", "RoofOnly")));
+            _roofScaffoldingGableFlooring.SettingChanged += (_, _) =>
+                RoofScaffoldingGableFlooring = ParseRoofScaffoldingGableFlooring(_roofScaffoldingGableFlooring.Value);
+            RoofScaffoldingGableFlooring = ParseRoofScaffoldingGableFlooring(_roofScaffoldingGableFlooring.Value);
 
             _scaffoldingFloors = Config.Bind(
                 "Scaffolding", "ScaffoldingFloors", false,
@@ -406,7 +440,7 @@ namespace ValheimFloorPlan
             gameObject.AddComponent<FloorPlanBuilder>();
 
             Log.LogInfo($"{PluginName} v{PluginVersion} loaded! " +
-                $"Build: {_buildHotkey.Value}  Undo: {_undoHotkey.Value}  Progress HUD: {ProgressMessageType}  Terrain passes: {TerrainLevelPasses}  Spike cleanup passes: {TerrainSpikeCleanupPasses}  High-point delta: {TerrainHighPointDelta:F2}m  Staged raise: {TerrainUseStagedRaise} ({TerrainRaiseStepHeight:F2}m, max {TerrainMaxRaiseStages})  Skip satisfied center stamps: {TerrainSkipSatisfiedCenterStamps}  External wall height: {ExternalWallHeight}  Wall/Pillar material: {WallPillarMaterial}  Roof scaffolding: {RoofScaffolding}  Scaffolding levels: {ScaffoldingLevels}  Scaffolding floor height: {ScaffoldingFloorHeight}m  Scaffolding floors: {ScaffoldingFloors}  Transverse beams: {TransverseScaffoldingBeams}  Longitudinal beams: {LongitudinalScaffoldingBeams}  Origin extra offset: {BuildOriginForwardOffset:F1}m  Preview move: {PreviewMoveStep:F2}/{PreviewFineMoveStep:F2}m  Preview rotate: {PreviewRotateStepDeg:F0}/{PreviewFineRotateStepDeg:F0}°  Build snap: {BuildRotationSnapDegrees:F1}°");
+                $"Build: {_buildHotkey.Value}  Undo: {_undoHotkey.Value}  Progress HUD: {ProgressMessageType}  Terrain passes: {TerrainLevelPasses}  Spike cleanup passes: {TerrainSpikeCleanupPasses}  High-point delta: {TerrainHighPointDelta:F2}m  Staged raise: {TerrainUseStagedRaise} ({TerrainRaiseStepHeight:F2}m, max {TerrainMaxRaiseStages})  Skip satisfied center stamps: {TerrainSkipSatisfiedCenterStamps}  External wall height: {ExternalWallHeight}  Wall/Pillar material: {WallPillarMaterial}  Roof scaffolding: {RoofScaffolding} ({RoofScaffoldingType}/{RoofScaffoldingGableFlooring})  Scaffolding levels: {ScaffoldingLevels}  Scaffolding floor height: {ScaffoldingFloorHeight}m  Scaffolding floors: {ScaffoldingFloors}  Transverse beams: {TransverseScaffoldingBeams}  Longitudinal beams: {LongitudinalScaffoldingBeams}  Origin extra offset: {BuildOriginForwardOffset:F1}m  Preview move: {PreviewMoveStep:F2}/{PreviewFineMoveStep:F2}m  Preview rotate: {PreviewRotateStepDeg:F0}/{PreviewFineRotateStepDeg:F0}°  Build snap: {BuildRotationSnapDegrees:F1}°");
         }
 
         private void Update()
@@ -597,6 +631,12 @@ namespace ValheimFloorPlan
             return Mathf.Clamp(scaffoldingLevels, 1, 3) > 1 || LongitudinalScaffoldingBeams;
         }
 
+        internal static bool UseGableFloorUnderlay()
+        {
+            return RoofScaffoldingType == RoofScaffoldingTypeOption.Gable &&
+                   RoofScaffoldingGableFlooring == RoofScaffoldingGableFlooringOption.RoofWithFloorUnderlay;
+        }
+
         internal static void RefreshScaffoldingRules()
         {
             Instance?.ApplyScaffoldingRules();
@@ -608,6 +648,22 @@ namespace ValheimFloorPlan
                 return StructuralMaterial.Wood;
 
             return StructuralMaterial.Stone;
+        }
+
+        private static RoofScaffoldingTypeOption ParseRoofScaffoldingType(string value)
+        {
+            if (string.Equals(value?.Trim(), "Flat", System.StringComparison.OrdinalIgnoreCase))
+                return RoofScaffoldingTypeOption.Flat;
+
+            return RoofScaffoldingTypeOption.Gable;
+        }
+
+        private static RoofScaffoldingGableFlooringOption ParseRoofScaffoldingGableFlooring(string value)
+        {
+            if (string.Equals(value?.Trim(), "RoofOnly", System.StringComparison.OrdinalIgnoreCase))
+                return RoofScaffoldingGableFlooringOption.RoofOnly;
+
+            return RoofScaffoldingGableFlooringOption.RoofWithFloorUnderlay;
         }
     }
 }
