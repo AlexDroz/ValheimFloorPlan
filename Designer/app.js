@@ -1,4 +1,4 @@
-const DESIGNER_VERSION = "1.0.9";
+const DESIGNER_VERSION = "1.1.0";
 
 const state = {
   cols: 20,
@@ -29,7 +29,7 @@ const pieceColors = {
 const pieceDefs = {
   Floor2x2: { w: 2, h: 2 },
   Floor1x1: { w: 1, h: 1 },
-  Staircase: { w: 3, h: 3 },
+  Staircase: { w: 4, h: 4 },
   Bed: { w: 2, h: 4 },
   Workbench: { w: 4, h: 4 },
   Hearth: { w: 4, h: 3 },
@@ -247,13 +247,6 @@ function drawPieceOrientation(type, rotation, x, y, wPx, hPx, isPreview = false)
     ctx.lineTo(arrowHead * 1.15, frontY - arrowHead * 1.25);
     ctx.closePath();
     ctx.fill();
-
-    // Label reinforces direction at small zoom levels.
-    ctx.fillStyle = accent;
-    ctx.font = `bold ${Math.max(9, Math.min(wPx, hPx) * 0.16)}px sans-serif`;
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.fillText("UP", 0, backY + 2);
 
     ctx.restore();
     return;

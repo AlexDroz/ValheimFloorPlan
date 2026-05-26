@@ -118,6 +118,8 @@ All values below are configurable in that file.
 | `RoofScaffoldingGableFlooring` | `RoofWithFloorUnderlay` | `RoofWithFloorUnderlay`, `RoofOnly` | Gable-only top-surface behavior (used only when `RoofScaffoldingType=Gable`). `RoofWithFloorUnderlay` places floor tiles under the top gable roof. `RoofOnly` places only gable roof pieces. |
 | `ScaffoldingLevels` | `1` | `1` to `3` | Number of stacked scaffolding levels when `RoofScaffolding` is enabled. Each extra level repeats the same scaffold pattern +4m above the previous level. |
 | `ScaffoldingFloorHeight` | `4` | `2`, `4`, `6` | Vertical height in metres between scaffold levels. Must be a multiple of 2m so stacked wood-iron support segments line up correctly. |
+| `ScaffoldingFloorHeight#2` | `4` | `2`, `4`, `6` | Vertical height in metres for the second scaffold level. Used when `ScaffoldingLevels` is `2` or `3`. |
+| `ScaffoldingFloorHeight#3` | `4` | `2`, `4`, `6` | Vertical height in metres for the third scaffold level. Used when `ScaffoldingLevels` is `3`. |
 | `ScaffoldingFloors` | `false` | `true` / `false` | Builds wood floor decks across each scaffolding level when `RoofScaffolding` is enabled. |
 | `TransverseScaffoldingBeams` | `false` | `true` / `false` | Adds west-to-east horizontal scaffold beams at each scaffold pole row. |
 | `LongitudinalScaffoldingBeams` | `false` | `true` / `false` | Adds south-to-north horizontal scaffold beams at each scaffold pole column. |
@@ -167,34 +169,34 @@ The `samples/` folder contains ready-to-use `.vfp` examples:
 - `samples/myfloorplan28x28.vfp`
 - `samples/Workbenchs_16x20.vfp`
 
-## Screenshots
+## Feature Highlights
 
 
 ![Valheim Floor Plan screenshot 1](https://raw.githubusercontent.com/AlexDroz/ValheimFloorPlan/master/images/ValheimFloorPlan.png)
-![Valheim Floor Plan screenshot 2](https://raw.githubusercontent.com/AlexDroz/ValheimFloorPlan/master/images/2026-05-16%2014_24_14-Valheim.png)
-
-![Valheim Floor Plan screenshot 3](https://raw.githubusercontent.com/AlexDroz/ValheimFloorPlan/master/images/2026-05-16%2014_11_25-Valheim.png)
-![Valheim Floor Plan screenshot 4](https://raw.githubusercontent.com/AlexDroz/ValheimFloorPlan/master/images/2026-05-16%2014_11_55-Valheim.png)
-![Valheim Floor Plan screenshot 5](https://raw.githubusercontent.com/AlexDroz/ValheimFloorPlan/master/images/2026-05-16%2014_12_08-Valheim.png)
-![Valheim Floor Plan screenshot 6](https://raw.githubusercontent.com/AlexDroz/ValheimFloorPlan/master/images/2026-05-16%2014_12_24-Valheim.png)
-![Valheim Floor Plan screenshot 7](https://raw.githubusercontent.com/AlexDroz/ValheimFloorPlan/master/images/2026-05-16%2014_12_57-Valheim.png)
-![Valheim Floor Plan screenshot 8](https://raw.githubusercontent.com/AlexDroz/ValheimFloorPlan/master/images/2026-05-16%2014_13_11-Valheim.png)
-![Valheim Floor Plan screenshot 9](https://raw.githubusercontent.com/AlexDroz/ValheimFloorPlan/master/images/2026-05-16%2014_13_54-Valheim.png)      
+![Valheim Floor Plan screenshot 2](https://raw.githubusercontent.com/AlexDroz/ValheimFloorPlan/master/images/Ex1_1.png)
+![Valheim Floor Plan screenshot 3](https://raw.githubusercontent.com/AlexDroz/ValheimFloorPlan/master/images/Ex1_2.png)
+![Valheim Floor Plan screenshot 4](https://raw.githubusercontent.com/AlexDroz/ValheimFloorPlan/master/images/Ex1_3.png)
+![Valheim Floor Plan screenshot 5](https://raw.githubusercontent.com/AlexDroz/ValheimFloorPlan/master/images/Ex1_4.png)
+![Valheim Floor Plan screenshot 6](https://raw.githubusercontent.com/AlexDroz/ValheimFloorPlan/master/images/Ex1_5.png)
+![Valheim Floor Plan screenshot 7](https://raw.githubusercontent.com/AlexDroz/ValheimFloorPlan/master/images/Ex1_6.png)
 
 
-## Designer Latest
+## Spiral Staircase Showcase
 
-![Valheim Floor Plan screenshot 10](https://raw.githubusercontent.com/AlexDroz/ValheimFloorPlan/master/images/ValheimFloorPlan-Designer.png)
-![Valheim Floor Plan screenshot 11](https://raw.githubusercontent.com/AlexDroz/ValheimFloorPlan/master/images/2026-05-21%2020_03_21-Valheim.png)
-![Valheim Floor Plan screenshot 12](https://raw.githubusercontent.com/AlexDroz/ValheimFloorPlan/master/images/2026-05-21%2020_09_14-Valheim.png)
+![Valheim Floor Plan screenshot 8](https://raw.githubusercontent.com/AlexDroz/ValheimFloorPlan/master/images/Ex2_1.png)
+![Valheim Floor Plan screenshot 9](https://raw.githubusercontent.com/AlexDroz/ValheimFloorPlan/master/images/Ex2_2.png)
+![Valheim Floor Plan screenshot 10](https://raw.githubusercontent.com/AlexDroz/ValheimFloorPlan/master/images/Ex2_3.png)
+![Valheim Floor Plan screenshot 11](https://raw.githubusercontent.com/AlexDroz/ValheimFloorPlan/master/images/Ex2_4.png)
+![Valheim Floor Plan screenshot 12](https://raw.githubusercontent.com/AlexDroz/ValheimFloorPlan/master/images/Ex2_5.png)
+![Valheim Floor Plan screenshot 13](https://raw.githubusercontent.com/AlexDroz/ValheimFloorPlan/master/images/Ex2_6.png)
+![Valheim Floor Plan screenshot 14](https://raw.githubusercontent.com/AlexDroz/ValheimFloorPlan/master/images/Ex2_7.png)
+![Valheim Floor Plan screenshot 15](https://raw.githubusercontent.com/AlexDroz/ValheimFloorPlan/master/images/Ex2_8.png)
                                   
 
-## Examples
+## Example Layouts
 
-![Valheim Floor Plan screenshot 13](https://raw.githubusercontent.com/AlexDroz/ValheimFloorPlan/master/images/2026-05-16%2014_59_48-Valheim.png)
-![Valheim Floor Plan screenshot 14](https://raw.githubusercontent.com/AlexDroz/ValheimFloorPlan/master/images/2026-05-16%2015_01_49-Valheim.png)
-![Valheim Floor Plan screenshot 15](https://raw.githubusercontent.com/AlexDroz/ValheimFloorPlan/master/images/2026-05-16%2015_02_32-Valheim.png)
-![Valheim Floor Plan screenshot 16](https://raw.githubusercontent.com/AlexDroz/ValheimFloorPlan/master/images/2026-05-16%2015_05_44-Valheim.png)
+![Valheim Floor Plan screenshot 16](https://raw.githubusercontent.com/AlexDroz/ValheimFloorPlan/master/images/Ex3.png)
+![Valheim Floor Plan screenshot 17](https://raw.githubusercontent.com/AlexDroz/ValheimFloorPlan/master/images/Ex4.png)
 
 
 

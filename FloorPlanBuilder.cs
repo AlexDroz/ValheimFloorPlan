@@ -2044,10 +2044,41 @@ namespace ValheimFloorPlan
             Player player)
         {
             const float STEP_RISE      = 0.25f;
-            const float STEP_ANGLE_DEG = 15f;
-            // 2m beam used as tread: center radius chosen so inner end joins center pole.
-            const float STEP_RADIUS    = 1.1f;
+            const float STEP_ANGLE_DEG = 20f;
+            const float STAIR_START_ANGLE_CORRECTION_DEG = 90f;
+            // Keep steps inside the 4m x 4m staircase footprint while preserving a readable spiral.
+            const float STEP_RADIUS    = 0.75f;
+            const float STEP_HALF_LENGTH = 1f; // 2m beam tread.
+            // Sink the first tread a little more so its exposed rise matches the later steps.
+            const float STEP_START_OFFSET = -0.15f;
+            const float FIRST_STEP_MAX_SINK = 0.05f;
+            const float GUARD_SIGN_HALF_WIDTH = 0.5f;
+            const float GUARD_SIGN_CW_OFFSET_DEG = -10f;
+            const float GUARD_SIGN_BOTTOM_Y = 0.375f;
+            const float GUARD_SIGN_TOP_Y = 0.725f;
+            string[] guardSignBiomeCycle =
+            {
+                "Meadows",
+                "Black Forest",
+                "Swamp",
+                "Mountains",
+                "Plains",
+                "Mistlands",
+                "Ashlands"
+            };
+            string[] guardSignBiomeColors =
+            {
+                "#8BC34A", // Meadows
+                "#2E7D32", // Black Forest
+                "#6D4C41", // Swamp
+                "#B0BEC5", // Mountains
+                "#FBC02D", // Plains
+                "#7E57C2", // Mistlands
+                "#E64A19"  // Ashlands
+            };
             const float POLE_FALLBACK_HEIGHT = 4f;
+            // Step-level sign placed at the outer tip of every other tread.
+            const string GUARD_SIGN_PREFAB = "sign";
             // Must match PlaceRoofScaffolding.
             const float FLOOR_DECK_LIFT = 0.14f;
 
@@ -2069,6 +2100,8 @@ namespace ValheimFloorPlan
                           ?? scene.GetPrefab("woodiron_beam_26")
                           ?? scene.GetPrefab("wood_floor_1x1")
                           ?? scene.GetPrefab("wood_floor");
+            var guardSignPrefab = scene.GetPrefab(GUARD_SIGN_PREFAB)
+                               ?? scene.GetPrefab("piece_sign");  // alternate naming in some builds
 
             if (polePrefab == null || stepPrefab == null)
             {
@@ -2077,7 +2110,7 @@ namespace ValheimFloorPlan
                 return 0;
             }
 
-            // ── Centre of the 3×3 staircase footprint ─────────────────────────
+            // ── Centre of the staircase footprint (4m x 4m = 4x4 grid cells) ──────
             int effW = def.EffW(piece.Rotation);
             int effH = def.EffH(piece.Rotation);
             float centerLocalX = (piece.Col + effW * 0.5f) * PieceMap.CELL_SIZE;
@@ -2134,15 +2167,35 @@ namespace ValheimFloorPlan
             }
 
             // ── Spiral steps ──────────────────────────────────────────────────
-            // Entry side is opposite to the piece's facing direction:
-            //   rotation 0   (N) → entry from S → start angle 270°
-            //   rotation 90  (E) → entry from W → start angle 180°
-            //   rotation 180 (S) → entry from N → start angle  90°
-            //   rotation 270 (W) → entry from E → start angle   0°
-            float startAngleDeg   = (270f - piece.Rotation + 360f) % 360f;
+            // Match the Designer rotation so the first step starts on the same side
+            // and direction the user chose in the plan.
+            // Historical Designer-axis mapping + correction for current Designer/build mismatch.
+            float startAngleDeg   = (270f - piece.Rotation + STAIR_START_ANGLE_CORRECTION_DEG + 360f) % 360f;
             float currentAngleDeg = startAngleDeg;
-            float stepY   = terrainY + STEP_RISE;
+            float stepY   = terrainY + STEP_START_OFFSET;
+
+            // Clamp first tread so it is never buried deeply if local terrain differs from center terrain.
+            float firstAngleRad = startAngleDeg * Mathf.Deg2Rad;
+            float firstOffsetX  = Mathf.Cos(firstAngleRad) * STEP_RADIUS;
+            float firstOffsetZ  = Mathf.Sin(firstAngleRad) * STEP_RADIUS;
+            Vector3 firstStepPos = PieceMap.TransformPlanPoint(
+                origin,
+                centerLocalX + firstOffsetX,
+                centerLocalZ + firstOffsetZ,
+                TerrainLeveler.TargetLevelY,
+                rotationDeg);
+            float firstStepTerrainY = terrainY;
+            if (Physics.Raycast(
+                    new Vector3(firstStepPos.x, TerrainLeveler.TargetLevelY + 300f, firstStepPos.z),
+                    Vector3.down, out var firstStepTerrainHit, 600f, 1 << 11))
+            {
+                firstStepTerrainY = firstStepTerrainHit.point.y;
+            }
+            stepY = Mathf.Max(stepY, firstStepTerrainY - FIRST_STEP_MAX_SINK);
+
             int   deckIdx = 0;
+            int   stepIndex = 0;
+            int   guardSignPairIndex = 0;
 
             // Spiral upward; exit after placing a step at or above targetTopY.
             while (stepY <= targetTopY + STEP_RISE)
@@ -2175,14 +2228,87 @@ namespace ValheimFloorPlan
                 SpawnRegisteredPiece(stepPrefab, stepPos, stepRot, player);
                 placed++;
 
+                // Guard-rail signs stay on every other tread.
+                // Place two signs at the same X/Z and yaw: floor label on top, step number below.
+                bool isRoofStep = stepY >= targetTopY - 0.01f;
+                bool placeGuardSignPair = (stepIndex % 2) == 0 || isRoofStep;
+                if (guardSignPrefab != null && placeGuardSignPair)
+                {
+                    float outerX = centerLocalX + Mathf.Cos(angleRad) * (STEP_RADIUS + STEP_HALF_LENGTH);
+                    float outerZ = centerLocalZ + Mathf.Sin(angleRad) * (STEP_RADIUS + STEP_HALF_LENGTH);
+                    // Baseline sign orientation is tangential/inward relative to the tread.
+                    // Apply a +10° clockwise tweak from that baseline toward the next step.
+                    float radialYaw      = Mathf.Atan2(Mathf.Cos(angleRad), Mathf.Sin(angleRad)) * Mathf.Rad2Deg;
+                    float localSignYaw   = radialYaw + 180f + GUARD_SIGN_CW_OFFSET_DEG;
+                    float localSignYawRad = localSignYaw * Mathf.Deg2Rad;
+                    float signCenterX    = outerX + Mathf.Cos(localSignYawRad) * GUARD_SIGN_HALF_WIDTH;
+                    float signCenterZ    = outerZ - Mathf.Sin(localSignYawRad) * GUARD_SIGN_HALF_WIDTH;
+                    float signYaw        = PieceMap.TransformLocalYaw(localSignYaw, rotationDeg);
+                    Quaternion signRot   = Quaternion.Euler(0f, signYaw, 0f);
+
+                    string floorLabel = GetStairSignFloorLabel(deckIdx, isRoofStep);
+                    int biomeIndex = guardSignPairIndex % guardSignBiomeCycle.Length;
+                    string biomeLabel = guardSignBiomeCycle[biomeIndex];
+                    string textColor = guardSignBiomeColors[biomeIndex];
+
+                    Vector3 bottomSignPos = PieceMap.TransformPlanPoint(
+                        origin,
+                        signCenterX,
+                        signCenterZ,
+                        stepY + STEP_RISE + GUARD_SIGN_BOTTOM_Y,
+                        rotationDeg);
+                    var bottomSignGo = SpawnRegisteredPiece(guardSignPrefab, bottomSignPos, signRot, player);
+                    placed++;
+
+                    SetSignText(bottomSignGo, textColor, biomeLabel);
+
+                    Vector3 topSignPos = PieceMap.TransformPlanPoint(
+                        origin,
+                        signCenterX,
+                        signCenterZ,
+                        stepY + STEP_RISE + GUARD_SIGN_TOP_Y,
+                        rotationDeg);
+                    var topSignGo = SpawnRegisteredPiece(guardSignPrefab, topSignPos, signRot, player);
+                    placed++;
+
+                    SetSignText(topSignGo, textColor, floorLabel);
+
+                    guardSignPairIndex++;
+                }
+
                 if (stepY >= targetTopY - 0.01f)
                     break;
 
                 currentAngleDeg += STEP_ANGLE_DEG;
                 stepY           += STEP_RISE;
+                stepIndex++;
             }
 
             return placed;
+        }
+
+        private static string GetStairSignFloorLabel(int deckIdx, bool isRoofStep)
+        {
+            if (isRoofStep)
+                return "Roof / Attic";
+            if (deckIdx <= 0)
+                return "Ground Floor";
+            if (deckIdx == 1)
+                return "Floor One";
+            if (deckIdx == 2)
+                return "Floor Two";
+            return "Floor " + deckIdx.ToString();
+        }
+
+        private static void SetSignText(GameObject? signGo, string color, string content)
+        {
+            if (signGo == null)
+                return;
+
+            var znv = signGo.GetComponent<ZNetView>();
+            var zdo = znv != null ? znv.GetZDO() : null;
+            if (zdo != null)
+                zdo.Set("text", "<color=" + color + ">" + content + "</color>");
         }
 
         private static bool TryGetObjectBoundsTopY(GameObject go, out float topY)
@@ -2949,6 +3075,8 @@ namespace ValheimFloorPlan
 
                 for (int e = 0; e < 4; e++)
                 {
+                    Vector2 localEdgeA = ScaffoldParamToLocal(cornerT[edgeFrom[e]], lMinX, lMaxX, lMinZ, lMaxZ, perimeter);
+                    Vector2 localEdgeB = ScaffoldParamToLocal(cornerT[edgeTo[e]], lMinX, lMaxX, lMinZ, lMaxZ, perimeter);
                     Vector3 cA = cornerTops[edgeFrom[e]];
                     Vector3 cB = cornerTops[edgeTo[e]];
                     float edgeDx = cB.x - cA.x;
@@ -2967,6 +3095,12 @@ namespace ValheimFloorPlan
 
                     for (int b = 0; b < nFull; b++)
                     {
+                        float centerDist = b * HORIZ_LEN + HORIZ_HALF - BEAM_JOINT_OVERLAP * 0.5f;
+                        float t = Mathf.Clamp01(centerDist / edgeDist);
+                        Vector2 localCenter = Vector2.Lerp(localEdgeA, localEdgeB, t);
+                        if (IsInsideAnyHearthOpening(localCenter.x, localCenter.y, deckOpenings))
+                            continue;
+
                         Vector3 center = cA + dir * (b * HORIZ_LEN + HORIZ_HALF - BEAM_JOINT_OVERLAP * 0.5f);
                         center.y = beamY;
                         SpawnScaffoldPole(horizPrefab, center, beamRot, player);
@@ -2976,6 +3110,12 @@ namespace ValheimFloorPlan
 
                     if (remainder > 0.05f)
                     {
+                        float centerDist = edgeDist - (HORIZ_HALF - BEAM_JOINT_OVERLAP * 0.5f);
+                        float t = Mathf.Clamp01(centerDist / edgeDist);
+                        Vector2 localCenter = Vector2.Lerp(localEdgeA, localEdgeB, t);
+                        if (IsInsideAnyHearthOpening(localCenter.x, localCenter.y, deckOpenings))
+                            continue;
+
                         Vector3 center = cB - dir * (HORIZ_HALF - BEAM_JOINT_OVERLAP * 0.5f);
                         center.y = beamY;
                         SpawnScaffoldPole(horizPrefab, center, beamRot, player);
@@ -3337,6 +3477,7 @@ namespace ValheimFloorPlan
                     origin,
                     rotationDeg,
                     apexRidgeBeamPrefab,
+                    hearthOpenings,
                     player);
             }
             else
@@ -3393,6 +3534,7 @@ namespace ValheimFloorPlan
                     origin,
                     rotationDeg,
                     apexRidgeBeamPrefab,
+                    hearthOpenings,
                     player);
             }
 
@@ -3406,6 +3548,7 @@ namespace ValheimFloorPlan
             Vector3 origin,
             float rotationDeg,
             GameObject? beamPrefab,
+            List<HearthOpening> blockedOpenings,
             Player player)
         {
             const float RIDGE_POLE_LEN = 2f;
@@ -3434,6 +3577,12 @@ namespace ValheimFloorPlan
 
             for (int b = 0; b < nFull; b++)
             {
+                float centerDist = b * RIDGE_POLE_LEN + RIDGE_POLE_HALF - RIDGE_JOINT_OVERLAP * 0.5f;
+                float t = Mathf.Clamp01(centerDist / dist);
+                Vector2 localCenter = Vector2.Lerp(startLocal, endLocal, t);
+                if (IsInsideAnyHearthOpening(localCenter.x, localCenter.y, blockedOpenings))
+                    continue;
+
                 Vector3 center = pA + dir * (b * RIDGE_POLE_LEN + RIDGE_POLE_HALF - RIDGE_JOINT_OVERLAP * 0.5f);
                 SpawnScaffoldPole(beamPrefab, center, beamRot, player);
                 placed++;
@@ -3441,6 +3590,12 @@ namespace ValheimFloorPlan
 
             if (remainder > 0.05f)
             {
+                float centerDist = dist - (RIDGE_POLE_HALF - RIDGE_JOINT_OVERLAP * 0.5f);
+                float t = Mathf.Clamp01(centerDist / dist);
+                Vector2 localCenter = Vector2.Lerp(startLocal, endLocal, t);
+                if (IsInsideAnyHearthOpening(localCenter.x, localCenter.y, blockedOpenings))
+                    return placed;
+
                 Vector3 center = pB - dir * (RIDGE_POLE_HALF - RIDGE_JOINT_OVERLAP * 0.5f);
                 SpawnScaffoldPole(beamPrefab, center, beamRot, player);
                 placed++;
@@ -3556,7 +3711,7 @@ namespace ValheimFloorPlan
             List<HearthOpening> hearthOpenings,
             Player player)
         {
-            if (prefab == null)
+            if (prefab == null || IsInsideAnyHearthOpening(localX, localZ, hearthOpenings))
                 return 0;
 
             return PlaceChimneyRoofPiece(localX, localZ, localY, localYaw + 270f, origin, rotationDeg, prefab, player);

@@ -1,7 +1,8 @@
 # Changelog
 
-## Unreleased
+## 1.1.0
 
+- **New Spiral Staircase build feature:** added a compact center-pole spiral staircase that climbs from ground floor toward upper scaffold floors/roof with improved step flow and safer outer-edge guarding.
 - **Scaffolding beam options now auto-enable for multi-level scaffolds:** when `ScaffoldingLevels` is set above `1`, `TransverseScaffoldingBeams` and `LongitudinalScaffoldingBeams` are automatically forced to `true` and written back to config so the saved settings match the required build behavior.
 - **External wall height now follows scaffold capacity:** `ExternalWallHeight` is now capped at `ScaffoldingLevels x ScaffoldingFloorHeight`, and oversized values are clamped back to the maximum allowed by the current scaffold setup.
 - **Scaffold levels can now use different heights:** added `ScaffoldingFloorHeight#2` and `ScaffoldingFloorHeight#3` so each scaffold story can use its own validated height, and `ExternalWallHeight` now caps against the sum of the active scaffold floor heights.
