@@ -307,6 +307,37 @@ Side View (vertical progression)
 - Build task: `Build & Deploy ValheimFloorPlan`.
 - Thunderstore packaging recreates `artifacts/thunderstore/stage` and copies from root `Designer`.
 
+## Unreleased Internal Notes
+
+### Multi-Level Layout Controls
+- Added `FloorPlanLevels` config (`1..3`) in `ValheimFloorPlanPlugin` as the primary selector for active plan count.
+- `FloorPlanFileLevel2` and `FloorPlanFileLevel3` remain path-based sources for optional upper layouts.
+- Upper-level placement now gates on `FloorPlanLevels`:
+	- `1` = no upper-level placement pass.
+	- `2` = requires a valid `FloorPlanFileLevel2`.
+	- `3` = requires valid `FloorPlanFileLevel2` and `FloorPlanFileLevel3`.
+
+### Enforced Scaffolding Rules For Multi-Floor Layouts
+- Centralized in `ApplyScaffoldingRules`.
+- When `FloorPlanLevels > 1`:
+	- `RoofScaffolding` is forced `true`.
+	- `ScaffoldingFloors` is forced `true`.
+	- `TransverseScaffoldingBeams` is forced `true`.
+	- `LongitudinalScaffoldingBeams` is forced `true`.
+	- Minimum `ScaffoldingLevels` is forced to `FloorPlanLevels`.
+- `RoofScaffolding` and `ScaffoldingFloors` now route through the same rule-application path on setting change.
+
+### Upper-Level Placement Pass (Current Scope)
+- Upper-level plans are still footprint-validated against Level 1 bounds before placement.
+- Placement remains internal-only for v1 (pieces touching Level 1 outer perimeter are skipped).
+- `Hearth` and `Staircase` are still intentionally skipped for upper-level layouts.
+- Upper-level piece Y uses scaffold deck heights (`GetDeckYForScaffoldLevel`).
+
+### Duplicate Decking Fix
+- Upper-level `Floor2x2` and `Floor1x1` pieces are skipped in `PlaceUpperLevelPieces`.
+- Rationale: scaffold decks already provide the walkable floor surface for those levels.
+- Result: avoids duplicate overlapping floor tiles on Level 2/3.
+
 ## Planning References
 - Yard strategy options and tradeoffs are tracked in `YARD_STRATEGY_NOTES.md`.
 

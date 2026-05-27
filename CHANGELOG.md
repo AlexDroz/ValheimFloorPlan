@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased (Provisional)
+
+- Added early multi-floor layout support for 2nd and 3rd floor plans.
+- Improved validation and warnings for invalid upper-floor layouts.
+- Improved scaffold behavior for multi-floor builds so required support settings are automatically enforced.
+- Removed duplicate upper-floor deck placement to avoid overlapping flooring.
+- Updated and expanded documentation (README and developer notes), including corrected sample-plan references.
+- Upper-level `Staircase` placement is still not supported yet and is currently skipped with warning logs.
+
 ## 1.1.0
 
 - **New Spiral Staircase build feature:** added a compact center-pole spiral staircase that climbs from ground floor toward upper scaffold floors/roof with improved step flow and safer outer-edge guarding.

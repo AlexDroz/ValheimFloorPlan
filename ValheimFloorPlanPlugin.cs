@@ -71,8 +71,14 @@ namespace ValheimFloorPlan
         internal static KeyCode PreviewCancelKey { get; private set; } = KeyCode.Escape;
         internal static KeyCode PreviewFineAdjustKey { get; private set; } = KeyCode.LeftShift;
         internal static float UndoRadius { get; private set; } = 15f;
+        internal static int FloorPlanLevels { get; private set; } = 1;
+        internal static string FloorPlanFileLevel2 { get; private set; } = string.Empty;
+        internal static string FloorPlanFileLevel3 { get; private set; } = string.Empty;
 
         private ConfigEntry<string> _vfpFilePath = null!;
+        private ConfigEntry<string> _vfpFilePathLevel2 = null!;
+        private ConfigEntry<string> _vfpFilePathLevel3 = null!;
+        private ConfigEntry<int> _floorPlanLevels = null!;
         private ConfigEntry<KeyboardShortcut> _buildHotkey = null!;
         private ConfigEntry<KeyboardShortcut> _undoHotkey = null!;
         private ConfigEntry<float> _undoRadius = null!;
@@ -124,6 +130,28 @@ namespace ValheimFloorPlan
             _vfpFilePath = Config.Bind(
                 "General", "FloorPlanFile", "",
                 "Full path to the .vfp floor plan file exported from Valheim Floor Plan Designer.");
+
+            _vfpFilePathLevel2 = Config.Bind(
+                "General", "FloorPlanFileLevel2", "",
+                "Optional full path to the Level 2 .vfp floor plan file. When set, its footprint must fit within the Level 1 plan footprint.");
+            _vfpFilePathLevel2.SettingChanged += (_, _) =>
+                FloorPlanFileLevel2 = (_vfpFilePathLevel2.Value ?? string.Empty).Trim();
+            FloorPlanFileLevel2 = (_vfpFilePathLevel2.Value ?? string.Empty).Trim();
+
+            _vfpFilePathLevel3 = Config.Bind(
+                "General", "FloorPlanFileLevel3", "",
+                "Optional full path to the Level 3 .vfp floor plan file. When set, its footprint must fit within the Level 1 plan footprint.");
+            _vfpFilePathLevel3.SettingChanged += (_, _) =>
+                FloorPlanFileLevel3 = (_vfpFilePathLevel3.Value ?? string.Empty).Trim();
+            FloorPlanFileLevel3 = (_vfpFilePathLevel3.Value ?? string.Empty).Trim();
+
+            _floorPlanLevels = Config.Bind(
+                "General", "FloorPlanLevels", 1,
+                new ConfigDescription(
+                    "How many layout levels to build (1-3). Level 1 is FloorPlanFile, Level 2 adds FloorPlanFileLevel2, Level 3 adds FloorPlanFileLevel3. Values above 1 enforce multi-level scaffolding requirements.",
+                    new AcceptableValueRange<int>(1, 3)));
+            _floorPlanLevels.SettingChanged += (_, _) => ApplyScaffoldingRules();
+            FloorPlanLevels = Mathf.Clamp(_floorPlanLevels.Value, 1, 3);
 
             _buildHotkey = Config.Bind(
                 "General", "BuildHotkey", new KeyboardShortcut(KeyCode.F8),
@@ -192,7 +220,7 @@ namespace ValheimFloorPlan
             _roofScaffolding = Config.Bind(
                 "Scaffolding", "RoofScaffolding", false,
                 "When enabled, places a ring of vertical 4m log poles at each corner, adjacent to each door, and at midpoints where spacing exceeds 8m, then connects their tops with horizontal 4m log poles forming a rectangular scaffold frame.");
-            _roofScaffolding.SettingChanged += (_, _) => RoofScaffolding = _roofScaffolding.Value;
+            _roofScaffolding.SettingChanged += (_, _) => ApplyScaffoldingRules();
             RoofScaffolding = _roofScaffolding.Value;
 
             _roofScaffoldingType = Config.Bind(
@@ -216,7 +244,7 @@ namespace ValheimFloorPlan
             _scaffoldingFloors = Config.Bind(
                 "Scaffolding", "ScaffoldingFloors", false,
                 "When enabled (requires RoofScaffolding), builds wood floor decks across each scaffolding level.");
-            _scaffoldingFloors.SettingChanged += (_, _) => ScaffoldingFloors = _scaffoldingFloors.Value;
+            _scaffoldingFloors.SettingChanged += (_, _) => ApplyScaffoldingRules();
             ScaffoldingFloors = _scaffoldingFloors.Value;
 
             _transverseScaffoldingBeams = Config.Bind(
@@ -545,7 +573,12 @@ namespace ValheimFloorPlan
             _applyingScaffoldingRules = true;
             try
             {
-                int clampedLevels = Mathf.Clamp(_scaffoldingLevels.Value, 1, 3);
+                int clampedFloorPlanLevels = Mathf.Clamp(_floorPlanLevels.Value, 1, 3);
+                if (_floorPlanLevels.Value != clampedFloorPlanLevels)
+                    _floorPlanLevels.Value = clampedFloorPlanLevels;
+
+                int minScaffoldingLevels = clampedFloorPlanLevels;
+                int clampedLevels = Mathf.Clamp(_scaffoldingLevels.Value, minScaffoldingLevels, 3);
                 if (_scaffoldingLevels.Value != clampedLevels)
                     _scaffoldingLevels.Value = clampedLevels;
 
@@ -553,8 +586,14 @@ namespace ValheimFloorPlan
                 int floorHeight2 = _scaffoldingFloorHeight2.Value;
                 int floorHeight3 = _scaffoldingFloorHeight3.Value;
 
-                if (clampedLevels > 1)
+                if (clampedFloorPlanLevels > 1)
                 {
+                    if (!_roofScaffolding.Value)
+                        _roofScaffolding.Value = true;
+
+                    if (!_scaffoldingFloors.Value)
+                        _scaffoldingFloors.Value = true;
+
                     if (!_transverseScaffoldingBeams.Value)
                         _transverseScaffoldingBeams.Value = true;
 
@@ -562,10 +601,13 @@ namespace ValheimFloorPlan
                         _longitudinalScaffoldingBeams.Value = true;
                 }
 
+                FloorPlanLevels = clampedFloorPlanLevels;
                 ScaffoldingLevels = clampedLevels;
                 ScaffoldingFloorHeight = floorHeight;
                 ScaffoldingFloorHeight2 = floorHeight2;
                 ScaffoldingFloorHeight3 = floorHeight3;
+                RoofScaffolding = _roofScaffolding.Value;
+                ScaffoldingFloors = _scaffoldingFloors.Value;
                 TransverseScaffoldingBeams = _transverseScaffoldingBeams.Value;
                 LongitudinalScaffoldingBeams = _longitudinalScaffoldingBeams.Value;
 

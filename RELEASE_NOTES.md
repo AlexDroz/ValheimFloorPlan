@@ -2,6 +2,19 @@
 
 These are provisional notes for the next release and focus on workstation support, Designer/build alignment, and placement cleanup after the center-pivot refactor.
 
+## Pending Next Release (Provisional)
+
+- Added new optional config entries: `FloorPlanFileLevel2` and `FloorPlanFileLevel3`.
+- Added validation that Level 2/3 footprints must fit within the Level 1 footprint (smaller and offset footprints are allowed).
+- Added initial Level 2/3 placement pass after scaffold generation when scaffold floors are enabled.
+- Upper-level placement currently enforces internal-only behavior (outer-perimeter-touching pieces are skipped).
+- Upper-level `Hearth` and `Staircase` are intentionally skipped in this iteration pending dedicated rules.
+- Level 2/3 piece height is derived from scaffold deck heights (based on configured scaffold floor heights).
+- Updated README config docs for the new Level 2/3 file parameters.
+- Updated README sample-plan list to include recently added samples and fixed sample filename typo.
+- Expanded developer docs (`DEV_NOTES.md`) with detailed scaffolding/roof/hearth/staircase behavior notes and diagrams.
+- Added `YARD_STRATEGY_NOTES.md` for provisional House/Yard approach evaluation.
+
 ## Highlights
 
 - Added `Workbench` support in both the Designer and the Builder, including Designer rotation handling and in-game workstation placement.

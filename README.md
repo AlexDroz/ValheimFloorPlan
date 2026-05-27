@@ -83,6 +83,9 @@ All values below are configurable in that file.
 | Option | Default | Allowed values | What it does |
 |---|---|---|---|
 | `FloorPlanFile` | *(empty)* | Any valid file path | Full path to the `.vfp` file exported by the Designer. |
+| `FloorPlanLevels` | `1` | `1` to `3` | Number of layout levels to build. `1` uses only `FloorPlanFile`, `2` also uses `FloorPlanFileLevel2`, `3` also uses `FloorPlanFileLevel3`. Values above `1` enforce multi-level scaffolding requirements. |
+| `FloorPlanFileLevel2` | *(empty)* | Any valid file path | Optional full path to a Level 2 `.vfp` file. If set, its footprint must fit within the Level 1 (`FloorPlanFile`) footprint. |
+| `FloorPlanFileLevel3` | *(empty)* | Any valid file path | Optional full path to a Level 3 `.vfp` file. If set, its footprint must fit within the Level 1 (`FloorPlanFile`) footprint. |
 | `BuildHotkey` | `F8` | Any valid `KeyboardShortcut` | Starts plan preview/build flow. |
 | `UndoHotkey` | `F9` | Any valid `KeyboardShortcut` | Removes placed VFP-tagged pieces and restores terrain snapshot. |
 | `UndoRadius` | `15` | `5` to `150` | Search radius in metres around the undo circle centre when scanning for VFP pieces to remove on Undo. Adjustable live during the confirmation window with `+`/`-`, and circle centre is adjustable with arrow keys. |
@@ -113,16 +116,16 @@ All values below are configurable in that file.
 
 | Option | Default | Allowed values | What it does |
 |---|---|---|---|
-| `RoofScaffolding` | `false` | `true` / `false` | Adds scaffold poles and perimeter beams around the plan during the build. |
+| `RoofScaffolding` | `false` | `true` / `false` | Adds scaffold poles and perimeter beams around the plan during the build. Automatically forced to `true` when `FloorPlanLevels > 1`. |
 | `RoofScaffoldingType` | `Gable` | `Gable`, `Flat` | Controls the topmost scaffold deck shape when `ScaffoldingFloors` is enabled. `Gable` builds a pitched roof layout and extends front-mid/back-mid/center support columns up to the apex. `Flat` tiles the topmost level with ridge roof pieces edge-to-edge (one piece per 2x2 tile area). |
 | `RoofScaffoldingGableFlooring` | `RoofWithFloorUnderlay` | `RoofWithFloorUnderlay`, `RoofOnly` | Gable-only top-surface behavior (used only when `RoofScaffoldingType=Gable`). `RoofWithFloorUnderlay` places floor tiles under the top gable roof. `RoofOnly` places only gable roof pieces. |
 | `ScaffoldingLevels` | `1` | `1` to `3` | Number of stacked scaffolding levels when `RoofScaffolding` is enabled. Each extra level repeats the same scaffold pattern +4m above the previous level. |
 | `ScaffoldingFloorHeight` | `4` | `2`, `4`, `6` | Vertical height in metres between scaffold levels. Must be a multiple of 2m so stacked wood-iron support segments line up correctly. |
 | `ScaffoldingFloorHeight#2` | `4` | `2`, `4`, `6` | Vertical height in metres for the second scaffold level. Used when `ScaffoldingLevels` is `2` or `3`. |
 | `ScaffoldingFloorHeight#3` | `4` | `2`, `4`, `6` | Vertical height in metres for the third scaffold level. Used when `ScaffoldingLevels` is `3`. |
-| `ScaffoldingFloors` | `false` | `true` / `false` | Builds wood floor decks across each scaffolding level when `RoofScaffolding` is enabled. |
-| `TransverseScaffoldingBeams` | `false` | `true` / `false` | Adds west-to-east horizontal scaffold beams at each scaffold pole row. |
-| `LongitudinalScaffoldingBeams` | `false` | `true` / `false` | Adds south-to-north horizontal scaffold beams at each scaffold pole column. |
+| `ScaffoldingFloors` | `false` | `true` / `false` | Builds wood floor decks across each scaffolding level when `RoofScaffolding` is enabled. Automatically forced to `true` when `FloorPlanLevels > 1`. |
+| `TransverseScaffoldingBeams` | `false` | `true` / `false` | Adds west-to-east horizontal scaffold beams at each scaffold pole row. Automatically forced to `true` when `FloorPlanLevels > 1`. |
+| `LongitudinalScaffoldingBeams` | `false` | `true` / `false` | Adds south-to-north horizontal scaffold beams at each scaffold pole column. Automatically forced to `true` when `FloorPlanLevels > 1`. |
 
 
 ### Preview
