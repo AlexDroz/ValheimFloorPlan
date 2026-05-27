@@ -13,7 +13,7 @@ namespace ValheimFloorPlan
     ///   row  -> +Z axis (north)
     ///   Y    -> terrain height sampled at each position
     ///
-    /// Each cell = 2m (CELL_SIZE). Pieces are centred within their cell footprint.
+    /// Each cell = 1m (PieceMap.CELL_SIZE). Pieces are centred within their cell footprint.
     /// </summary>
     public class FloorPlanBuilder : MonoBehaviour
     {
