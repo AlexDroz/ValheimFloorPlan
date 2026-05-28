@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Valheim Floor Plan Designer v1.1.0 - User Guide</title>
+  <title>Valheim Floor Plan Designer v2.0.0 - User Guide</title>
   <style>
     :root {
       --bg: #f6efe2;
@@ -57,7 +57,7 @@
 <body>
   <div class="wrap">
     <div class="card">
-      <h1>Valheim Floor Plan Designer v1.1.0 - User Guide</h1>
+      <h1>Valheim Floor Plan Designer v2.0.0 - User Guide</h1>
       <p class="muted">Web version (.vfp compatible)</p>
       <p>Create and edit floor plans, then save them as <code>.vfp</code> files for your Valheim mod workflow.</p>
     </div>
@@ -71,6 +71,30 @@
         <li>Use arrow keys while hovering the grid to rotate placement (90-degree steps).</li>
         <li>Left click to place. Right click to remove the top-most piece at that cell.</li>
       </ol>
+    </div>
+
+    <div class="card">
+      <h2>Multi-Level Layout Workflow</h2>
+      <ul>
+        <li>The Designer keeps up to <strong>3 level layouts</strong> in memory: <code>Level 1</code>, <code>Level 2</code>, and <code>Level 3</code>.</li>
+        <li>Use level buttons under the canvas to switch active editing level quickly.</li>
+        <li>Keyboard shortcut: <code>Alt+1</code>, <code>Alt+2</code>, <code>Alt+3</code> switches active level.</li>
+        <li><code>Open</code>, <code>Save</code>, and <code>Save As</code> always apply to the <strong>currently active level</strong>.</li>
+        <li>Each level maintains independent grid size, pieces, filename, and dirty state.</li>
+      </ul>
+    </div>
+
+    <div class="card">
+      <h2>Overlay Levels And Clash Hints</h2>
+      <ul>
+        <li>Use the <code>Overlay</code> checkboxes (<code>L1</code>/<code>L2</code>/<code>L3</code>) to draw non-active levels on top of the active grid as transparent guides.</li>
+        <li>Potential cross-level clashes are highlighted with <strong>dotted bright red outlines</strong>.</li>
+        <li>Cross-level clash rules are directional:</li>
+      </ul>
+      <ul>
+        <li><code>Staircase</code> and <code>Hearth</code> on lower levels can conflict upward into higher levels.</li>
+        <li>Other piece types (for example <code>Bed</code>, <code>Workbench</code>) do not project upward for cross-level clash hints.</li>
+      </ul>
     </div>
 
     <div class="card">
@@ -100,7 +124,7 @@
       <h2>Visual Rules</h2>
       <ul>
         <li>Layer order: Floor, Wall, Doorway, Pillar.</li>
-        <li>Overlap warnings: red outline appears on top-most overlapping pieces.</li>
+        <li>Same-level overlap warnings: red outline appears on top-most overlapping pieces.</li>
         <li>Placement preview: lighter transparent shade of selected piece color.</li>
       </ul>
     </div>

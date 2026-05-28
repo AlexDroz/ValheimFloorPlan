@@ -26,9 +26,15 @@ namespace ValheimFloorPlan
             RoofOnly
         }
 
+        internal enum StaircaseReachModeOption
+        {
+            ToTheNextLevelOnly,
+            AllTheWay
+        }
+
         public const string PluginGUID = "com.alexdroz.valheimfloorplan";
         public const string PluginName = "ValheimFloorPlan";
-        public const string PluginVersion = "1.1.0";
+        public const string PluginVersion = "2.0.0";
 
         internal static ManualLogSource Log = null!;
         internal static ValheimFloorPlanPlugin Instance { get; private set; } = null!;
@@ -42,8 +48,11 @@ namespace ValheimFloorPlan
         internal static float TerrainRaiseStepHeight { get; private set; } = 0.5f;
         internal static int TerrainMaxRaiseStages { get; private set; } = 1;
         internal static bool TerrainSkipSatisfiedCenterStamps { get; private set; } = true;
-        internal static int ExternalWallHeight { get; private set; } = 1;
+        internal static int ExternalWallHeightLevel1 { get; private set; } = 1;
+        internal static int ExternalWallHeightLevel2 { get; private set; } = 1;
+        internal static int ExternalWallHeightLevel3 { get; private set; } = 1;
         internal static StructuralMaterial WallPillarMaterial { get; private set; } = StructuralMaterial.Stone;
+        internal static StaircaseReachModeOption StaircaseReachMode { get; private set; } = StaircaseReachModeOption.ToTheNextLevelOnly;
         internal static bool RoofScaffolding { get; private set; } = false;
         internal static RoofScaffoldingTypeOption RoofScaffoldingType { get; private set; } = RoofScaffoldingTypeOption.Gable;
         internal static RoofScaffoldingGableFlooringOption RoofScaffoldingGableFlooring { get; private set; } = RoofScaffoldingGableFlooringOption.RoofWithFloorUnderlay;
@@ -92,8 +101,11 @@ namespace ValheimFloorPlan
         private ConfigEntry<float> _terrainRaiseStepHeight = null!;
         private ConfigEntry<int> _terrainMaxRaiseStages = null!;
         private ConfigEntry<bool> _terrainSkipSatisfiedCenterStamps = null!;
-        private ConfigEntry<int> _externalWallHeight = null!;
+        private ConfigEntry<int> _externalWallHeightLevel1 = null!;
+        private ConfigEntry<int> _externalWallHeightLevel2 = null!;
+        private ConfigEntry<int> _externalWallHeightLevel3 = null!;
         private ConfigEntry<string> _wallPillarMaterial = null!;
+        private ConfigEntry<string> _staircaseReachMode = null!;
         private ConfigEntry<bool> _roofScaffolding = null!;
         private ConfigEntry<string> _roofScaffoldingType = null!;
         private ConfigEntry<string> _roofScaffoldingGableFlooring = null!;
@@ -261,13 +273,29 @@ namespace ValheimFloorPlan
 
             ApplyScaffoldingRules();
 
-            _externalWallHeight = Config.Bind(
-                "Building", "ExternalWallHeight", 1,
+            _externalWallHeightLevel1 = Config.Bind(
+                "Building", "ExternalWallHeightLevel1", 1,
                 new ConfigDescription(
-                    "How many levels high external Wall/Pillar pieces should be stacked. Maximum is the sum of the active scaffold floor heights.",
-                    new AcceptableValueRange<int>(1, 18)));
-            _externalWallHeight.SettingChanged += (_, _) => ApplyScaffoldingRules();
-            ExternalWallHeight = Mathf.Clamp(_externalWallHeight.Value, 1, 18);
+                    "How many levels high external Wall/Pillar pieces should be stacked for Level 1. Dynamic cap: ScaffoldingFloorHeight x 2.",
+                    new AcceptableValueRange<int>(1, 6)));
+            _externalWallHeightLevel1.SettingChanged += (_, _) => ApplyScaffoldingRules();
+            ExternalWallHeightLevel1 = Mathf.Clamp(_externalWallHeightLevel1.Value, 1, 6);
+
+            _externalWallHeightLevel2 = Config.Bind(
+                "Building", "ExternalWallHeightLevel2", 1,
+                new ConfigDescription(
+                    "How many levels high external Wall/Pillar pieces should be stacked for Level 2. Dynamic cap: ScaffoldingFloorHeight#2 x 2.",
+                    new AcceptableValueRange<int>(1, 6)));
+            _externalWallHeightLevel2.SettingChanged += (_, _) => ApplyScaffoldingRules();
+            ExternalWallHeightLevel2 = Mathf.Clamp(_externalWallHeightLevel2.Value, 1, 6);
+
+            _externalWallHeightLevel3 = Config.Bind(
+                "Building", "ExternalWallHeightLevel3", 1,
+                new ConfigDescription(
+                    "How many levels high external Wall/Pillar pieces should be stacked for Level 3. Dynamic cap: ScaffoldingFloorHeight#3 x 2.",
+                    new AcceptableValueRange<int>(1, 6)));
+            _externalWallHeightLevel3.SettingChanged += (_, _) => ApplyScaffoldingRules();
+            ExternalWallHeightLevel3 = Mathf.Clamp(_externalWallHeightLevel3.Value, 1, 6);
 
             ApplyScaffoldingRules();
 
@@ -285,6 +313,15 @@ namespace ValheimFloorPlan
                 "When enabled, skips creation of the center Welcome post and signs after a build completes.");
             _disableWelcomePost.SettingChanged += (_, _) => DisableWelcomePost = _disableWelcomePost.Value;
             DisableWelcomePost = _disableWelcomePost.Value;
+
+            _staircaseReachMode = Config.Bind(
+                "Building", "StaircaseReachMode", "ToTheNextLevelOnly",
+                new ConfigDescription(
+                    "Controls staircase vertical reach. ToTheNextLevelOnly climbs one level at a time. AllTheWay climbs toward the top available scaffold level.",
+                    new AcceptableValueList<string>("ToTheNextLevelOnly", "AllTheWay")));
+            _staircaseReachMode.SettingChanged += (_, _) =>
+                StaircaseReachMode = ParseStaircaseReachMode(_staircaseReachMode.Value);
+            StaircaseReachMode = ParseStaircaseReachMode(_staircaseReachMode.Value);
 
             _buildOriginForwardOffset = Config.Bind(
                 "Preview", "BuildOriginForwardOffset", 0f,
@@ -468,7 +505,7 @@ namespace ValheimFloorPlan
             gameObject.AddComponent<FloorPlanBuilder>();
 
             Log.LogInfo($"{PluginName} v{PluginVersion} loaded! " +
-                $"Build: {_buildHotkey.Value}  Undo: {_undoHotkey.Value}  Progress HUD: {ProgressMessageType}  Terrain passes: {TerrainLevelPasses}  Spike cleanup passes: {TerrainSpikeCleanupPasses}  High-point delta: {TerrainHighPointDelta:F2}m  Staged raise: {TerrainUseStagedRaise} ({TerrainRaiseStepHeight:F2}m, max {TerrainMaxRaiseStages})  Skip satisfied center stamps: {TerrainSkipSatisfiedCenterStamps}  External wall height: {ExternalWallHeight}  Wall/Pillar material: {WallPillarMaterial}  Roof scaffolding: {RoofScaffolding} ({RoofScaffoldingType}/{RoofScaffoldingGableFlooring})  Scaffolding levels: {ScaffoldingLevels}  Scaffolding floor height: {ScaffoldingFloorHeight}m  Scaffolding floors: {ScaffoldingFloors}  Transverse beams: {TransverseScaffoldingBeams}  Longitudinal beams: {LongitudinalScaffoldingBeams}  Origin extra offset: {BuildOriginForwardOffset:F1}m  Preview move: {PreviewMoveStep:F2}/{PreviewFineMoveStep:F2}m  Preview rotate: {PreviewRotateStepDeg:F0}/{PreviewFineRotateStepDeg:F0}°  Build snap: {BuildRotationSnapDegrees:F1}°");
+                $"Build: {_buildHotkey.Value}  Undo: {_undoHotkey.Value}  Progress HUD: {ProgressMessageType}  Terrain passes: {TerrainLevelPasses}  Spike cleanup passes: {TerrainSpikeCleanupPasses}  High-point delta: {TerrainHighPointDelta:F2}m  Staged raise: {TerrainUseStagedRaise} ({TerrainRaiseStepHeight:F2}m, max {TerrainMaxRaiseStages})  Skip satisfied center stamps: {TerrainSkipSatisfiedCenterStamps}  External wall heights: L1={ExternalWallHeightLevel1}, L2={ExternalWallHeightLevel2}, L3={ExternalWallHeightLevel3}  Wall/Pillar material: {WallPillarMaterial}  Staircase reach: {StaircaseReachMode}  Roof scaffolding: {RoofScaffolding} ({RoofScaffoldingType}/{RoofScaffoldingGableFlooring})  Scaffolding levels: {ScaffoldingLevels}  Scaffolding floor height: {ScaffoldingFloorHeight}m  Scaffolding floors: {ScaffoldingFloors}  Transverse beams: {TransverseScaffoldingBeams}  Longitudinal beams: {LongitudinalScaffoldingBeams}  Origin extra offset: {BuildOriginForwardOffset:F1}m  Preview move: {PreviewMoveStep:F2}/{PreviewFineMoveStep:F2}m  Preview rotate: {PreviewRotateStepDeg:F0}/{PreviewFineRotateStepDeg:F0}°  Build snap: {BuildRotationSnapDegrees:F1}°");
         }
 
         private void Update()
@@ -611,13 +648,31 @@ namespace ValheimFloorPlan
                 TransverseScaffoldingBeams = _transverseScaffoldingBeams.Value;
                 LongitudinalScaffoldingBeams = _longitudinalScaffoldingBeams.Value;
 
-                if (_externalWallHeight != null)
+                if (_externalWallHeightLevel1 != null && _externalWallHeightLevel2 != null && _externalWallHeightLevel3 != null)
                 {
-                    int clampedExternalWallHeight = Mathf.Clamp(_externalWallHeight.Value, 1, GetMaxExternalWallHeight(clampedLevels, floorHeight, floorHeight2, floorHeight3));
-                    if (_externalWallHeight.Value != clampedExternalWallHeight)
-                        _externalWallHeight.Value = clampedExternalWallHeight;
+                    int clampedExternalWallHeightLevel1 = Mathf.Clamp(
+                        _externalWallHeightLevel1.Value,
+                        1,
+                        GetMaxExternalWallHeightForLevel(0, floorHeight, floorHeight2, floorHeight3));
+                    int clampedExternalWallHeightLevel2 = Mathf.Clamp(
+                        _externalWallHeightLevel2.Value,
+                        1,
+                        GetMaxExternalWallHeightForLevel(1, floorHeight, floorHeight2, floorHeight3));
+                    int clampedExternalWallHeightLevel3 = Mathf.Clamp(
+                        _externalWallHeightLevel3.Value,
+                        1,
+                        GetMaxExternalWallHeightForLevel(2, floorHeight, floorHeight2, floorHeight3));
 
-                    ExternalWallHeight = clampedExternalWallHeight;
+                    if (_externalWallHeightLevel1.Value != clampedExternalWallHeightLevel1)
+                        _externalWallHeightLevel1.Value = clampedExternalWallHeightLevel1;
+                    if (_externalWallHeightLevel2.Value != clampedExternalWallHeightLevel2)
+                        _externalWallHeightLevel2.Value = clampedExternalWallHeightLevel2;
+                    if (_externalWallHeightLevel3.Value != clampedExternalWallHeightLevel3)
+                        _externalWallHeightLevel3.Value = clampedExternalWallHeightLevel3;
+
+                    ExternalWallHeightLevel1 = clampedExternalWallHeightLevel1;
+                    ExternalWallHeightLevel2 = clampedExternalWallHeightLevel2;
+                    ExternalWallHeightLevel3 = clampedExternalWallHeightLevel3;
                 }
             }
             finally
@@ -639,28 +694,45 @@ namespace ValheimFloorPlan
             }
         }
 
-        internal static int GetMaxExternalWallHeight(int scaffoldingLevels)
+        internal static int GetExternalWallHeightForLevel(int levelIndex)
         {
-            return GetMaxExternalWallHeight(
-                scaffoldingLevels,
+            switch (Mathf.Clamp(levelIndex, 0, 2))
+            {
+                case 0:
+                    return ExternalWallHeightLevel1;
+                case 1:
+                    return ExternalWallHeightLevel2;
+                default:
+                    return ExternalWallHeightLevel3;
+            }
+        }
+
+        internal static int GetMaxExternalWallHeightForLevel(int levelIndex)
+        {
+            return GetMaxExternalWallHeightForLevel(
+                levelIndex,
                 ScaffoldingFloorHeight,
                 ScaffoldingFloorHeight2,
                 ScaffoldingFloorHeight3);
         }
 
-        internal static int GetMaxExternalWallHeight(int scaffoldingLevels, int scaffoldingFloorHeight, int scaffoldingFloorHeight2, int scaffoldingFloorHeight3)
+        internal static int GetMaxExternalWallHeightForLevel(int levelIndex, int scaffoldingFloorHeight, int scaffoldingFloorHeight2, int scaffoldingFloorHeight3)
         {
-            int clampedLevels = Mathf.Clamp(scaffoldingLevels, 1, 3);
-            int totalHeight = 0;
+            int levelHeight;
+            switch (Mathf.Clamp(levelIndex, 0, 2))
+            {
+                case 0:
+                    levelHeight = scaffoldingFloorHeight;
+                    break;
+                case 1:
+                    levelHeight = scaffoldingFloorHeight2;
+                    break;
+                default:
+                    levelHeight = scaffoldingFloorHeight3;
+                    break;
+            }
 
-            if (clampedLevels >= 1)
-                totalHeight += scaffoldingFloorHeight;
-            if (clampedLevels >= 2)
-                totalHeight += scaffoldingFloorHeight2;
-            if (clampedLevels >= 3)
-                totalHeight += scaffoldingFloorHeight3;
-
-            return Mathf.Max(1, totalHeight);
+            return Mathf.Max(1, levelHeight * 2);
         }
 
         internal static bool GetEffectiveTransverseScaffoldingBeams(int scaffoldingLevels)
@@ -706,6 +778,14 @@ namespace ValheimFloorPlan
                 return RoofScaffoldingGableFlooringOption.RoofOnly;
 
             return RoofScaffoldingGableFlooringOption.RoofWithFloorUnderlay;
+        }
+
+        private static StaircaseReachModeOption ParseStaircaseReachMode(string value)
+        {
+            if (string.Equals(value?.Trim(), "AllTheWay", System.StringComparison.OrdinalIgnoreCase))
+                return StaircaseReachModeOption.AllTheWay;
+
+            return StaircaseReachModeOption.ToTheNextLevelOnly;
         }
     }
 }

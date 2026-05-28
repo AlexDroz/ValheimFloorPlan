@@ -117,5 +117,10 @@ piece,12,16,Floor2x2,0
 piece,14,16,Floor2x2,0
 piece,12,18,Floor2x2,0
 piece,14,18,Floor2x2,0
+piece,6,1,Hearth,180
+piece,1,1,Workbench,0
+piece,1,7,Staircase,180
+piece,6,15,Workbench,180
+piece,11,1,Workbench,0
 piece,11,6,Workbench,270
-piece,1,6,Staircase,270
+piece,11,12,Bed,90

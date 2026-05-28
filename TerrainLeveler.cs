@@ -137,9 +137,7 @@ namespace ValheimFloorPlan
                 for (int iz = 0; iz <= preStepsZ; iz++)
                 {
                     float lz = (iz == preStepsZ) ? sampleMaxZ : sampleMinZ + iz * preSampleStep;
-                    float ldx = lx - origin.x;
-                    float ldz = lz - origin.z;
-                    Vector3 samplePos = PieceMap.TransformPlanPoint(origin, ldx, ldz, origin.y, rotationDeg);
+                    Vector3 samplePos = PieceMap.TransformPlanPoint(origin, lx, lz, origin.y, rotationDeg);
                     float wx = samplePos.x;
                     float wz = samplePos.z;
                     float h = SampleHeight(wx, wz, origin.y);
@@ -235,9 +233,7 @@ namespace ValheimFloorPlan
                         for (int iz = 0; iz <= stepsZ; iz++)
                         {
                             float lz = (iz == stepsZ) ? innerMaxZ : innerMinZ + iz * levelSampleStep;
-                            float ldx2 = lx - origin.x;
-                            float ldz2 = lz - origin.z;
-                            Vector3 levelPos = PieceMap.TransformPlanPoint(origin, ldx2, ldz2, origin.y, rotationDeg);
+                            Vector3 levelPos = PieceMap.TransformPlanPoint(origin, lx, lz, origin.y, rotationDeg);
                             float wx = levelPos.x;
                             float wz = levelPos.z;
 
@@ -288,9 +284,7 @@ namespace ValheimFloorPlan
                             if (!IsInEdgeBand(lx, lz, innerMinX, innerMaxX, innerMinZ, innerMaxZ, EDGE_BAND_WIDTH))
                                 continue;
 
-                            float ldx2 = lx - origin.x;
-                            float ldz2 = lz - origin.z;
-                            Vector3 edgePos = PieceMap.TransformPlanPoint(origin, ldx2, ldz2, origin.y, rotationDeg);
+                            Vector3 edgePos = PieceMap.TransformPlanPoint(origin, lx, lz, origin.y, rotationDeg);
                             float wx = edgePos.x;
                             float wz = edgePos.z;
 

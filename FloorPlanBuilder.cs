@@ -1381,9 +1381,11 @@ namespace ValheimFloorPlan
             int configuredLevels = Mathf.Clamp(ValheimFloorPlanPlugin.FloorPlanLevels, 1, 3);
             if (configuredLevels <= 1)
                 yield break;
-            // Upper-level Hearth pieces cannot stack directly above Level 1 Hearth/Staircase
-            // openings, and later levels cannot stack Hearths on top of earlier Hearths.
-            var blockedUpperHearthOpenings = BuildScaffoldDeckOpenings(level1Plan);
+
+            // Cross-level blocker: lower-level Hearth chimney shafts affect all higher levels.
+            var blockedChimneyShaftOpenings = BuildHearthOpenings(level1Plan);
+            // Cross-level blocker: staircase shafts also affect higher levels.
+            var blockedStaircaseShaftOpenings = BuildStaircaseOpenings(level1Plan, 1);
 
             string level2Path = (ValheimFloorPlanPlugin.FloorPlanFileLevel2 ?? string.Empty).Trim();
             string level3Path = (ValheimFloorPlanPlugin.FloorPlanFileLevel3 ?? string.Empty).Trim();
@@ -1416,7 +1418,7 @@ namespace ValheimFloorPlan
                              l1MinCol, l1MaxColExclusive, l1MinRow, l1MaxRowExclusive,
                              out FloorPlan? level2Plan))
                 {
-                    yield return StartCoroutine(PlaceUpperLevelPieces(level2Plan!, level1Plan, origin, rotationDeg, 2, blockedUpperHearthOpenings));
+                    yield return StartCoroutine(PlaceUpperLevelPieces(level2Plan!, level1Plan, origin, rotationDeg, 2, blockedChimneyShaftOpenings, blockedStaircaseShaftOpenings));
                 }
             }
 
@@ -1434,7 +1436,7 @@ namespace ValheimFloorPlan
                              l1MinCol, l1MaxColExclusive, l1MinRow, l1MaxRowExclusive,
                              out FloorPlan? level3Plan))
                 {
-                    yield return StartCoroutine(PlaceUpperLevelPieces(level3Plan!, level1Plan, origin, rotationDeg, 3, blockedUpperHearthOpenings));
+                    yield return StartCoroutine(PlaceUpperLevelPieces(level3Plan!, level1Plan, origin, rotationDeg, 3, blockedChimneyShaftOpenings, blockedStaircaseShaftOpenings));
                 }
             }
         }
@@ -1500,7 +1502,8 @@ namespace ValheimFloorPlan
             Vector3 origin,
             float rotationDeg,
             int targetLevelNumber,
-            List<HearthOpening> blockedUpperHearthOpenings)
+            List<HearthOpening> blockedChimneyShaftOpenings,
+            List<HearthOpening> blockedStaircaseShaftOpenings)
         {
             int floorIndex = targetLevelNumber - 2;
             int scaffoldLevels = Mathf.Clamp(ValheimFloorPlanPlugin.ScaffoldingLevels, 1, 3);
@@ -1516,6 +1519,8 @@ namespace ValheimFloorPlan
 
             float levelDeckY = GetDeckYForScaffoldLevel(floorIndex);
             bool useWoodStructure = ValheimFloorPlanPlugin.WallPillarMaterial == ValheimFloorPlanPlugin.StructuralMaterial.Wood;
+            int layoutLevelIndex = Mathf.Clamp(targetLevelNumber - 1, 0, 2);
+            int configuredExternalWallHeight = ValheimFloorPlanPlugin.GetExternalWallHeightForLevel(layoutLevelIndex);
 
             GetPlanPieceBounds(level1Plan,
                 out int minCol, out int maxColExclusive,
@@ -1524,11 +1529,50 @@ namespace ValheimFloorPlan
             int total = upperPlan.Pieces.Count;
             int placed = 0;
             int skipped = 0;
+            int skippedPerimeterRule = 0;
+            int skippedStaircaseOverlap = 0;
+            int skippedStaircaseFurnitureOverlap = 0;
+            int skippedStaircaseBuildFailed = 0;
+            int skippedStaircaseReachMode = 0;
+            int skippedChimneyShaftOverlap = 0;
+            int skippedStaircaseShaftOverlap = 0;
+            int skippedHearthPerimeterBuffer = 0;
+            int skippedHearthLowerOverlap = 0;
+            int skippedHearthSpacing = 0;
+            int skippedHearthFurnitureOverlap = 0;
+            int skippedFurnitureShaftOverlap = 0;
+            var blockedUpperHearthOpenings = new List<HearthOpening>();
+            var blockedUpperFurnitureOpenings = new List<HearthOpening>();
+            var upperHearthPlacementHistory = new List<HearthOpening>();
             var placedUpperHearthOpenings = new List<HearthOpening>();
+            var clashReportLines = new List<string>();
+
+            // Level-by-level placement order:
+            // 1) route-driving pieces first (Staircase, then Hearth),
+            // 2) remaining pieces after shafts/chimneys and punch-through state are established.
+            var orderedPieces = new List<FloorPlanPiece>(upperPlan.Pieces.Count);
+            for (int i = 0; i < upperPlan.Pieces.Count; i++)
+            {
+                var p = upperPlan.Pieces[i];
+                if (p.Type == "Staircase")
+                    orderedPieces.Add(p);
+            }
+            for (int i = 0; i < upperPlan.Pieces.Count; i++)
+            {
+                var p = upperPlan.Pieces[i];
+                if (p.Type == "Hearth")
+                    orderedPieces.Add(p);
+            }
+            for (int i = 0; i < upperPlan.Pieces.Count; i++)
+            {
+                var p = upperPlan.Pieces[i];
+                if (p.Type != "Staircase" && p.Type != "Hearth")
+                    orderedPieces.Add(p);
+            }
 
             ShowBuildProgress($"Placing Level {targetLevelNumber} pieces... 0/{total}");
 
-            foreach (var piece in upperPlan.Pieces)
+            foreach (var piece in orderedPieces)
             {
                 var def = PieceMap.GetDef(piece.Type);
                 if (def == null)
@@ -1547,31 +1591,265 @@ namespace ValheimFloorPlan
                 int effectivePieceRotation = piece.Rotation;
                 int effW = def.EffW(effectivePieceRotation);
                 int effH = def.EffH(effectivePieceRotation);
-                bool touchesOuterPerimeter = IsOnPlanOuterPerimeter(
+                int pieceMaxColExclusive = piece.Col + effW;
+                int pieceMaxRowExclusive = piece.Row + effH;
+
+                if (DoesFootprintOverlapAnyOpening(
+                        piece.Col,
+                        piece.Row,
+                        pieceMaxColExclusive,
+                        pieceMaxRowExclusive,
+                        blockedChimneyShaftOpenings))
+                {
+                    HearthOpening? overlap = FindFirstOverlappingOpening(
+                        piece.Col,
+                        piece.Row,
+                        pieceMaxColExclusive,
+                        pieceMaxRowExclusive,
+                        blockedChimneyShaftOpenings,
+                        0);
+                    string overlapLabel = DescribeHearthOpening(overlap);
+                    ValheimFloorPlanPlugin.Log.LogWarning(
+                        $"[UpperLevels] Level {targetLevelNumber}: piece '{piece.Type}' at ({piece.Col},{piece.Row}) overlaps chimney shaft {overlapLabel} and was skipped.");
+                    clashReportLines.Add($"{piece.Type} ({piece.Col},{piece.Row}) vs shaft {overlapLabel}");
+                    skippedChimneyShaftOverlap++;
+                    skipped++;
+                    continue;
+                }
+
+                var applicableStairShaftOpenings = GetApplicableStaircaseShaftOpenings(
+                    blockedStaircaseShaftOpenings,
+                    targetLevelNumber);
+
+                if (DoesFootprintOverlapAnyOpening(
+                        piece.Col,
+                        piece.Row,
+                        pieceMaxColExclusive,
+                        pieceMaxRowExclusive,
+                        applicableStairShaftOpenings))
+                {
+                    HearthOpening? overlap = FindFirstOverlappingOpening(
+                        piece.Col,
+                        piece.Row,
+                        pieceMaxColExclusive,
+                        pieceMaxRowExclusive,
+                        applicableStairShaftOpenings,
+                        0);
+                    string overlapLabel = DescribeHearthOpening(overlap);
+                    ValheimFloorPlanPlugin.Log.LogWarning(
+                        $"[UpperLevels] Level {targetLevelNumber}: piece '{piece.Type}' at ({piece.Col},{piece.Row}) overlaps staircase shaft {overlapLabel} and was skipped.");
+                    clashReportLines.Add($"{piece.Type} ({piece.Col},{piece.Row}) vs stair-shaft {overlapLabel}");
+                    skippedStaircaseShaftOverlap++;
+                    skipped++;
+                    continue;
+                }
+
+                bool isExternal = IsOnPlanOuterPerimeter(
                     piece.Col, piece.Row, effW, effH,
                     minCol, maxColExclusive, minRow, maxRowExclusive);
+                bool allowPerimeterPlacement =
+                    piece.Type == "Wall" ||
+                    piece.Type == "Pillar" ||
+                    piece.Type == "Doorway";
 
-                if (touchesOuterPerimeter)
+                if (isExternal && !allowPerimeterPlacement)
                 {
                     ValheimFloorPlanPlugin.Log.LogWarning(
                         $"[UpperLevels] Level {targetLevelNumber}: piece '{piece.Type}' at ({piece.Col},{piece.Row}) touches Level 1 outer perimeter and was skipped (internal-only rule).");
+                    skippedPerimeterRule++;
                     skipped++;
                     continue;
                 }
 
                 if (piece.Type == "Staircase")
                 {
-                    ValheimFloorPlanPlugin.Log.LogWarning(
-                        $"[UpperLevels] Level {targetLevelNumber}: piece type 'Staircase' is not yet supported and was skipped.");
-                    skipped++;
+                    int stairMaxColExclusive = piece.Col + effW;
+                    int stairMaxRowExclusive = piece.Row + effH;
+
+                    if (DoesFootprintOverlapAnyOpening(
+                            piece.Col,
+                            piece.Row,
+                            stairMaxColExclusive,
+                            stairMaxRowExclusive,
+                            blockedUpperFurnitureOpenings))
+                    {
+                        HearthOpening? furnitureOverlap = FindFirstOverlappingOpening(
+                            piece.Col,
+                            piece.Row,
+                            stairMaxColExclusive,
+                            stairMaxRowExclusive,
+                            blockedUpperFurnitureOpenings,
+                            0);
+                        ValheimFloorPlanPlugin.Log.LogWarning(
+                            $"[UpperLevels] Level {targetLevelNumber}: Staircase at ({piece.Col},{piece.Row}) overlaps furniture {DescribeHearthOpening(furnitureOverlap)} and was skipped.");
+                        clashReportLines.Add($"Stair ({piece.Col},{piece.Row}) vs {DescribeHearthOpening(furnitureOverlap)}");
+                        skippedStaircaseFurnitureOverlap++;
+                        skipped++;
+                        continue;
+                    }
+
+                    if (DoesFootprintOverlapAnyOpening(
+                            piece.Col,
+                            piece.Row,
+                            stairMaxColExclusive,
+                            stairMaxRowExclusive,
+                            blockedUpperHearthOpenings))
+                    {
+                        HearthOpening? overlap = FindFirstOverlappingOpening(
+                            piece.Col,
+                            piece.Row,
+                            stairMaxColExclusive,
+                            stairMaxRowExclusive,
+                            blockedUpperHearthOpenings,
+                            0);
+                        string overlapLabel = DescribeHearthOpening(overlap);
+                        ValheimFloorPlanPlugin.Log.LogWarning(
+                            $"[UpperLevels] Level {targetLevelNumber}: Staircase at ({piece.Col},{piece.Row}) overlaps {overlapLabel} and was skipped.");
+                        clashReportLines.Add($"Stair ({piece.Col},{piece.Row}) vs {overlapLabel}");
+                        skippedStaircaseOverlap++;
+                        skipped++;
+                        continue;
+                    }
+
+                    float staircaseTargetTopY = GetUpperLevelStaircaseTargetTopY(
+                        levelDeckY,
+                        floorIndex,
+                        scaffoldLevels);
+                    if (staircaseTargetTopY <= levelDeckY + 0.01f)
+                    {
+                        ValheimFloorPlanPlugin.Log.LogWarning(
+                            $"[UpperLevels] Level {targetLevelNumber}: Staircase at ({piece.Col},{piece.Row}) skipped by StaircaseReachMode={ValheimFloorPlanPlugin.StaircaseReachMode} (no higher scaffold level available).");
+                        clashReportLines.Add($"Stair ({piece.Col},{piece.Row}) blocked by StaircaseReachMode={ValheimFloorPlanPlugin.StaircaseReachMode}");
+                        skippedStaircaseReachMode++;
+                        skipped++;
+                        continue;
+                    }
+
+                    int staircasePlaced = PlaceStaircaseComposite(
+                        piece,
+                        def,
+                        origin,
+                        rotationDeg,
+                        "woodiron_pole",
+                        "wood_beam",
+                        2f,
+                        Player.m_localPlayer!,
+                        levelDeckY,
+                        staircaseTargetTopY);
+                    if (staircasePlaced <= 0)
+                    {
+                        skippedStaircaseBuildFailed++;
+                        skipped++;
+                        continue;
+                    }
+
+                    placed += staircasePlaced;
+
+                    var staircaseOpening = new HearthOpening(
+                        piece.Col,
+                        piece.Row,
+                        stairMaxColExclusive,
+                        stairMaxRowExclusive,
+                        targetLevelNumber,
+                        "Staircase");
+                    blockedUpperHearthOpenings.Add(staircaseOpening);
+                    blockedStaircaseShaftOpenings.Add(staircaseOpening);
+
+                    var staircaseOpenings = new List<HearthOpening> { staircaseOpening };
+                    RemoveInterferingUpperDeckPieces(
+                        staircaseOpenings,
+                        origin,
+                        rotationDeg,
+                        levelDeckY + 0.75f,
+                        staircaseTargetTopY + 0.75f);
+                    RemoveInterferingUpperScaffoldBeamPieces(
+                        staircaseOpenings,
+                        origin,
+                        rotationDeg,
+                        levelDeckY + 0.50f,
+                        staircaseTargetTopY + 0.75f);
+                    RemoveInterferingUpperRoofPieces(
+                        staircaseOpenings,
+                        origin,
+                        rotationDeg,
+                        staircaseTargetTopY - 0.25f,
+                        staircaseTargetTopY + 6f);
+
                     continue;
                 }
 
                 bool isUpperHearth = piece.Type == "Hearth";
+                bool isFurniturePiece = IsFurnitureType(piece.Type);
+                if (isFurniturePiece && !isUpperHearth)
+                {
+                    if (DoesFootprintOverlapAnyOpening(
+                            piece.Col,
+                            piece.Row,
+                            pieceMaxColExclusive,
+                            pieceMaxRowExclusive,
+                            blockedUpperHearthOpenings))
+                    {
+                        HearthOpening? overlap = FindFirstOverlappingOpening(
+                            piece.Col,
+                            piece.Row,
+                            pieceMaxColExclusive,
+                            pieceMaxRowExclusive,
+                            blockedUpperHearthOpenings,
+                            0);
+                        ValheimFloorPlanPlugin.Log.LogWarning(
+                            $"[UpperLevels] Level {targetLevelNumber}: Furniture '{piece.Type}' at ({piece.Col},{piece.Row}) overlaps shaft {DescribeHearthOpening(overlap)} and was skipped.");
+                        clashReportLines.Add($"{piece.Type} ({piece.Col},{piece.Row}) vs {DescribeHearthOpening(overlap)}");
+                        skippedFurnitureShaftOverlap++;
+                        skipped++;
+                        continue;
+                    }
+                }
+
                 if (isUpperHearth)
                 {
                     int hearthMaxColExclusive = piece.Col + effW;
                     int hearthMaxRowExclusive = piece.Row + effH;
+
+                    if (DoesFootprintOverlapAnyOpening(
+                            piece.Col,
+                            piece.Row,
+                            hearthMaxColExclusive,
+                            hearthMaxRowExclusive,
+                            blockedUpperFurnitureOpenings))
+                    {
+                        HearthOpening? furnitureOverlap = FindFirstOverlappingOpening(
+                            piece.Col,
+                            piece.Row,
+                            hearthMaxColExclusive,
+                            hearthMaxRowExclusive,
+                            blockedUpperFurnitureOpenings,
+                            0);
+                        ValheimFloorPlanPlugin.Log.LogWarning(
+                            $"[UpperLevels] Level {targetLevelNumber}: Hearth at ({piece.Col},{piece.Row}) overlaps furniture {DescribeHearthOpening(furnitureOverlap)} and was skipped.");
+                        clashReportLines.Add($"Hearth ({piece.Col},{piece.Row}) vs {DescribeHearthOpening(furnitureOverlap)}");
+                        skippedHearthFurnitureOverlap++;
+                        skipped++;
+                        continue;
+                    }
+
+                    if (!IsFootprintInsideBoundsWithMargin(
+                            piece.Col,
+                            piece.Row,
+                            hearthMaxColExclusive,
+                            hearthMaxRowExclusive,
+                            minCol,
+                            maxColExclusive,
+                            minRow,
+                            maxRowExclusive,
+                            1))
+                    {
+                        ValheimFloorPlanPlugin.Log.LogWarning(
+                            $"[UpperLevels] Level {targetLevelNumber}: Hearth at ({piece.Col},{piece.Row}) violates 1-cell perimeter buffer and was skipped.");
+                        skippedHearthPerimeterBuffer++;
+                        skipped++;
+                        continue;
+                    }
+
                     if (DoesFootprintOverlapAnyOpening(
                             piece.Col,
                             piece.Row,
@@ -1579,11 +1857,42 @@ namespace ValheimFloorPlan
                         hearthMaxRowExclusive,
                             blockedUpperHearthOpenings))
                     {
+                        HearthOpening? overlap = FindFirstOverlappingOpening(
+                            piece.Col,
+                            piece.Row,
+                            hearthMaxColExclusive,
+                            hearthMaxRowExclusive,
+                            blockedUpperHearthOpenings,
+                            0);
+                        string overlapLabel = DescribeHearthOpening(overlap);
                         ValheimFloorPlanPlugin.Log.LogWarning(
-                            $"[UpperLevels] Level {targetLevelNumber}: Hearth at ({piece.Col},{piece.Row}) overlaps a lower Hearth/Staircase shaft and was skipped.");
-                        ValheimFloorPlanPlugin.ShowWrappedMessage(
-                            ValheimFloorPlanPlugin.WarningMessageType,
-                            $"ValheimFloorPlan: Level {targetLevelNumber} Hearth skipped (cannot be directly above another Hearth or Staircase).");
+                            $"[UpperLevels] Level {targetLevelNumber}: Hearth at ({piece.Col},{piece.Row}) overlaps {overlapLabel} and was skipped.");
+                        clashReportLines.Add($"Hearth ({piece.Col},{piece.Row}) vs {overlapLabel}");
+                        skippedHearthLowerOverlap++;
+                        skipped++;
+                        continue;
+                    }
+
+                    if (DoesFootprintOverlapAnyOpeningWithMargin(
+                            piece.Col,
+                            piece.Row,
+                            hearthMaxColExclusive,
+                            hearthMaxRowExclusive,
+                            upperHearthPlacementHistory,
+                            1))
+                    {
+                        HearthOpening? overlap = FindFirstOverlappingOpening(
+                            piece.Col,
+                            piece.Row,
+                            hearthMaxColExclusive,
+                            hearthMaxRowExclusive,
+                            upperHearthPlacementHistory,
+                            1);
+                        string overlapLabel = DescribeHearthOpening(overlap);
+                        ValheimFloorPlanPlugin.Log.LogWarning(
+                            $"[UpperLevels] Level {targetLevelNumber}: Hearth at ({piece.Col},{piece.Row}) violates spacing near {overlapLabel} and was skipped.");
+                        clashReportLines.Add($"Hearth ({piece.Col},{piece.Row}) near {overlapLabel}");
+                        skippedHearthSpacing++;
                         skipped++;
                         continue;
                     }
@@ -1599,7 +1908,17 @@ namespace ValheimFloorPlan
                     continue;
                 }
 
-                if (useWoodStructure && piece.Type == "Wall" && piece.WallFace == WallFaceMode.Inner)
+                if (useWoodStructure && piece.Type == "Wall" && isExternal)
+                {
+                    effectivePieceRotation = GetExteriorWallRotation(
+                        piece.Col, piece.Row, effW, effH,
+                        minCol, maxColExclusive, minRow, maxRowExclusive,
+                        effectivePieceRotation);
+                    effW = def.EffW(effectivePieceRotation);
+                    effH = def.EffH(effectivePieceRotation);
+                }
+
+                if (useWoodStructure && piece.Type == "Wall" && piece.WallFace == WallFaceMode.Inner && !isExternal)
                 {
                     effectivePieceRotation = (effectivePieceRotation + 180) % 360;
                     effW = def.EffW(effectivePieceRotation);
@@ -1613,27 +1932,56 @@ namespace ValheimFloorPlan
                 float pieceYaw = PieceMap.TransformLocalYaw(effectivePieceRotation + def.RotationOffset, rotationDeg);
                 var rot = Quaternion.Euler(0f, pieceYaw, 0f);
 
+                Vector3 materialOffset = Vector3.zero;
+                if (((useWoodStructure && (piece.Type == "Wall" || piece.Type == "Pillar")) || piece.Type == "Doorway") && isExternal)
+                {
+                    materialOffset = GetWoodPerimeterOffset(
+                        piece.Type, piece.Col, piece.Row, effW, effH,
+                        minCol, maxColExclusive, minRow, maxRowExclusive,
+                        rotationDeg);
+                }
+
                 bool centerWorkbench = piece.Type == "Workbench";
-                SpawnRegisteredPiece(prefab, pos, rot, Player.m_localPlayer!, centerWorkbench);
-                placed++;
+                bool shouldStack = IsExternalWallOrPillarType(piece.Type) && isExternal;
+                int stackCount = shouldStack ? configuredExternalWallHeight : 1;
+                float stackStepY = GetStackStepY(piece.Type);
+
+                for (int i = 0; i < stackCount; i++)
+                {
+                    Vector3 stackedPos = new Vector3(pos.x, pos.y + stackStepY * i, pos.z) + materialOffset;
+                    SpawnRegisteredPiece(prefab, stackedPos, rot, Player.m_localPlayer!, centerWorkbench);
+                    placed++;
+
+                    if (placed % 10 == 0)
+                        yield return new WaitForSeconds(PLACE_DELAY);
+                }
 
                 if (isUpperHearth)
                 {
-                    blockedUpperHearthOpenings.Add(new HearthOpening(
+                    var placedOpening = new HearthOpening(
                         piece.Col,
                         piece.Row,
                         piece.Col + effW,
-                        piece.Row + effH));
-
-                    placedUpperHearthOpenings.Add(new HearthOpening(
-                        piece.Col,
-                        piece.Row,
-                        piece.Col + effW,
-                        piece.Row + effH));
+                        piece.Row + effH,
+                        targetLevelNumber,
+                        "Hearth");
+                    blockedUpperHearthOpenings.Add(placedOpening);
+                    blockedChimneyShaftOpenings.Add(placedOpening);
+                    upperHearthPlacementHistory.Add(placedOpening);
+                    placedUpperHearthOpenings.Add(placedOpening);
                 }
 
-                if (placed % 10 == 0)
-                    yield return new WaitForSeconds(PLACE_DELAY);
+                if (isFurniturePiece)
+                {
+                    blockedUpperFurnitureOpenings.Add(new HearthOpening(
+                        piece.Col,
+                        piece.Row,
+                        pieceMaxColExclusive,
+                        pieceMaxRowExclusive,
+                        targetLevelNumber,
+                        piece.Type));
+                }
+
             }
 
             if (placedUpperHearthOpenings.Count > 0)
@@ -1646,6 +1994,49 @@ namespace ValheimFloorPlan
                     origin,
                     rotationDeg,
                     Player.m_localPlayer!);
+            }
+
+            var summaryParts = new List<string>();
+            if (skippedPerimeterRule > 0)
+                summaryParts.Add($"{skippedPerimeterRule} perimeter/internal-only");
+            if (skippedStaircaseOverlap > 0)
+                summaryParts.Add($"{skippedStaircaseOverlap} staircase overlap");
+            if (skippedStaircaseFurnitureOverlap > 0)
+                summaryParts.Add($"{skippedStaircaseFurnitureOverlap} staircase furniture-overlap");
+            if (skippedStaircaseBuildFailed > 0)
+                summaryParts.Add($"{skippedStaircaseBuildFailed} staircase build-failed");
+            if (skippedStaircaseReachMode > 0)
+                summaryParts.Add($"{skippedStaircaseReachMode} staircase reach-mode");
+            if (skippedChimneyShaftOverlap > 0)
+                summaryParts.Add($"{skippedChimneyShaftOverlap} chimney-shaft overlap");
+            if (skippedStaircaseShaftOverlap > 0)
+                summaryParts.Add($"{skippedStaircaseShaftOverlap} staircase-shaft overlap");
+            if (skippedHearthPerimeterBuffer > 0)
+                summaryParts.Add($"{skippedHearthPerimeterBuffer} hearth perimeter-buffer");
+            if (skippedHearthLowerOverlap > 0)
+                summaryParts.Add($"{skippedHearthLowerOverlap} hearth lower-overlap");
+            if (skippedHearthSpacing > 0)
+                summaryParts.Add($"{skippedHearthSpacing} hearth spacing");
+            if (skippedHearthFurnitureOverlap > 0)
+                summaryParts.Add($"{skippedHearthFurnitureOverlap} hearth furniture-overlap");
+            if (skippedFurnitureShaftOverlap > 0)
+                summaryParts.Add($"{skippedFurnitureShaftOverlap} furniture shaft-overlap");
+
+            if (summaryParts.Count > 0)
+            {
+                ValheimFloorPlanPlugin.ShowWrappedMessage(
+                    ValheimFloorPlanPlugin.WarningMessageType,
+                    $"ValheimFloorPlan: Level {targetLevelNumber} skips — {string.Join(", ", summaryParts)}.");
+            }
+
+            if (clashReportLines.Count > 0)
+            {
+                yield return StartCoroutine(PlaceUpperLevelClashSignage(
+                    level1Plan,
+                    origin,
+                    rotationDeg,
+                    targetLevelNumber,
+                    clashReportLines));
             }
 
             ShowBuildProgress($"Placing Level {targetLevelNumber} pieces... done ({placed}/{total})");
@@ -1845,6 +2236,69 @@ namespace ValheimFloorPlan
                 if (worldPos.y < minRoofY - yTolerance)
                     continue;
                 if (worldPos.y > maxRoofY)
+                    continue;
+
+                Vector2 local = PieceMap.TransformLocalXZ(worldPos.x - origin.x, worldPos.z - origin.z, rotationDeg);
+
+                bool overlapsOpening = false;
+                for (int oi = 0; oi < openings.Count; oi++)
+                {
+                    var opening = openings[oi];
+                    if (local.x >= opening.MinCol - openingMargin &&
+                        local.x <= opening.MaxColExclusive + openingMargin &&
+                        local.y >= opening.MinRow - openingMargin &&
+                        local.y <= opening.MaxRowExclusive + openingMargin)
+                    {
+                        overlapsOpening = true;
+                        break;
+                    }
+                }
+
+                if (!overlapsOpening)
+                    continue;
+
+                if (ZNetScene.instance != null)
+                    ZNetScene.instance.Destroy(placedGo);
+                else
+                    Destroy(placedGo);
+
+                _lastPlaced.RemoveAt(i);
+            }
+        }
+
+        private void RemoveInterferingUpperScaffoldBeamPieces(
+            List<HearthOpening> openings,
+            Vector3 origin,
+            float rotationDeg,
+            float minBeamY,
+            float maxBeamY)
+        {
+            if (openings == null || openings.Count == 0)
+                return;
+
+            const float yTolerance = 0.45f;
+            const float openingMargin = 0.25f;
+
+            for (int i = _lastPlaced.Count - 1; i >= 0; i--)
+            {
+                var placedGo = _lastPlaced[i];
+                if (placedGo == null)
+                {
+                    _lastPlaced.RemoveAt(i);
+                    continue;
+                }
+
+                string goName = placedGo.name == null ? string.Empty : placedGo.name.ToLowerInvariant();
+                bool looksLikeHorizontalScaffoldBeam =
+                    goName.Contains("woodiron_beam") ||
+                    goName.Contains("iron_beam");
+                if (!looksLikeHorizontalScaffoldBeam)
+                    continue;
+
+                Vector3 worldPos = placedGo.transform.position;
+                if (worldPos.y < minBeamY - yTolerance)
+                    continue;
+                if (worldPos.y > maxBeamY + yTolerance)
                     continue;
 
                 Vector2 local = PieceMap.TransformLocalXZ(worldPos.x - origin.x, worldPos.z - origin.z, rotationDeg);
@@ -2439,11 +2893,7 @@ namespace ValheimFloorPlan
             int processed = 0;
             int nextProgressPct = 10;
             int workbenchVariantIndex = 0;
-            int configuredExternalWallHeight = Mathf.Clamp(
-                ValheimFloorPlanPlugin.ExternalWallHeight,
-                1,
-                ValheimFloorPlanPlugin.GetMaxExternalWallHeight(
-                    ValheimFloorPlanPlugin.ScaffoldingLevels));
+            int configuredExternalWallHeight = ValheimFloorPlanPlugin.GetExternalWallHeightForLevel(0);
             bool useWoodStructure = ValheimFloorPlanPlugin.WallPillarMaterial == ValheimFloorPlanPlugin.StructuralMaterial.Wood;
 
             GetPlanPieceBounds(plan,
@@ -2635,7 +3085,9 @@ namespace ValheimFloorPlan
             string polePrefabName,
             string stepPrefabName,
             float unused_flightRise,
-            Player player)
+            Player player,
+            float? startBaseYOverride = null,
+            float? targetTopYOverride = null)
         {
             const float STEP_RISE      = 0.25f;
             const float STEP_ANGLE_DEG = 20f;
@@ -2719,8 +3171,14 @@ namespace ValheimFloorPlan
                     Vector3.down, out var terrainHit, 600f, 1 << 11))
                 terrainY = terrainHit.point.y;
 
-            float targetRise = GetStaircaseTargetRise();
-            float targetTopY = terrainY + targetRise;
+            float staircaseBaseY = Mathf.Max(terrainY, startBaseYOverride ?? terrainY);
+            float targetTopY = targetTopYOverride ?? (terrainY + GetStaircaseTargetRise());
+            if (targetTopY <= staircaseBaseY + 0.01f)
+            {
+                ValheimFloorPlanPlugin.Log.LogWarning(
+                    $"[Staircase] Skipped staircase at ({piece.Col},{piece.Row}): targetTopY={targetTopY:F2} <= startY={staircaseBaseY:F2}.");
+                return 0;
+            }
 
             Quaternion floorRot = Quaternion.Euler(0f, PieceMap.TransformLocalYaw(0f, rotationDeg), 0f);
 
@@ -2741,7 +3199,7 @@ namespace ValheimFloorPlan
             int placed = 0;
 
             // ── Central pole: stack from terrainY to targetTopY ────────────────
-            float poleBaseY  = terrainY;
+            float poleBaseY  = staircaseBaseY;
             float poleHeight = POLE_FALLBACK_HEIGHT;
             bool  firstPole  = true;
             while (poleBaseY < targetTopY - 0.1f)
@@ -2766,7 +3224,7 @@ namespace ValheimFloorPlan
             // Historical Designer-axis mapping + correction for current Designer/build mismatch.
             float startAngleDeg   = (270f - piece.Rotation + STAIR_START_ANGLE_CORRECTION_DEG + 360f) % 360f;
             float currentAngleDeg = startAngleDeg;
-            float stepY   = terrainY + STEP_START_OFFSET;
+            float stepY   = staircaseBaseY + STEP_START_OFFSET;
 
             // Clamp first tread so it is never buried deeply if local terrain differs from center terrain.
             float firstAngleRad = startAngleDeg * Mathf.Deg2Rad;
@@ -2788,6 +3246,11 @@ namespace ValheimFloorPlan
             stepY = Mathf.Max(stepY, firstStepTerrainY - FIRST_STEP_MAX_SINK);
 
             int   deckIdx = 0;
+            if (deckYValues != null)
+            {
+                while (deckIdx < deckYValues.Length && staircaseBaseY > deckYValues[deckIdx] - 0.01f)
+                    deckIdx++;
+            }
             int   stepIndex = 0;
             int   guardSignPairIndex = 0;
 
@@ -2959,6 +3422,153 @@ namespace ValheimFloorPlan
             return true;
         }
 
+        private static HearthOpening? FindFirstOverlappingOpening(
+            int minCol,
+            int minRow,
+            int maxColExclusive,
+            int maxRowExclusive,
+            List<HearthOpening> openings,
+            int marginCells)
+        {
+            for (int i = 0; i < openings.Count; i++)
+            {
+                var opening = openings[i];
+                bool overlapX =
+                    maxColExclusive > (opening.MinCol - marginCells) &&
+                    minCol < (opening.MaxColExclusive + marginCells);
+                bool overlapZ =
+                    maxRowExclusive > (opening.MinRow - marginCells) &&
+                    minRow < (opening.MaxRowExclusive + marginCells);
+                if (overlapX && overlapZ)
+                    return opening;
+            }
+
+            return null;
+        }
+
+        private static string DescribeHearthOpening(HearthOpening? opening)
+        {
+            if (opening == null)
+                return "another blocked opening";
+
+            if (opening.SourceLevel > 0)
+                return $"L{opening.SourceLevel} {opening.SourceType} ({opening.MinCol},{opening.MinRow})";
+
+            return $"opening ({opening.MinCol},{opening.MinRow})";
+        }
+
+        private IEnumerator PlaceUpperLevelClashSignage(
+            FloorPlan level1Plan,
+            Vector3 origin,
+            float rotationDeg,
+            int targetLevelNumber,
+            List<string> clashLines)
+        {
+            const string POLE_PREFAB = "wood_pole_log_4";
+            const string SIGN_PREFAB = "sign";
+            const float POLE_HEIGHT = 4f;
+            const float SIGN_SPACING = 0.58f;
+            const int MAX_SIGNS_PER_LEVEL = 6;
+
+            var player = Player.m_localPlayer;
+            if (player == null || clashLines.Count == 0)
+                yield break;
+
+            var polePrefab = ZNetScene.instance?.GetPrefab(POLE_PREFAB);
+            var signPrefab = ZNetScene.instance?.GetPrefab(SIGN_PREFAB);
+            if (polePrefab == null || signPrefab == null)
+            {
+                ValheimFloorPlanPlugin.Log.LogWarning(
+                    $"[UpperLevels] Clash signage skipped because prefab '{POLE_PREFAB}' or '{SIGN_PREFAB}' was not found.");
+                yield break;
+            }
+
+            GetPlanPieceBounds(level1Plan,
+                out int minCol,
+                out int maxColExclusive,
+                out int minRow,
+                out int maxRowExclusive);
+
+            // Use the same axis convention as PlaceCenterSignage so directions are consistent.
+            // signageRotationDeg = rotationDeg - 180 is the canonical "facing" angle for in-world
+            // signage.  The "toward-player / front-of-building" direction in world space is
+            // (-sinR, 0, -cosR) where R = signageRotationDeg * Deg2Rad.
+            // East (along the building's east wall) = (-cosR, 0, +sinR).
+            float signageRotationDeg = rotationDeg - 180f;
+            float signageRad  = signageRotationDeg * Mathf.Deg2Rad;
+            float signageSinR = Mathf.Sin(signageRad);
+            float signageCosR = Mathf.Cos(signageRad);
+
+            float southX = -signageSinR;  // toward player
+            float southZ = -signageCosR;
+            float eastX  = -signageCosR;  // along east wall
+            float eastZ  =  signageSinR;
+
+            // Offset from plan centre outward (south) by half the plan depth + clearance.
+            float localCX        = (minCol + maxColExclusive) * 0.5f * PieceMap.CELL_SIZE;
+            float localCZ        = (minRow + maxRowExclusive) * 0.5f * PieceMap.CELL_SIZE;
+            float halfPlanDepth  = (maxRowExclusive - minRow) * PieceMap.CELL_SIZE * 0.5f;
+
+            Vector3 planCenter = PieceMap.TransformPlanPoint(origin, localCX, localCZ, origin.y, rotationDeg);
+
+            float terrainY = TerrainLeveler.TargetLevelY;
+            if (Physics.Raycast(new Vector3(planCenter.x, terrainY + 300f, planCenter.z), Vector3.down, out var anchorHit, 600f, 1 << 11))
+                terrainY = anchorHit.point.y;
+
+            // Signs face outward (south), 0.3 m in front of pole — same offset as PlaceCenterSignage.
+            float signOX = signageSinR * -0.3f;
+            float signOZ = signageCosR * -0.3f;
+            Quaternion poleRot = Quaternion.Euler(0f, signageRotationDeg, 0f);
+            Quaternion signRot = Quaternion.Euler(0f, signageRotationDeg + 180f, 0f);
+
+            var signLines = new List<string>
+            {
+                $"L{targetLevelNumber} clashes ({clashLines.Count})"
+            };
+            for (int i = 0; i < clashLines.Count; i++)
+                signLines.Add(clashLines[i]);
+
+            if (signLines.Count > MAX_SIGNS_PER_LEVEL)
+            {
+                int overflow = signLines.Count - (MAX_SIGNS_PER_LEVEL - 1);
+                signLines = signLines.GetRange(0, MAX_SIGNS_PER_LEVEL - 1);
+                signLines.Add($"+{overflow} more (log)");
+            }
+
+            // Sign sits 1.5 m beyond the plan's south (player-facing) edge.
+            // Shift each level's sign east-west so Level 2/3 signs never overlap.
+            const float EDGE_CLEARANCE = 1.5f;
+            float rowDist = halfPlanDepth + EDGE_CLEARANCE;
+            float levelOffset = (targetLevelNumber - 2) * 2.4f;
+            float wx = planCenter.x + southX * rowDist + eastX * levelOffset;
+            float wz = planCenter.z + southZ * rowDist + eastZ * levelOffset;
+
+            float poleTerrainY = terrainY;
+            if (Physics.Raycast(new Vector3(wx, terrainY + 300f, wz), Vector3.down, out var poleHit, 600f, 1 << 11))
+                poleTerrainY = poleHit.point.y;
+
+            SpawnScaffoldPole(
+                polePrefab,
+                new Vector3(wx, poleTerrainY + POLE_HEIGHT * 0.5f, wz),
+                poleRot,
+                player);
+            yield return new WaitForSeconds(PLACE_DELAY);
+
+            float signTopY = poleTerrainY + POLE_HEIGHT - 0.35f;
+            for (int i = 0; i < signLines.Count; i++)
+            {
+                float signY = signTopY - i * SIGN_SPACING;
+                var signPos = new Vector3(wx + signOX, signY, wz + signOZ);
+                var signGo = SpawnRegisteredPiece(signPrefab, signPos, signRot, player);
+                string signColor = i == 0 ? "orange" : "white";
+                SetSignText(signGo, signColor, signLines[i]);
+                yield return new WaitForSeconds(PLACE_DELAY);
+            }
+
+            ValheimFloorPlanPlugin.Log.LogWarning(
+                $"[UpperLevels] Placed clash signage for Level {targetLevelNumber}: {clashLines.Count} clash entry(s), 1 pole, {signLines.Count} sign(s).");
+        }
+
         private static Vector2 StairDirectionFromRotation(int rotation)
         {
             int snapped = ((rotation % 360) + 360) % 360;
@@ -3072,8 +3682,12 @@ namespace ValheimFloorPlan
             if (ValheimFloorPlanPlugin.ScaffoldingFloors)
             {
                 int scaffoldLevels = Mathf.Clamp(ValheimFloorPlanPlugin.ScaffoldingLevels, 1, 3);
+                bool allTheWay =
+                    ValheimFloorPlanPlugin.StaircaseReachMode ==
+                    ValheimFloorPlanPlugin.StaircaseReachModeOption.AllTheWay;
+                int levelsToClimb = allTheWay ? scaffoldLevels : 1;
                 float totalRise = 0f;
-                for (int level = 0; level < scaffoldLevels; level++)
+                for (int level = 0; level < levelsToClimb; level++)
                 {
                     totalRise += Mathf.Max(2f, ValheimFloorPlanPlugin.GetScaffoldingFloorHeightForLevel(level));
                 }
@@ -3083,6 +3697,21 @@ namespace ValheimFloorPlan
 
             // Match the existing two-storey default when scaffold floors are disabled.
             return 4f;
+        }
+
+        private static float GetUpperLevelStaircaseTargetTopY(float levelDeckY, int floorIndex, int scaffoldLevels)
+        {
+            bool allTheWay =
+                ValheimFloorPlanPlugin.StaircaseReachMode ==
+                ValheimFloorPlanPlugin.StaircaseReachModeOption.AllTheWay;
+            if (allTheWay)
+                return GetDeckYForScaffoldLevel(scaffoldLevels - 1);
+
+            int nextFloorIndex = floorIndex + 1;
+            if (nextFloorIndex >= scaffoldLevels)
+                return levelDeckY;
+
+            return GetDeckYForScaffoldLevel(nextFloorIndex);
         }
 
         private void RemoveInterferingUpperFloorPieces(
@@ -4536,7 +5165,70 @@ namespace ValheimFloorPlan
                     piece.Col,
                     piece.Row,
                     piece.Col + effW,
-                    piece.Row + effH));
+                    piece.Row + effH,
+                    1,
+                    "Hearth"));
+            }
+
+            return openings;
+        }
+
+        private static bool IsFurnitureType(string pieceType)
+        {
+            return pieceType == "Bed" ||
+                   pieceType == "Workbench" ||
+                   pieceType == "Hearth";
+        }
+
+        private static List<HearthOpening> BuildFurnitureOpenings(FloorPlan plan, int sourceLevel)
+        {
+            var openings = new List<HearthOpening>();
+
+            foreach (var piece in plan.Pieces)
+            {
+                if (!IsFurnitureType(piece.Type))
+                    continue;
+
+                var def = PieceMap.GetDef(piece.Type);
+                if (def == null)
+                    continue;
+
+                int effW = def.EffW(piece.Rotation);
+                int effH = def.EffH(piece.Rotation);
+                openings.Add(new HearthOpening(
+                    piece.Col,
+                    piece.Row,
+                    piece.Col + effW,
+                    piece.Row + effH,
+                    sourceLevel,
+                    piece.Type));
+            }
+
+            return openings;
+        }
+
+        private static List<HearthOpening> BuildStaircaseOpenings(FloorPlan plan, int sourceLevel)
+        {
+            var openings = new List<HearthOpening>();
+
+            foreach (var piece in plan.Pieces)
+            {
+                if (piece.Type != "Staircase")
+                    continue;
+
+                var def = PieceMap.GetDef(piece.Type);
+                if (def == null)
+                    continue;
+
+                int effW = def.EffW(piece.Rotation);
+                int effH = def.EffH(piece.Rotation);
+                openings.Add(new HearthOpening(
+                    piece.Col,
+                    piece.Row,
+                    piece.Col + effW,
+                    piece.Row + effH,
+                    sourceLevel,
+                    "Staircase"));
             }
 
             return openings;
@@ -4561,7 +5253,9 @@ namespace ValheimFloorPlan
                     piece.Col,
                     piece.Row,
                     piece.Col + effW,
-                    piece.Row + effH));
+                    piece.Row + effH,
+                    1,
+                    "Staircase"));
             }
 
             return openings;
@@ -4570,6 +5264,9 @@ namespace ValheimFloorPlan
         private static List<HearthOpening> BuildScaffoldDeckOpenings(FloorPlan plan, float deckY, float chimneyStartY)
         {
             var openings = new List<HearthOpening>();
+            float scaffoldBaseY = chimneyStartY - 3f;
+            float staircaseTargetTopY = scaffoldBaseY + GetStaircaseTargetRise();
+            const float stairOpeningDeckTolerance = 0.2f;
 
             // Keep full Hearth opening below taper start; once taper has started,
             // openings match the reduced shaft footprint so decks/beams can support it.
@@ -4603,6 +5300,10 @@ namespace ValheimFloorPlan
                 if (piece.Type != "Staircase")
                     continue;
 
+                // Keep deck/beam holes only up to the staircase's configured reach.
+                if (deckY > staircaseTargetTopY + stairOpeningDeckTolerance)
+                    continue;
+
                 var def = PieceMap.GetDef(piece.Type);
                 if (def == null)
                     continue;
@@ -4617,6 +5318,39 @@ namespace ValheimFloorPlan
             }
 
             return openings;
+        }
+
+        private static List<HearthOpening> GetApplicableStaircaseShaftOpenings(
+            List<HearthOpening> openings,
+            int targetLevelNumber)
+        {
+            var applicable = new List<HearthOpening>(openings.Count);
+
+            for (int i = 0; i < openings.Count; i++)
+            {
+                var opening = openings[i];
+                if (!string.Equals(opening.SourceType, "Staircase", System.StringComparison.OrdinalIgnoreCase))
+                {
+                    applicable.Add(opening);
+                    continue;
+                }
+
+                if (IsStaircaseOpeningBlockingLevel(opening.SourceLevel, targetLevelNumber))
+                    applicable.Add(opening);
+            }
+
+            return applicable;
+        }
+
+        private static bool IsStaircaseOpeningBlockingLevel(int sourceLevel, int targetLevelNumber)
+        {
+            if (targetLevelNumber <= sourceLevel)
+                return false;
+
+            if (ValheimFloorPlanPlugin.StaircaseReachMode == ValheimFloorPlanPlugin.StaircaseReachModeOption.AllTheWay)
+                return true;
+
+            return targetLevelNumber == sourceLevel + 1;
         }
 
         private static bool IsBlockedByHearthOpening(int col, int row, List<HearthOpening> hearthOpenings)
@@ -4668,6 +5402,47 @@ namespace ValheimFloorPlan
             }
 
             return false;
+        }
+
+        private static bool DoesFootprintOverlapAnyOpeningWithMargin(
+            int minCol,
+            int minRow,
+            int maxColExclusive,
+            int maxRowExclusive,
+            List<HearthOpening> openings,
+            int marginCells)
+        {
+            for (int i = 0; i < openings.Count; i++)
+            {
+                var opening = openings[i];
+                bool overlapX =
+                    maxColExclusive > (opening.MinCol - marginCells) &&
+                    minCol < (opening.MaxColExclusive + marginCells);
+                bool overlapZ =
+                    maxRowExclusive > (opening.MinRow - marginCells) &&
+                    minRow < (opening.MaxRowExclusive + marginCells);
+                if (overlapX && overlapZ)
+                    return true;
+            }
+
+            return false;
+        }
+
+        private static bool IsFootprintInsideBoundsWithMargin(
+            int minCol,
+            int minRow,
+            int maxColExclusive,
+            int maxRowExclusive,
+            int boundsMinCol,
+            int boundsMaxColExclusive,
+            int boundsMinRow,
+            int boundsMaxRowExclusive,
+            int marginCells)
+        {
+            return minCol >= boundsMinCol + marginCells &&
+                   minRow >= boundsMinRow + marginCells &&
+                   maxColExclusive <= boundsMaxColExclusive - marginCells &&
+                   maxRowExclusive <= boundsMaxRowExclusive - marginCells;
         }
 
         /// <summary>
@@ -4961,16 +5736,26 @@ namespace ValheimFloorPlan
             public readonly int MinRow;
             public readonly int MaxColExclusive;
             public readonly int MaxRowExclusive;
+            public readonly int SourceLevel;
+            public readonly string SourceType;
 
             public int Width => MaxColExclusive - MinCol;
             public int Height => MaxRowExclusive - MinRow;
 
-            public HearthOpening(int minCol, int minRow, int maxColExclusive, int maxRowExclusive)
+            public HearthOpening(
+                int minCol,
+                int minRow,
+                int maxColExclusive,
+                int maxRowExclusive,
+                int sourceLevel = 0,
+                string sourceType = "Opening")
             {
                 MinCol = minCol;
                 MinRow = minRow;
                 MaxColExclusive = maxColExclusive;
                 MaxRowExclusive = maxRowExclusive;
+                SourceLevel = sourceLevel;
+                SourceType = sourceType;
             }
         }
 

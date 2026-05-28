@@ -1,4 +1,18 @@
-const DESIGNER_VERSION = "1.1.0";
+const DESIGNER_VERSION = "2.0.0";
+
+const MAX_LAYOUT_LEVELS = 3;
+
+function createEmptyLayout() {
+  return {
+    cols: 20,
+    rows: 20,
+    pieces: [],
+    dirty: false,
+    fileHandle: null,
+    lastPickerHandle: null,
+    fileName: "",
+  };
+}
 
 const state = {
   cols: 20,
@@ -12,6 +26,9 @@ const state = {
   fileName: "",
   hover: { col: -1, row: -1 },
   isCanvasHovered: false,
+  activeLayoutIndex: 0,
+  layouts: [createEmptyLayout(), createEmptyLayout(), createEmptyLayout()],
+  overlayEnabled: [false, false, false],
 };
 
 const pieceColors = {
@@ -25,6 +42,8 @@ const pieceColors = {
   Doorway: "#3aa65a",
   Pillar: "#2db6ab",
 };
+
+const levelOverlayStrokeColors = ["#f6d78b", "#8ec5ff", "#e1a5ff"];
 
 const pieceDefs = {
   Floor2x2: { w: 2, h: 2 },
@@ -50,9 +69,117 @@ const colsInput = document.getElementById("colsInput");
 const rowsInput = document.getElementById("rowsInput");
 const rotSelect = document.getElementById("rotSelect");
 const pieceTypeRadios = document.querySelectorAll('input[name="pieceType"]');
+const levelButtons = Array.from(document.querySelectorAll(".level-btn[data-level-index]"));
+const overlayCheckboxes = Array.from(document.querySelectorAll("input[type=\"checkbox\"][data-overlay-index]"));
+const activeLevelHintEl = document.getElementById("activeLevelHint");
+const levelSummaryEls = [
+  document.getElementById("level1Summary"),
+  document.getElementById("level2Summary"),
+  document.getElementById("level3Summary"),
+];
 
 // Keep version visible in browser tab from a single source of truth.
 document.title = `Valheim Floor Plan Designer v${DESIGNER_VERSION} (Web)`;
+
+function clonePieces(pieces) {
+  return pieces.map((piece) => ({ ...piece }));
+}
+
+function getLayoutLabel(layoutIndex) {
+  return `L${layoutIndex + 1}`;
+}
+
+function describeLayoutSummary(layoutIndex) {
+  const layout = state.layouts[layoutIndex];
+  const file = layout.fileName || "Untitled";
+  return `${getLayoutLabel(layoutIndex)}: ${file} | ${layout.pieces.length} pieces | ${layout.cols}x${layout.rows}${layout.dirty ? " *" : ""}`;
+}
+
+function updateLevelSummaries() {
+  for (let i = 0; i < levelSummaryEls.length; i += 1) {
+    const el = levelSummaryEls[i];
+    if (!el) continue;
+    el.textContent = describeLayoutSummary(i);
+    el.classList.toggle("is-active", i === state.activeLayoutIndex);
+  }
+
+  if (activeLevelHintEl) {
+    activeLevelHintEl.textContent = `Active Level: ${state.activeLayoutIndex + 1}`;
+  }
+}
+
+function persistActiveLayout() {
+  const layout = state.layouts[state.activeLayoutIndex];
+  layout.cols = state.cols;
+  layout.rows = state.rows;
+  layout.pieces = clonePieces(state.pieces);
+  layout.dirty = state.dirty;
+  layout.fileHandle = state.fileHandle;
+  layout.lastPickerHandle = state.lastPickerHandle;
+  layout.fileName = state.fileName;
+}
+
+function loadLayoutIntoState(layoutIndex) {
+  const layout = state.layouts[layoutIndex];
+  state.activeLayoutIndex = layoutIndex;
+  state.cols = layout.cols;
+  state.rows = layout.rows;
+  state.pieces = clonePieces(layout.pieces);
+  state.dirty = layout.dirty;
+  state.fileHandle = layout.fileHandle;
+  state.lastPickerHandle = layout.lastPickerHandle;
+  state.fileName = layout.fileName;
+  colsInput.value = String(state.cols);
+  rowsInput.value = String(state.rows);
+}
+
+function updateLevelButtons() {
+  for (let i = 0; i < levelButtons.length; i += 1) {
+    const btn = levelButtons[i];
+    const layout = state.layouts[i];
+    const levelNumber = i + 1;
+    const hasContent = layout.pieces.length > 0;
+    btn.textContent = `Level ${levelNumber}`;
+    btn.classList.toggle("is-active", i === state.activeLayoutIndex);
+    btn.classList.toggle("has-content", hasContent);
+    btn.classList.toggle("is-dirty", layout.dirty);
+    btn.setAttribute("aria-selected", i === state.activeLayoutIndex ? "true" : "false");
+    btn.title = layout.fileName || `Level ${levelNumber} (untitled)`;
+  }
+
+  updateLevelSummaries();
+  updateOverlayControls();
+}
+
+function updateOverlayControls() {
+  for (let i = 0; i < overlayCheckboxes.length; i += 1) {
+    const cb = overlayCheckboxes[i];
+    const index = parseInt(cb.getAttribute("data-overlay-index"), 10);
+    if (!Number.isInteger(index)) continue;
+
+    const isActive = index === state.activeLayoutIndex;
+    cb.disabled = isActive;
+    if (isActive) {
+      cb.checked = false;
+      state.overlayEnabled[index] = false;
+      continue;
+    }
+
+    cb.checked = !!state.overlayEnabled[index];
+  }
+}
+
+function switchLayout(layoutIndex) {
+  if (layoutIndex < 0 || layoutIndex >= MAX_LAYOUT_LEVELS) return;
+  if (layoutIndex === state.activeLayoutIndex) return;
+  persistActiveLayout();
+  loadLayoutIntoState(layoutIndex);
+  state.hover.col = -1;
+  state.hover.row = -1;
+  updateLevelButtons();
+  markDirty(state.dirty);
+  draw();
+}
 
 function initPieceSwatches() {
   const swatches = document.querySelectorAll(".piece-swatch[data-piece]");
@@ -68,8 +195,11 @@ function setStatus(msg) {
 
 function markDirty(isDirty = true) {
   state.dirty = isDirty;
+  const levelLabel = `L${state.activeLayoutIndex + 1}`;
   const file = state.fileName || "Untitled";
-  setStatus(`${file}${state.dirty ? " *" : ""}`);
+  setStatus(`${levelLabel}: ${file}${state.dirty ? " *" : ""}`);
+  persistActiveLayout();
+  updateLevelButtons();
 }
 
 function effectiveSize(type, rotation) {
@@ -133,6 +263,91 @@ function getOverlapInfo() {
   return { topOverlappingPieceIndexes };
 }
 
+function getVisibleLayerIndexes() {
+  const indexes = [state.activeLayoutIndex];
+  for (let i = 0; i < state.layouts.length; i += 1) {
+    if (i === state.activeLayoutIndex) continue;
+    if (!state.overlayEnabled[i]) continue;
+    indexes.push(i);
+  }
+  return indexes;
+}
+
+function shouldCountToolOverlap(pieceType) {
+  // Treat non-floor pieces as tools/structure candidates for cross-layer clash hints.
+  return !isFloorType(pieceType);
+}
+
+function extendsUpwardToHigherLevels(pieceType) {
+  return pieceType === "Staircase" || pieceType === "Hearth";
+}
+
+function isDirectionalOverlapConflict(a, b) {
+  if (a.layerIndex === b.layerIndex)
+    return true;
+
+  // Lower levels can only affect higher levels if the lower piece projects upward.
+  if (a.layerIndex < b.layerIndex)
+    return extendsUpwardToHigherLevels(a.pieceType);
+
+  return extendsUpwardToHigherLevels(b.pieceType);
+}
+
+function getCrossLayerOverlapInfo() {
+  const visibleLayerIndexes = getVisibleLayerIndexes();
+  const marksByLayer = new Map();
+  if (visibleLayerIndexes.length <= 1)
+    return marksByLayer;
+
+  const cellOccupants = Array.from({ length: state.rows }, () =>
+    Array.from({ length: state.cols }, () => [])
+  );
+
+  for (let v = 0; v < visibleLayerIndexes.length; v += 1) {
+    const layerIndex = visibleLayerIndexes[v];
+    const layout = state.layouts[layerIndex];
+    for (let pieceIndex = 0; pieceIndex < layout.pieces.length; pieceIndex += 1) {
+      const piece = layout.pieces[pieceIndex];
+      if (!shouldCountToolOverlap(piece.type)) continue;
+
+      const { w, h } = effectiveSize(piece.type, piece.rot);
+      for (let r = piece.row; r < piece.row + h; r += 1) {
+        if (r < 0 || r >= state.rows) continue;
+        for (let c = piece.col; c < piece.col + w; c += 1) {
+          if (c < 0 || c >= state.cols) continue;
+          cellOccupants[r][c].push({ layerIndex, pieceIndex, pieceType: piece.type });
+        }
+      }
+    }
+  }
+
+  for (let r = 0; r < state.rows; r += 1) {
+    for (let c = 0; c < state.cols; c += 1) {
+      const occupants = cellOccupants[r][c];
+      if (occupants.length <= 1) continue;
+
+      for (let i = 0; i < occupants.length; i += 1) {
+        for (let j = i + 1; j < occupants.length; j += 1) {
+          const occA = occupants[i];
+          const occB = occupants[j];
+          if (!isDirectionalOverlapConflict(occA, occB))
+            continue;
+
+          if (!marksByLayer.has(occA.layerIndex))
+            marksByLayer.set(occA.layerIndex, new Set());
+          if (!marksByLayer.has(occB.layerIndex))
+            marksByLayer.set(occB.layerIndex, new Set());
+
+          marksByLayer.get(occA.layerIndex).add(occA.pieceIndex);
+          marksByLayer.get(occB.layerIndex).add(occB.pieceIndex);
+        }
+      }
+    }
+  }
+
+  return marksByLayer;
+}
+
 function rotateActivePiece(step) {
   state.rotation = (state.rotation + step + 360) % 360;
   rotSelect.value = String(state.rotation);
@@ -188,7 +403,7 @@ function pieceOccupiesCell(piece, col, row) {
 }
 
 function pieceShowsOrientation(type) {
-  return type === "Workbench" || type === "Staircase";
+  return type === "Workbench" || type === "Staircase" || type === "Bed";
 }
 
 function drawPieceOrientation(type, rotation, x, y, wPx, hPx, isPreview = false) {
@@ -208,6 +423,43 @@ function drawPieceOrientation(type, rotation, x, y, wPx, hPx, isPreview = false)
   const shaftX = 0;
   const backY = -hPx * 0.5 + backInset;
   const frontY = hPx * 0.5 - frontInset;
+
+  if (type === "Bed") {
+    // wPx/hPx are effective (swapped) screen-space dims; un-swap them so local
+    // drawing axes always match the base 2-wide × 4-tall footprint after the
+    // ctx.rotate(-rotation) already applied above.
+    const localW = (rotation === 90 || rotation === 270) ? hPx : wPx;
+    const localH = (rotation === 90 || rotation === 270) ? wPx : hPx;
+    const halfLocalH = localH * 0.5;
+    const inset = Math.max(4, localH * 0.1);
+    const ah = Math.max(3.5, localW * 0.11);
+
+    const accent = isPreview ? "rgba(38, 43, 23, 0.85)" : "rgba(252, 238, 214, 0.96)";
+    ctx.strokeStyle = accent;
+    ctx.fillStyle = accent;
+    ctx.lineWidth = Math.max(1.5, localW * 0.05);
+    ctx.lineCap = "round";
+
+    // Shaft runs along the local long axis (Y), foot→head (toward +Y).
+    const from = -halfLocalH + inset * 1.4;
+    const to   =  halfLocalH - inset;
+
+    ctx.beginPath();
+    ctx.moveTo(0, from);
+    ctx.lineTo(0, to - ah * 0.6);
+    ctx.stroke();
+
+    // Arrowhead at the head end.
+    ctx.beginPath();
+    ctx.moveTo(0, to);
+    ctx.lineTo(-ah, to - ah * 1.2);
+    ctx.lineTo( ah, to - ah * 1.2);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.restore();
+    return;
+  }
 
   if (type === "Staircase") {
     const accent = isPreview ? "rgba(38, 43, 23, 0.85)" : "rgba(246, 251, 228, 0.96)";
@@ -310,6 +562,8 @@ function canvasEventToGridCell(ev) {
 function draw() {
   const { cell, gridW, gridH, originX, originY } = gridLayout();
   const { topOverlappingPieceIndexes } = getOverlapInfo();
+  const crossLayerOverlapMarks = getCrossLayerOverlapInfo();
+  const activeCrossLayerOverlapMarks = crossLayerOverlapMarks.get(state.activeLayoutIndex) || new Set();
 
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
@@ -336,8 +590,12 @@ function draw() {
     ctx.stroke();
   }
 
-  const orderedPieces = [...state.pieces].sort((a, b) => pieceLayerOrder(a.type) - pieceLayerOrder(b.type));
-  for (const p of orderedPieces) {
+  const orderedPieces = state.pieces
+    .map((piece, index) => ({ piece, index }))
+    .sort((a, b) => pieceLayerOrder(a.piece.type) - pieceLayerOrder(b.piece.type));
+
+  for (const entry of orderedPieces) {
+    const p = entry.piece;
     const { w, h } = effectiveSize(p.type, p.rot);
     const x = originX + p.col * cell;
     const y = originY + p.row * cell;
@@ -346,6 +604,53 @@ function draw() {
     ctx.strokeStyle = "rgba(0, 0, 0, 0.35)";
     ctx.strokeRect(x + 1, y + 1, w * cell - 2, h * cell - 2);
     drawPieceOrientation(p.type, p.rot || 0, x + 1, y + 1, w * cell - 2, h * cell - 2);
+
+    if (activeCrossLayerOverlapMarks.has(entry.index)) {
+      ctx.strokeStyle = "#ff1f1f";
+      ctx.lineWidth = 2.5;
+      ctx.setLineDash([5, 3]);
+      ctx.strokeRect(x + 1, y + 1, w * cell - 2, h * cell - 2);
+      ctx.setLineDash([]);
+    }
+  }
+
+  // Draw optional non-active level overlays above the active layout so they are always visible.
+  for (let levelIndex = 0; levelIndex < state.layouts.length; levelIndex += 1) {
+    if (levelIndex === state.activeLayoutIndex) continue;
+    if (!state.overlayEnabled[levelIndex]) continue;
+
+    const overlayLayout = state.layouts[levelIndex];
+    const overlayCrossLayerMarks = crossLayerOverlapMarks.get(levelIndex) || new Set();
+    const overlayPieces = overlayLayout.pieces
+      .map((piece, index) => ({ piece, index }))
+      .sort((a, b) => pieceLayerOrder(a.piece.type) - pieceLayerOrder(b.piece.type));
+    const strokeColor = levelOverlayStrokeColors[levelIndex] || "#ffffff";
+    for (const entry of overlayPieces) {
+      const p = entry.piece;
+      const { w, h } = effectiveSize(p.type, p.rot);
+      const x = originX + p.col * cell;
+      const y = originY + p.row * cell;
+      ctx.fillStyle = pieceColors[p.type] || "#999";
+      ctx.globalAlpha = 0.22;
+      ctx.fillRect(x + 1, y + 1, w * cell - 2, h * cell - 2);
+      ctx.globalAlpha = 0.7;
+      ctx.lineWidth = 1.25;
+      ctx.strokeStyle = strokeColor;
+      ctx.strokeRect(x + 1, y + 1, w * cell - 2, h * cell - 2);
+
+      if (overlayCrossLayerMarks.has(entry.index)) {
+        ctx.globalAlpha = 0.95;
+        ctx.lineWidth = 2.5;
+        ctx.strokeStyle = "#ff1f1f";
+        ctx.setLineDash([5, 3]);
+        ctx.strokeRect(x + 1, y + 1, w * cell - 2, h * cell - 2);
+        ctx.setLineDash([]);
+      }
+
+      ctx.globalAlpha = 0.55;
+      drawPieceOrientation(p.type, p.rot || 0, x + 1, y + 1, w * cell - 2, h * cell - 2, true);
+      ctx.globalAlpha = 1;
+    }
   }
 
   for (const pieceIndex of topOverlappingPieceIndexes) {
@@ -522,7 +827,8 @@ async function saveVfp() {
 
 function confirmDirty(actionName) {
   if (!state.dirty) return true;
-  return window.confirm(`You have unsaved changes. Continue with ${actionName}?`);
+  const levelLabel = `Level ${state.activeLayoutIndex + 1}`;
+  return window.confirm(`${levelLabel} has unsaved changes. Continue with ${actionName}?`);
 }
 
 function newPlan() {
@@ -721,6 +1027,28 @@ document.getElementById("helpBtn").addEventListener("click", () => {
 document.getElementById("applyGridBtn").addEventListener("click", applyGrid);
 document.getElementById("shellBtn").addEventListener("click", cmdShell);
 
+for (const btn of levelButtons) {
+  btn.addEventListener("click", () => {
+    const index = parseInt(btn.getAttribute("data-level-index"), 10);
+    if (!Number.isInteger(index)) return;
+    switchLayout(index);
+  });
+}
+
+for (const cb of overlayCheckboxes) {
+  cb.addEventListener("change", () => {
+    const index = parseInt(cb.getAttribute("data-overlay-index"), 10);
+    if (!Number.isInteger(index)) return;
+    if (index === state.activeLayoutIndex) {
+      cb.checked = false;
+      return;
+    }
+
+    state.overlayEnabled[index] = cb.checked;
+    draw();
+  });
+}
+
 for (const radio of pieceTypeRadios) {
   radio.addEventListener("change", () => {
     if (!radio.checked) return;
@@ -735,6 +1063,14 @@ rotSelect.addEventListener("change", () => {
 });
 
 window.addEventListener("keydown", (ev) => {
+  if (ev.altKey && !ev.shiftKey && !ev.ctrlKey && !ev.metaKey) {
+    if (ev.key === "1" || ev.key === "2" || ev.key === "3") {
+      ev.preventDefault();
+      switchLayout(parseInt(ev.key, 10) - 1);
+      return;
+    }
+  }
+
   const isArrow = ev.key === "ArrowRight" || ev.key === "ArrowUp" || ev.key === "ArrowLeft" || ev.key === "ArrowDown";
   if (!isArrow) return;
 
@@ -757,11 +1093,15 @@ window.addEventListener("keydown", (ev) => {
 });
 
 window.addEventListener("beforeunload", (ev) => {
-  if (!state.dirty) return;
+  persistActiveLayout();
+  const hasUnsaved = state.layouts.some((layout) => layout.dirty);
+  if (!hasUnsaved) return;
   ev.preventDefault();
   ev.returnValue = "";
 });
 
 initPieceSwatches();
+loadLayoutIntoState(0);
+updateLevelButtons();
 draw();
 markDirty(false);

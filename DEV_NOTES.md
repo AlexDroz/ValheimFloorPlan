@@ -28,7 +28,9 @@ ValheimFloorPlan is a BepInEx mod that reads a `.vfp` design, previews placement
 	- `TerrainStampRadius` (3.0-6.0)
 	- `TerrainHighPointDelta` (0.0-4.0)
 	- `TerrainUseStagedRaise`, `TerrainRaiseStepHeight`, `TerrainMaxRaiseStages`
-	- `ExternalWallHeight`, `ScaffoldingLevels`, `ScaffoldingFloorHeight`, `ScaffoldingFloorHeight#2`, `ScaffoldingFloorHeight#3`, `WallPillarMaterial`
+	- `ExternalWallHeightLevel1`, `ExternalWallHeightLevel2`, `ExternalWallHeightLevel3`
+	- `ScaffoldingLevels`, `ScaffoldingFloorHeight`, `ScaffoldingFloorHeight#2`, `ScaffoldingFloorHeight#3`
+	- `WallPillarMaterial`, `StaircaseReachMode`
 	- `BuildOriginForwardOffset`
 
 ### 2) `.vfp` Parsing (`FloorPlan.Load`)
@@ -92,6 +94,30 @@ z = origin.z + dx * sin(rotation) + dz * cos(rotation)
 - 1 grid cell = 1 meter.
 - `.vfp` uses top-left piece anchors; runtime placement uses world-space centers.
 - Preview rotation is clockwise around selected center pivot.
+
+### Designer vs In-Game Axis Warning
+**The Designer canvas and the in-game world use opposite north/south orientations.**
+- In the Designer, rows increase upward on screen = plan `+Z` = world `+Z`.
+- `minRow` is the **top edge in the Designer** but the **back/north end of the building in-game**.
+- `maxRow` is the **bottom edge in the Designer** (player-facing "front") and the **south/front of the building in-game**.
+- Consequently `maxRow` = front of building = toward the player after a normal build.
+
+**Canonical formula for world directions** (copy from `PlaceCenterSignage` — known correct):
+```csharp
+float signageRotationDeg = rotationDeg - 180f;
+float signageRad  = signageRotationDeg * Mathf.Deg2Rad;
+float signageSinR = Mathf.Sin(signageRad);
+float signageCosR = Mathf.Cos(signageRad);
+// "toward player / south / front of building"
+float southX = -signageSinR;  float southZ = -signageCosR;
+// "east" (perpendicular)
+float eastX  = -signageCosR;  float eastZ  =  signageSinR;
+// pole rotation, sign rotation, sign face offset
+Quaternion poleRot = Quaternion.Euler(0f, signageRotationDeg, 0f);
+Quaternion signRot = Quaternion.Euler(0f, signageRotationDeg + 180f, 0f);
+float signOX = -signageSinR * 0.3f;  float signOZ = -signageCosR * 0.3f;
+```
+Do **not** derive south/east by differencing `TransformPlanPoint` outputs — that approach consistently produces the wrong end of the building.
 
 ## Verified Constraints
 - Staircase footprint is 4m x 4m (4x4 cells) in both `Designer/app.js` and `PieceMap.cs`.
@@ -327,11 +353,84 @@ Side View (vertical progression)
 	- Minimum `ScaffoldingLevels` is forced to `FloorPlanLevels`.
 - `RoofScaffolding` and `ScaffoldingFloors` now route through the same rule-application path on setting change.
 
-### Upper-Level Placement Pass (Current Scope)
-- Upper-level plans are still footprint-validated against Level 1 bounds before placement.
-- Placement remains internal-only for v1 (pieces touching Level 1 outer perimeter are skipped).
-- `Hearth` and `Staircase` are still intentionally skipped for upper-level layouts.
-- Upper-level piece Y uses scaffold deck heights (`GetDeckYForScaffoldLevel`).
+### Upper-Level Placement And Clash Logic (Current)
+- Upper-level plans are footprint-validated against Level 1 bounds before placement.
+- Placement runs level-by-level (`Level 2`, then `Level 3` if enabled).
+- Within each level, piece ordering is route-first to avoid mutual blocking:
+	- place `Staircase` first,
+	- then `Hearth`,
+	- then all other piece types.
+
+#### Per-Level Placement Rules
+- Upper-level `Floor2x2` and `Floor1x1` are skipped (scaffold decks provide those floors).
+- `Wall`, `Pillar`, and `Doorway` are allowed on upper-level perimeter cells.
+- Upper-level perimeter `Wall` and `Pillar` stacking uses the general `ExternalWallHeight` setting.
+- Upper-level piece Y is based on scaffold deck height (`GetDeckYForScaffoldLevel`).
+
+#### Clash Detection Scope
+- Most clashes are level-local (checked only against pieces/footprints established in the same upper level pass).
+- Lower-level furniture does not block higher-level placement.
+- Two cross-level blockers are intentionally global across levels:
+	- Hearth chimney shafts,
+	- Staircase shafts.
+- Any higher-level piece that overlaps one of those shaft footprints is skipped.
+
+#### Hearth Rules (Upper Levels)
+- Must be at least 1 cell away from that level plan perimeter.
+- Must not overlap same-level shaft footprints.
+- Must keep at least 1-cell spacing from other same-level Hearth footprints.
+- On successful placement, Hearth footprints are added to chimney-shaft blockers for higher levels.
+
+#### Staircase Rules (Upper Levels)
+- Built with `PlaceStaircaseComposite`, with target determined by `StaircaseReachMode`:
+	- `ToTheNextLevelOnly`: climb only from current deck to the next deck.
+	- `AllTheWay`: climb from current deck toward the top available scaffold deck.
+- Staircase shaft footprint is registered as a blocker only up to the configured reach (next level only vs all higher levels).
+- After placement, cleanup removes obstructing upper decks, roof pieces, and horizontal scaffold beams in shaft space above the current deck.
+
+#### Clash Reporting
+- Level summary HUD reports skip categories.
+- If a level has clashes, one clash pole is spawned for that level with stacked detail signs (capped with overflow note), and detailed lines remain in logs.
+
+## Manual Test Matrix (Regression)
+
+### Staircase Reach Mode
+
+1. Base staircase, `ToTheNextLevelOnly`
+	- Setup: `ScaffoldingLevels=3`, `ScaffoldingFloors=true`, `StaircaseReachMode=ToTheNextLevelOnly`; place one Level 1 staircase.
+	- Expected: staircase terminates at Level 2 deck height, not Level 3.
+
+2. Base staircase, `AllTheWay`
+	- Setup: same as above but `StaircaseReachMode=AllTheWay`.
+	- Expected: staircase reaches top available deck (Level 3 in this setup).
+
+3. Upper staircase, `ToTheNextLevelOnly`
+	- Setup: staircase in Level 2 plan with `FloorPlanLevels=3`, `ScaffoldingLevels=3`, `StaircaseReachMode=ToTheNextLevelOnly`.
+	- Expected: Level 2 staircase climbs only to Level 3 deck.
+
+4. Top-level staircase skipped by mode
+	- Setup: staircase in highest active plan level with `StaircaseReachMode=ToTheNextLevelOnly`.
+	- Expected: staircase skipped with explicit reach-mode reason in summary/log and clash detail.
+
+### Multi-Clash And Signage
+
+5. Mixed clashes on one upper level
+	- Setup: include overlaps against chimney shaft and staircase shaft plus one same-level route clash.
+	- Expected: one clash pole for that level, multiple detail signs (up to cap), overflow note if needed, and matching log lines.
+
+6. Cross-level blocker scope
+	- Setup: create lower-level furniture under an upper-level piece path plus separate hearth/stair shafts.
+	- Expected: upper pieces are blocked by shafts only; lower-level furniture alone does not block upper-level placement.
+
+### Routing And Punch-Through
+
+7. Stair shaft punch-through integrity
+	- Setup: staircase path crossing decks, horizontal scaffold beams, and top roof coverage.
+	- Expected: no sealed shaft segments; interfering deck/beam/roof pieces are removed in shaft volume.
+
+8. Hearth chimney route integrity
+	- Setup: upper-level hearth under additional decks/roof with nearby non-overlapping furniture.
+	- Expected: chimney path remains open vertically; non-overlapping nearby pieces remain.
 
 ### Duplicate Decking Fix
 - Upper-level `Floor2x2` and `Floor1x1` pieces are skipped in `PlaceUpperLevelPieces`.
@@ -342,4 +441,4 @@ Side View (vertical progression)
 - Yard strategy options and tradeoffs are tracked in `YARD_STRATEGY_NOTES.md`.
 
 ## Last Verified
-- 2026-05-27
+- 2026-05-28

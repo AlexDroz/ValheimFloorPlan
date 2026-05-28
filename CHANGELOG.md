@@ -1,13 +1,25 @@
 # Changelog
 
-## Unreleased (Provisional)
+## 2.0.0
 
-- Added early multi-floor layout support for 2nd and 3rd floor plans.
-- Improved validation and warnings for invalid upper-floor layouts.
-- Improved scaffold behavior for multi-floor builds so required support settings are automatically enforced.
-- Removed duplicate upper-floor deck placement to avoid overlapping flooring.
-- Updated and expanded documentation (README and developer notes), including corrected sample-plan references.
-- Upper-level `Staircase` placement is still not supported yet and is currently skipped with warning logs.
+- **Critical bug fix — terrain levelling restored:** A long-standing coordinate offset error in `TerrainLeveler` caused all stamp positions to be calculated hundreds of metres away from the actual build site whenever the player was not near world origin. As a result, terrain levelling was silently skipped on virtually all real-world builds. This has been corrected; levelling now works correctly at any world position.
+- Designer now supports 3 in-memory level layouts with quick switching (Level 1/2/3), per-level file/dirty state, and overlay checkboxes for cross-level visual planning.
+- Overlay clash hints are now directional and content-aware: bright red dotted outlines flag overlap candidates across visible levels, with lower-level Staircase/Hearth projecting upward while non-vertical tools do not.
+- Bed pieces now show a head-direction arrow in the Designer, and are placed in-game with the correct head orientation matching the Designer layout.
+- Expanded multi-floor support for 2nd and 3rd floor plans, including upper-level staircase placement.
+- Multi-level builds now place pieces level-by-level with route-critical parts first (staircases/hearths), then remaining pieces.
+- Stair and chimney shafts are now treated as protected vertical routes so higher-level pieces do not block those paths.
+- Upper-level floor tiles from plan files are skipped when scaffold decks already provide those floors, avoiding duplicate overlap.
+- Improved clash feedback for upper levels:
+	- clearer warning categories in HUD/logs,
+	- per-level clash signposts with level-specific detail signs.
+- Improved upper-level wall behavior:
+	- walls/pillars/doorways can be placed on upper-level perimeter cells,
+	- perimeter wall/pillar height now uses per-level settings (`ExternalWallHeightLevel1/2/3`) with dynamic per-level caps.
+- Added `StaircaseReachMode` config (`ToTheNextLevelOnly` / `AllTheWay`) to control whether staircases climb only to the next level or continue to the highest available level.
+- Fixed staircase shaft punch-through so deck/beam openings and higher-level staircase-shaft blocking now respect `StaircaseReachMode` (no extra holes above the configured reach).
+- Improved validation and warnings for invalid upper-floor layout files and bounds mismatches.
+- Updated and expanded user/developer documentation to describe current multi-level behavior.
 
 ## 1.1.0
 

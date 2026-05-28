@@ -1,8 +1,12 @@
 # Valheim Floor Plan
 
-Build structures in Valheim from pre-designed floor plans.
+Build complete multi-level structures in Valheim from pre-designed floor plans.
 
-Anyone who has spent time building in Valheim knows the real work starts before the first wall goes up — clearing uneven ground, wrestling with terrain, and nudging pieces into alignment one agonising centimetre at a time. **Valheim Floor Plan** takes that grind away. Design your layout once in the included browser-based Designer, save it as a `.vfp` plan file, and the mod handles the rest: it levels the terrain, captures a snapshot for easy undo, and builds the whole foundation in seconds. When something is off, you can even move the undo search circle with the arrow keys before confirming. No more tedious ground prep or painstaking piece-by-piece placement — just load your plan, pick your spot, and build.
+Anyone who has spent time building in Valheim knows the real effort starts before the first wall goes up — clearing uneven ground, wrestling with terrain spikes, and nudging pieces into alignment one agonising centimetre at a time. **Valheim Floor Plan** takes all of that away. Design your layout in the included browser-based Designer, save it as a `.vfp` plan file, and the mod handles the rest: it levels and blends the terrain, captures a snapshot for instant undo, and places the entire foundation in seconds.
+
+The Designer supports up to three in-memory level layouts with quick switching, per-level overlay rendering, and cross-level clash hints so you can plan multi-storey builds before committing a single piece. Orientation-sensitive tools — including Beds, Workbenches, and Staircases — show directional arrows so what you see in the Designer matches exactly what gets built in-game.
+
+Once you're happy with the design, press the build hotkey, position the preview in-world, and confirm. The mod levels the terrain, places every piece in the right order, and handles scaffold framing for upper floors automatically. If something is off, undo restores both pieces and terrain in one keypress — with a live search circle you can reposition before confirming.
 
 This package includes two components:
 
@@ -70,6 +74,29 @@ This package includes two components:
 
 **IMPORTANT:** Terrain can only be restored within the **current session** — if you leave the area or reload, the terrain snapshot is lost. Building pieces can be undone across sessions because they are tagged as built by Valheim Floor Plan.
 
+## How Multi-Level Builds Work (Plain Language)
+
+When `FloorPlanLevels` is set to `2` or `3`, the mod builds one level at a time.
+
+For each upper level, it follows this order:
+
+1. Place route-critical pieces first (staircases and hearths).
+2. Cut/preserve needed vertical paths (stair shafts and chimney shafts).
+3. Place the rest of that level's pieces around those paths.
+
+This helps avoid the "nothing gets built" situation where pieces can block each other if placed in the wrong order.
+
+### What gets blocked
+
+- Higher-level pieces are blocked from occupying protected stair/chimney shaft space.
+- Clash checks are primarily local to the current level, but shaft routes are kept clear across levels.
+- Upper-level duplicate floor tiles from plan files are skipped where scaffold decks already provide flooring.
+
+### If something is skipped
+
+- You get HUD/log warning categories that explain why.
+- If a level has clashes, the build creates a clash signpost for that level with detail signs (plus log details for overflow).
+
 ## Config Options
 
 Config file path:
@@ -92,25 +119,15 @@ All values below are configurable in that file.
 | `ProgressMessagePosition` | `CenterLeft` | Valheim `MessageHud` positions (`Center`, `TopLeft`, `TopRight`, etc.) | HUD slot for build-progress messages. `CenterLeft` is accepted as an alias and maps to `Center`. |
 | `WarningMessagePosition` | `TopLeft` | Valheim `MessageHud` positions (`Center`, `TopLeft`, `TopRight`, etc.) | HUD slot for warnings/risk messages. `CenterLeft` is accepted as an alias and maps to `Center`. |
 
-### Terrain
-
-| Option | Default | Allowed values | What it does |
-|---|---|---|---|
-| `TerrainLevelPasses` | `2` | `1` to `5` | Main leveling pass count before spike cleanup. Lower is faster; higher can smooth stubborn terrain. |
-| `TerrainSpikeCleanupPasses` | `2` | `1` to `5` | Post-leveling spike cleanup pass count. |
-| `TerrainStampRadius` | `3.0` | `3.0` to `6.0` | Radius of each terrain stamp disc (meters). Also controls outer terrain blend reach. |
-| `TerrainHighPointDelta` | `0.0` | `0.0` to `4.0` | Extra height added to sampled highest point (`targetY = highest + delta`). |
-| `TerrainUseStagedRaise` | `false` | `true` / `false` | Experimental staged vertical raise mode instead of single full-height raise. |
-| `TerrainRaiseStepHeight` | `0.5` | `0.15` to `1.5` | Max vertical raise per stage when staged raise is enabled (meters). |
-| `TerrainMaxRaiseStages` | `1` | `1` to `16` | Hard cap on number of staged raises when staged mode is enabled. |
-| `TerrainSkipSatisfiedCenterStamps` | `true` | `true` / `false` | Skips center stamps where sampled terrain is already at/above target height. |
-
 ### Building
 
 | Option | Default | Allowed values | What it does |
 |---|---|---|---|
-| `ExternalWallHeight` | `1` | `1` to `18` | Stacks outer-perimeter `Wall`/`Pillar` pieces vertically to this many levels. |
+| `ExternalWallHeightLevel1` | `1` | `1` to `6` | Stacks Level 1 outer-perimeter `Wall`/`Pillar` pieces vertically. Dynamic cap: `ScaffoldingFloorHeight x 2`. |
+| `ExternalWallHeightLevel2` | `1` | `1` to `6` | Stacks Level 2 outer-perimeter `Wall`/`Pillar` pieces vertically. Dynamic cap: `ScaffoldingFloorHeight#2 x 2`. |
+| `ExternalWallHeightLevel3` | `1` | `1` to `6` | Stacks Level 3 outer-perimeter `Wall`/`Pillar` pieces vertically. Dynamic cap: `ScaffoldingFloorHeight#3 x 2`. |
 | `WallPillarMaterial` | `Stone` | `Stone`, `Wood` | Chooses material set used for `Wall` and `Pillar` types. |
+| `StaircaseReachMode` | `ToTheNextLevelOnly` | `ToTheNextLevelOnly`, `AllTheWay` | Controls staircase vertical reach. `ToTheNextLevelOnly` climbs one level at a time. `AllTheWay` climbs toward the highest available scaffold level. |
 
 ### Scaffolding
 
@@ -157,6 +174,19 @@ All values below are configurable in that file.
 | `RotateStepDegrees` | `90` | `22.5`, `45`, `90` | Rotation applied per coarse rotate key press (degrees). |
 | `FineRotateStepDegrees` | `22.5` | `22.5`, `45`, `90` | Rotation applied per rotate key press while fine-adjust key is held (degrees). |
 | `BuildRotationSnapDegrees` | `90` | `22.5`, `45`, `90` | Snaps the final build rotation to the nearest allowed angle when preview starts and when build is confirmed. |
+
+### Terrain
+
+| Option | Default | Allowed values | What it does |
+|---|---|---|---|
+| `TerrainLevelPasses` | `2` | `1` to `5` | Main leveling pass count before spike cleanup. Lower is faster; higher can smooth stubborn terrain. |
+| `TerrainSpikeCleanupPasses` | `2` | `1` to `5` | Post-leveling spike cleanup pass count. |
+| `TerrainStampRadius` | `3.0` | `3.0` to `6.0` | Radius of each terrain stamp disc (meters). Also controls outer terrain blend reach. |
+| `TerrainHighPointDelta` | `0.0` | `0.0` to `4.0` | Extra height added to sampled highest point (`targetY = highest + delta`). |
+| `TerrainUseStagedRaise` | `false` | `true` / `false` | Experimental staged vertical raise mode instead of single full-height raise. |
+| `TerrainRaiseStepHeight` | `0.5` | `0.15` to `1.5` | Max vertical raise per stage when staged raise is enabled (meters). |
+| `TerrainMaxRaiseStages` | `1` | `1` to `16` | Hard cap on number of staged raises when staged mode is enabled. |
+| `TerrainSkipSatisfiedCenterStamps` | `true` | `true` / `false` | Skips center stamps where sampled terrain is already at/above target height. |
 
 
 ## Sample Plans

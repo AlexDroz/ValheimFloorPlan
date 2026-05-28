@@ -77,7 +77,7 @@ namespace ValheimFloorPlan
             //              vfp type      prefab                  W  H  Yoff rot
             { "Floor2x2", new PieceDef("wood_floor",             2, 2, 0f,   0) },
             { "Floor1x1", new PieceDef("wood_floor_1x1",         1, 1, 0f,   0) },
-            { "Bed",      new PieceDef("bed",                    2, 4, 0f,   0) },
+            { "Bed",      new PieceDef("bed",                    2, 4, 0f, 180) },
             { "Staircase", new PieceDef("wood_floor_1x1",        4, 4, 0f,   0) },
             { "Workbench", new PieceDef("piece_workbench",       4, 4, 0f,   0) },
             { "Wall",     new PieceDef("stone_wall_2x1",         2, 1, 0.5f, 0) }, // 1 m tall → centre +0.5 m
