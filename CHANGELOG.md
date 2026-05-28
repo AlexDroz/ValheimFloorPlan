@@ -3,6 +3,7 @@
 ## 2.0.0
 
 - **Critical bug fix — terrain levelling restored:** A long-standing coordinate offset error in `TerrainLeveler` caused all stamp positions to be calculated hundreds of metres away from the actual build site whenever the player was not near world origin. As a result, terrain levelling was silently skipped on virtually all real-world builds. This has been corrected; levelling now works correctly at any world position.
+
 - Designer now supports 3 in-memory level layouts with quick switching (Level 1/2/3), per-level file/dirty state, and overlay checkboxes for cross-level visual planning.
 - Overlay clash hints are now directional and content-aware: bright red dotted outlines flag overlap candidates across visible levels, with lower-level Staircase/Hearth projecting upward while non-vertical tools do not.
 - Bed pieces now show a head-direction arrow in the Designer, and are placed in-game with the correct head orientation matching the Designer layout.

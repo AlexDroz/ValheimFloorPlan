@@ -209,6 +209,19 @@ The `samples/` folder contains ready-to-use `.vfp` examples:
 - `samples/Workbenches_and_Staircase_16x20.vfp`
 - `samples/Workbenches_and_Staircase_ALT_16x20.vfp`
 
+## Tips
+
+- **Test away from world spawn.** Terrain levelling and piece placement both depend on world-space coordinates. Builds near the origin (0, 0) can mask position-dependent bugs — always test in a realistic location.
+- **Building on already-levelled terrain is much quicker.** Create a simple floor plan covering the area you want to build on. Run it once to level the ground, then portal away and back (this clears the terrain snapshot). Press F9 to remove the temporary build — the levelled terrain stays. Subsequent builds in the same area skip most of the levelling work and place pieces much faster.
+- **Watch the edge risk markers before confirming.** Orange/red diamond markers appear when surrounding terrain is steep enough to cause tears or spikes. Nudging or rotating the plan a few metres is often enough to clear them.
+- **Rotate to align with the terrain slope.** If one side of the pad is significantly higher, try rotating so the plan runs along the contour rather than across it — this reduces the height range the leveller has to span.
+- **Use the overlay in the Designer before building.** Enable L2/L3 overlays to check for piece clashes across levels before saving any of the `.vfp` files. Red dashed outlines flag conflicts, with directional rules for Staircases and Hearths.
+- **Bed orientation matters.** The arrow shown on a Bed in the Designer points toward the head. The in-game placement will match — players sleep with their head toward the arrow.
+- **Undo is session-only for terrain.** The terrain snapshot is held in memory. Move to a different area or reload the world and it is gone. Piece removal still works across sessions because pieces are tagged.
+- **Adjust the undo radius before confirming.** During the undo confirmation window, `+`/`-` resizes the search circle and arrow keys reposition it. This is useful when two builds are close together and you only want to remove one.
+- **Multi-level plans must nest.** Level 2 and Level 3 footprints must fit within the Level 1 footprint. If a level file is rejected at build time, check that all its pieces fall inside the Level 1 grid boundary.
+- **Scaffolding settings are forced on for multi-level builds.** When `FloorPlanLevels > 1`, `RoofScaffolding`, `ScaffoldingFloors`, `TransverseScaffoldingBeams`, and `LongitudinalScaffoldingBeams` are all automatically enabled. You do not need to set them manually.
+
 ## Feature Highlights
 
 
