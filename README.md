@@ -202,6 +202,9 @@ The `samples/` folder contains ready-to-use `.vfp` examples:
 - `samples/myfloorplan20x20_double.vfp`
 - `samples/myfloorplan24x24.vfp`
 - `samples/myfloorplan28x28.vfp`
+- `samples/ThreeFloorBuild_Level_1_16x20.vfp`
+- `samples/ThreeFloorBuild_Level_2_16x20.vfp`
+- `samples/ThreeFloorBuild_Level_3_16x20.vfp`
 - `samples/Workbenches_16x20.vfp`
 - `samples/Workbenches_and_Staircase_16x20.vfp`
 - `samples/Workbenches_and_Staircase_ALT_16x20.vfp`
