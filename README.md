@@ -6,12 +6,14 @@ Anyone who has spent time building in Valheim knows the real effort starts befor
 
 The Designer supports up to three in-memory level layouts with quick switching, per-level overlay rendering, and cross-level clash hints so you can plan multi-storey builds before committing a single piece. Orientation-sensitive tools — including Beds, Workbenches, and Staircases — show directional arrows so what you see in the Designer matches exactly what gets built in-game.
 
-Once you're happy with the design, press the build hotkey, position the preview in-world, and confirm. The mod levels the terrain, places every piece in the right order, and handles scaffold framing for upper floors automatically. If something is off, undo restores both pieces and terrain in one keypress — with a live search circle you can reposition before confirming.
+Once you're happy with the design, press the build hotkey, position the preview in-world, and confirm. The mod levels the terrain, places every piece in the right order, and handles scaffold framing for upper floors automatically. For multi-level builds, additional red floating rectangles appear in the preview at each upper-floor height so you can see the full vertical footprint before committing. If something is off, undo restores both pieces and terrain in one keypress — or use the keep-terrain undo (`Ctrl+F9`) to remove pieces while leaving the leveled ground intact.
 
 This package includes two components:
 
 1. **ValheimFloorPlan mod** — a BepInEx plugin that reads `.vfp` plan files and builds them in-game.
 2. **Valheim Floor Plan Designer** — a browser-based app (included) for creating and editing `.vfp` plan files.
+
+**Demo video:** https://youtu.be/jz39KSSfhJ0
 
 **Included in this package:**
 - The mod DLL (installed automatically under `BepInEx/plugins`)
@@ -52,6 +54,7 @@ This package includes two components:
 
    - **White rectangle** — the inner leveled pad: the exact area of ground that will be raised and flattened to sit your foundation on.
    - **Green rectangle** — the outer terrain-change boundary: terrain blending extends to this edge, giving a smooth transition rather than a hard cliff.
+   - **Red floating rectangle(s)** — upper-floor level bands (multi-level builds only). One red band appears per upper floor at its expected scaffold height, so you can see the full vertical footprint before confirming. Only shown when `FloorPlanLevels` is `2` or `3`.
    - **Tall yellow flagpole** — the exact placement origin point at the centre of the plan. The pole rises 10 m above the terrain surface so it remains visible even when the ground is underwater or underground.
    - **Orange diamond markers** — terrain edge risk warnings. These appear when the surrounding terrain is uneven enough that the leveled edge may produce visible tears or spikes. Move or rotate the plan until they disappear (or reduce) for the cleanest result. Markers turn **red** when risk is high.
 
@@ -61,18 +64,52 @@ This package includes two components:
    - **Red rings** around every VFP piece within the search radius so you can see exactly what will be removed.
    - **Orange boundary circle** on the ground marking the edge of the search radius.
 
+   Optional mode: press **Ctrl+F9** (configurable via `UndoKeepTerrainHotkey`) to start piece-only undo that keeps the leveled terrain. In this mode the terrain snapshot is discarded instead of restored.
+
    During the confirmation window you can:
 
    | Key | Action |
    |-----|--------|
    | `↑` `↓` `←` `→` | Move the search circle centre to target different pieces. Movement respects camera angle. Hold `Left Shift` for fine movement. |
    | `+` / `-` *(or numpad)* | Increase / decrease the search radius by 5 m. The new radius is saved to config. |
-   | `F9` *(undo hotkey again)* | Confirm — removes all marked pieces and restores terrain. |
+   | `F9` *(undo hotkey again)* | Confirm normal undo — removes all marked pieces and restores terrain. |
+   | `Ctrl+F9` *(UndoKeepTerrainHotkey)* | Start or confirm keep-terrain undo — removes marked pieces and discards the current terrain snapshot. If started with `Ctrl+F9`, confirmation can be done with either `Ctrl+F9` or `F9`. |
    | `RMB` / `Escape` | Cancel — clears all highlights without removing anything. |
 
    The HUD message shows the current radius and remaining time throughout the window. All adjustments (movement or radius) restart the 5-second confirmation timer.
 
 **IMPORTANT:** Terrain can only be restored within the **current session** — if you leave the area or reload, the terrain snapshot is lost. Building pieces can be undone across sessions because they are tagged as built by Valheim Floor Plan.
+
+**Tip — keep the leveled terrain:** if you want to remove your build but keep the flat ground (e.g. to iterate on a design), use **Ctrl+F9** (`UndoKeepTerrainHotkey`) instead of F9. Pieces are removed as normal, but the terrain snapshot is discarded rather than restored.
+
+## Preset Bundle Workflow (In Game)
+
+Preset bundles let you share/reload a complete setup: Level 1/2/3 `.vfp` files plus non-key build/config values.
+
+- Bundle format: `.vpfset` (zip container)
+- Bundle output folder: `BepInEx/plugins/RetiredCoders-ValheimFloorPlan/ValheimFloorPlan/PresetBundles/`
+- Key mappings are intentionally **not** included in exported/imported bundle settings.
+
+Default controls:
+
+| Key | Action |
+|---|---|
+| `Ctrl+F8` (`ExportBundleHotkey`) | Export current setup as a new timestamped bundle named `<BundleName>-YYYYMMDD-HHMMSS.vpfset`. |
+| `Alt+F8` (`ImportBundleHotkey`) | Start timed import selection mode. |
+| `Right Arrow` / `Left Arrow` | While import selection is active, move to next/previous bundle. |
+| `Enter` | Import currently selected bundle. |
+| `Escape` | Cancel import selection. |
+
+While import selection is active, the HUD shows:
+
+- Selected bundle name
+- Current position as `bundle X of N`
+- Control hints (`Right`, `Left`, `Enter`, `Escape`)
+- Remaining time
+
+If the timer expires, import selection is canceled automatically.
+
+After a successful import, `BundleName` is automatically normalized to the imported preset prefix (timestamp suffix removed).
 
 ## How Multi-Level Builds Work (Plain Language)
 
@@ -115,6 +152,10 @@ All values below are configurable in that file.
 | `FloorPlanFileLevel3` | *(empty)* | Any valid file path | Optional full path to a Level 3 `.vfp` file. If set, its footprint must fit within the Level 1 (`FloorPlanFile`) footprint. |
 | `BuildHotkey` | `F8` | Any valid `KeyboardShortcut` | Starts plan preview/build flow. |
 | `UndoHotkey` | `F9` | Any valid `KeyboardShortcut` | Removes placed VFP-tagged pieces and restores terrain snapshot. |
+| `UndoKeepTerrainHotkey` | `LeftControl + F9` | Any valid `KeyboardShortcut` | Starts piece-only undo mode: removes VFP pieces and discards the current terrain snapshot so leveled terrain remains. |
+| `BundleName` | `MyBuild` | Any valid file-name text | Preset name prefix used when exporting bundles. Export file name format is `<BundleName>-YYYYMMDD-HHMMSS.vpfset`. After import, this is reset to the imported prefix (timestamp removed). |
+| `ExportBundleHotkey` | `LeftControl + F8` | Any valid `KeyboardShortcut` | Exports a preset bundle to `PresetBundles` as `<BundleName>-YYYYMMDD-HHMMSS.vpfset` (layout files + non-key settings). |
+| `ImportBundleHotkey` | `LeftAlt + F8` | Any valid `KeyboardShortcut` | Starts timed bundle import selection mode (`Right/Left` choose, `Enter` import, `Escape` cancel, auto-timeout cancel). |
 | `UndoRadius` | `15` | `5` to `150` | Search radius in metres around the undo circle centre when scanning for VFP pieces to remove on Undo. Adjustable live during the confirmation window with `+`/`-`, and circle centre is adjustable with arrow keys. |
 | `ProgressMessagePosition` | `CenterLeft` | Valheim `MessageHud` positions (`Center`, `TopLeft`, `TopRight`, etc.) | HUD slot for build-progress messages. `CenterLeft` is accepted as an alias and maps to `Center`. |
 | `WarningMessagePosition` | `TopLeft` | Valheim `MessageHud` positions (`Center`, `TopLeft`, `TopRight`, etc.) | HUD slot for warnings/risk messages. `CenterLeft` is accepted as an alias and maps to `Center`. |
@@ -218,6 +259,8 @@ The `samples/` folder contains ready-to-use `.vfp` examples:
 - **Use the overlay in the Designer before building.** Enable L2/L3 overlays to check for piece clashes across levels before saving any of the `.vfp` files. Red dashed outlines flag conflicts, with directional rules for Staircases and Hearths.
 - **Bed orientation matters.** The arrow shown on a Bed in the Designer points toward the head. The in-game placement will match — players sleep with their head toward the arrow.
 - **Undo is session-only for terrain.** The terrain snapshot is held in memory. Move to a different area or reload the world and it is gone. Piece removal still works across sessions because pieces are tagged.
+- **Use Ctrl+F9 to keep your leveled ground.** If you want to remove the build and try again without re-leveling, press `Ctrl+F9` instead of `F9` to start undo. Pieces are removed but the leveled terrain stays. This is especially useful when iterating on a design in the same spot.
+- **The preview shows all floor levels.** When `FloorPlanLevels` is 2 or 3, floating red bands appear during preview at the height of each upper floor. Use them to check clearance and surroundings before confirming.
 - **Adjust the undo radius before confirming.** During the undo confirmation window, `+`/`-` resizes the search circle and arrow keys reposition it. This is useful when two builds are close together and you only want to remove one.
 - **Multi-level plans must nest.** Level 2 and Level 3 footprints must fit within the Level 1 footprint. If a level file is rejected at build time, check that all its pieces fall inside the Level 1 grid boundary.
 - **Scaffolding settings are forced on for multi-level builds.** When `FloorPlanLevels > 1`, `RoofScaffolding`, `ScaffoldingFloors`, `TransverseScaffoldingBeams`, and `LongitudinalScaffoldingBeams` are all automatically enabled. You do not need to set them manually.

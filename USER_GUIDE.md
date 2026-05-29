@@ -10,6 +10,8 @@ From a player perspective, the flow is simple:
 4. Press the preview confirm key to build (default `E`).
 5. Press undo hotkey to remove placed pieces and restore terrain snapshot.
 
+Demo video: https://youtu.be/jz39KSSfhJ0
+
 ## Requirements
 - Valheim
 - BepInEx for Valheim
@@ -36,7 +38,13 @@ Section `General`:
 - `FloorPlanFile`: Full path to your `.vfp` file.
 - `BuildHotkey`: Starts preview mode (default `F8`).
 - `UndoHotkey`: Removes nearby VFP pieces and restores terrain snapshot (default `F9`).
+- `UndoKeepTerrainHotkey`: Piece-only undo mode that keeps leveled terrain (default `Ctrl+F9`).
 - `ProgressMessagePosition`: HUD slot for status text (default `CenterLeft`, mapped to `Center`).
+
+Section `Preset Bundles`:
+- `BundleName`: Preset name prefix used during export.
+- `ExportBundleHotkey`: Export current setup to `PresetBundles` (default `Ctrl+F8`).
+- `ImportBundleHotkey`: Start timed import selection mode (default `Alt+F8`).
 
 Section `Terrain`:
 - `TerrainLevelPasses`: Main leveling pass count (default `2`, range `1-5`).
@@ -129,9 +137,30 @@ Preview controls are also configurable in the same file.
    - Any adjustment restarts the 5-second timer
 4. Press `F9` again to confirm, or press `Esc`/right-click to cancel.
 
+## Preset Bundle Workflow
+1. Press `Ctrl+F8` to export the current setup.
+2. Export writes a timestamped bundle in `PresetBundles` named like `ThreeStoryBuild-20260529-153212.vpfset`.
+3. The bundle includes layout files (`level1.vfp`, optional `level2.vfp`/`level3.vfp`) plus non-key settings.
+4. Press `Alt+F8` to open bundle import selection mode.
+5. While selection is active:
+   - `RightArrow` / `LeftArrow`: choose next/previous bundle
+   - `Enter`: import selected bundle
+   - `Esc`: cancel
+6. Selection auto-cancels if the timer runs out.
+
+Important notes:
+- Bundle import intentionally does not overwrite user key mappings.
+- HUD shows selected name, `bundle X of N`, control hints, and remaining seconds.
+- After import, `BundleName` is set to the imported preset prefix with timestamp suffix removed.
+
 ## Controls (Default)
 - Build Preview: `F8`
 - Undo: `F9`
+- Keep Terrain Undo: `Ctrl+F9`
+- Export Bundle: `Ctrl+F8`
+- Start Bundle Import Selector: `Alt+F8`
+- Bundle Selector Next/Previous: `RightArrow` / `LeftArrow` (while selector is active)
+- Bundle Selector Confirm/Cancel: `Enter` / `Esc` (while selector is active)
 - Move Preview: `UpArrow`, `DownArrow`, `LeftArrow`, `RightArrow`
 - Move Undo Circle: `UpArrow`, `DownArrow`, `LeftArrow`, `RightArrow` (during undo confirmation)
 - Rotate Preview: `Q` / `G`

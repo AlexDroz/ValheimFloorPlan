@@ -45,6 +45,7 @@ namespace ValheimFloorPlan
         private float _undoConfirmationExpireAt = 0f; // When the confirmation window closes (0 = no pending confirmation)
         private int _undoConfirmationPieceCount = 0; // Pieces to remove
         private int _undoConfirmationTerrainChunks = 0; // Terrain chunks to restore
+        private bool _undoConfirmationKeepLeveledTerrain = false; // true => remove pieces and discard snapshot
         private Coroutine _undoCountdownCoroutine = null!; // Active countdown coroutine
         private Coroutine _undoRefreshCoroutine = null!; // Active post-undo terrain refresh coroutine
         private GameObject? _undoHighlightGo = null; // Highlight rings shown during undo confirmation
@@ -101,6 +102,7 @@ namespace ValheimFloorPlan
         private readonly List<Vector3> _previewRiskHotspots = new List<Vector3>();
         private readonly List<LineRenderer> _previewRiskMarkers = new List<LineRenderer>();
         private readonly List<Vector3> _previewRiskRenderPoints = new List<Vector3>();
+        private readonly List<MeshFilter> _previewUpperLevelRings = new List<MeshFilter>();
         private int _previewRiskBottomCount = 0; // how many of _previewRiskRenderPoints are bottom hotspots vs top-edge
 
         private void Awake()
@@ -164,6 +166,11 @@ namespace ValheimFloorPlan
             _previewPadWalls  = MakeWallRing(_previewGo, "VFP_WallsPad",  new Color(1f,  1f,  1f,  0.28f));
             _previewOuterWalls = MakeWallRing(_previewGo, "VFP_WallsOuter", new Color(0.2f, 1f, 0.2f, 0.24f));
             _previewOriginMarker = MakeLine(_previewGo, new Color(1f, 0.9f, 0f, 0.98f), 0.20f, 2);
+            _previewUpperLevelRings.Clear();
+            if (ValheimFloorPlanPlugin.FloorPlanLevels >= 2)
+                _previewUpperLevelRings.Add(MakeWallRing(_previewGo, "VFP_WallsLevel2", new Color(1f, 0.25f, 0.25f, 0.32f)));
+            if (ValheimFloorPlanPlugin.FloorPlanLevels >= 3)
+                _previewUpperLevelRings.Add(MakeWallRing(_previewGo, "VFP_WallsLevel3", new Color(1f, 0.25f, 0.25f, 0.32f)));
             _previewEdgeRisk = TerrainLeveler.EdgeRiskLevel.Low;
             _previewEdgeRelief = 0f;
             _previewEdgeIrregularity = 0f;
@@ -339,6 +346,7 @@ namespace ValheimFloorPlan
             _previewRiskHotspots.Clear();
             _previewRiskRenderPoints.Clear();
             _previewRiskMarkers.Clear();
+            _previewUpperLevelRings.Clear();
             if (_previewGo != null) { Destroy(_previewGo); _previewGo = null; }
         }
 
@@ -748,6 +756,33 @@ namespace ValheimFloorPlan
                 },
                 previewRaiseDelta);
             SetOriginMarker(_previewOriginMarker, center.y, center);
+
+            // Upper-level rings: red horizontal bands at each scaffold floor height.
+            if (_previewUpperLevelRings.Count > 0)
+            {
+                // Reuse the pad corners for upper level footprints.
+                var upperCorners = new[]
+                {
+                    new Vector2(padMinX, padMinZ),
+                    new Vector2(padMaxX, padMinZ),
+                    new Vector2(padMaxX, padMaxZ),
+                    new Vector2(padMinX, padMaxZ),
+                };
+
+                // Best-effort terrain Y at origin for height reference.
+                float terrainY = origin.y;
+                if (Physics.Raycast(new Vector3(origin.x, origin.y + 300f, origin.z),
+                        Vector3.down, out var tHit, 600f, 1 << 11))
+                    terrainY = tHit.point.y;
+
+                if (_previewUpperLevelRings.Count >= 1)
+                    SetWallRingAtHeight(_previewUpperLevelRings[0],
+                        terrainY + ValheimFloorPlanPlugin.ScaffoldingFloorHeight, upperCorners);
+                if (_previewUpperLevelRings.Count >= 2)
+                    SetWallRingAtHeight(_previewUpperLevelRings[1],
+                        terrainY + ValheimFloorPlanPlugin.ScaffoldingFloorHeight
+                                 + ValheimFloorPlanPlugin.ScaffoldingFloorHeight2, upperCorners);
+            }
         }
 
         private static Vector3 GetPlacementOriginFromCenter(FloorPlan? plan, Vector3 center, float rotationDeg)
@@ -843,6 +878,36 @@ namespace ValheimFloorPlan
             mesh.RecalculateNormals();
         }
 
+        /// <summary>
+        /// Positions a wall-ring mesh as a thin horizontal band floating at a fixed world-space Y.
+        /// Used for upper-level preview rings where no terrain raycasting is needed.
+        /// </summary>
+        private static void SetWallRingAtHeight(MeshFilter? mf, float floorY, Vector2[] corners,
+            float ringHeight = 0.45f)
+        {
+            if (mf == null || mf.sharedMesh == null) return;
+
+            float bottomY = floorY - 0.05f;
+            float topY    = floorY + ringHeight;
+
+            var mesh  = mf.sharedMesh;
+            var verts = mesh.vertices;
+
+            for (int side = 0; side < 4; side++)
+            {
+                int next = (side + 1) % 4;
+                int v    = side * 4;
+                verts[v + 0] = new Vector3(corners[side].x, bottomY, corners[side].y);
+                verts[v + 1] = new Vector3(corners[next].x, bottomY, corners[next].y);
+                verts[v + 2] = new Vector3(corners[next].x, topY,    corners[next].y);
+                verts[v + 3] = new Vector3(corners[side].x, topY,    corners[side].y);
+            }
+
+            mesh.vertices = verts;
+            mesh.RecalculateBounds();
+            mesh.RecalculateNormals();
+        }
+
         private static void SetOriginMarker(LineRenderer? lr, float referenceY, Vector3 origin)
         {
             if (lr == null) return;
@@ -873,7 +938,7 @@ namespace ValheimFloorPlan
         /// - Second call (within 5 seconds): Actually perform the undo.
         /// This prevents accidental undos and shows the user exactly what will happen.
         /// </summary>
-        public void Undo()
+        public void Undo(bool keepLeveledTerrain = false)
         {
             var player = Player.m_localPlayer;
             if (player == null)
@@ -892,7 +957,8 @@ namespace ValheimFloorPlan
                 if (_undoCountdownCoroutine != null)
                     StopCoroutine(_undoCountdownCoroutine);
                 _undoCountdownCoroutine = null!;
-                PerformUndo(player);
+                PerformUndo(player, _undoConfirmationKeepLeveledTerrain);
+                _undoConfirmationKeepLeveledTerrain = false;
             }
             else
             {
@@ -912,6 +978,7 @@ namespace ValheimFloorPlan
                 // Store for countdown coroutine to use.
                 _undoConfirmationPieceCount = pieces;
                 _undoConfirmationTerrainChunks = terrainChunks;
+                _undoConfirmationKeepLeveledTerrain = keepLeveledTerrain;
                 _undoConfirmationExpireAt = Time.time + UNDO_CONFIRMATION_SECONDS;
 
                 // Stop any previous countdown coroutine.
@@ -930,17 +997,26 @@ namespace ValheimFloorPlan
                     BuildUndoConfirmationMessage(5));
 
                 ValheimFloorPlanPlugin.Log.LogInfo(
-                    $"[FloorPlanBuilder] Undo confirmation pending: {pieces} pieces, {terrainChunks} terrain chunks.");
+                    keepLeveledTerrain
+                        ? $"[FloorPlanBuilder] Undo confirmation pending (keep terrain): {pieces} pieces, snapshot chunks={terrainChunks}."
+                        : $"[FloorPlanBuilder] Undo confirmation pending: {pieces} pieces, {terrainChunks} terrain chunks.");
             }
         }
 
         private string BuildUndoConfirmationMessage(int secondsLeft)
         {
             string msg = $"ValheimFloorPlan: Confirm Undo? Will remove {_undoConfirmationPieceCount} piece(s)";
-            if (_undoConfirmationTerrainChunks > 0)
+            if (_undoConfirmationKeepLeveledTerrain)
+            {
+                if (_undoConfirmationTerrainChunks > 0)
+                    msg += $" and keep leveled terrain (discard {_undoConfirmationTerrainChunks} snapshot chunk(s))";
+                else
+                    msg += " and keep leveled terrain";
+            }
+            else if (_undoConfirmationTerrainChunks > 0)
                 msg += $" and restore {_undoConfirmationTerrainChunks} terrain chunk(s)";
             msg += $" within {_undoActiveRadius:F0}m horizontal radius (+/- to adjust)";
-            msg += $". Arrow keys to move circle center | Press Undo again ({secondsLeft}s remaining) to confirm, or RMB/Esc to cancel.";
+            msg += $". Arrow keys to move circle center | Press Undo key again ({secondsLeft}s remaining) to confirm, or RMB/Esc to cancel.";
             return msg;
         }
 
@@ -966,7 +1042,7 @@ namespace ValheimFloorPlan
         }
 
         /// <summary>Perform the actual undo operation after confirmation.</summary>
-        private void PerformUndo(Player player)
+        private void PerformUndo(Player player, bool keepLeveledTerrain)
         {
             ClearUndoHighlights();
             int removed = 0;
@@ -987,29 +1063,53 @@ namespace ValheimFloorPlan
             }
             _lastPlaced.Clear();
 
-            // Restore terrain snapshot if one exists (same-session only).
             bool hadSnapshot = TerrainSnapshot.HasSnapshot;
-            int restoredChunks = TerrainSnapshot.GetSnapshotChunkCount();
-            TerrainSnapshot.Restore();
+            int snapshotChunks = TerrainSnapshot.GetSnapshotChunkCount();
+            int restoredChunks = 0;
+            int discardedChunks = 0;
 
-            if (hadSnapshot && restoredChunks > 0)
+            if (keepLeveledTerrain)
             {
-                if (_undoRefreshCoroutine != null)
-                    StopCoroutine(_undoRefreshCoroutine);
-                _undoRefreshCoroutine = StartCoroutine(PostUndoTerrainRefresh(_undoCenter, restoredChunks));
+                if (hadSnapshot)
+                {
+                    discardedChunks = snapshotChunks;
+                    TerrainSnapshot.Clear();
+                }
+            }
+            else
+            {
+                restoredChunks = snapshotChunks;
+                TerrainSnapshot.Restore();
+
+                if (hadSnapshot && restoredChunks > 0)
+                {
+                    if (_undoRefreshCoroutine != null)
+                        StopCoroutine(_undoRefreshCoroutine);
+                    _undoRefreshCoroutine = StartCoroutine(PostUndoTerrainRefresh(_undoCenter, restoredChunks));
+                }
+
+                if (!hadSnapshot)
+                {
+                    ValheimFloorPlanPlugin.ShowWrappedMessage(
+                        ValheimFloorPlanPlugin.WarningMessageType,
+                        "ValheimFloorPlan: No terrain snapshot in this session. Undo removed pieces only.");
+                }
             }
 
-            if (!hadSnapshot)
+            if (keepLeveledTerrain)
             {
-                ValheimFloorPlanPlugin.ShowWrappedMessage(
-                    ValheimFloorPlanPlugin.WarningMessageType,
-                    "ValheimFloorPlan: No terrain snapshot in this session. Undo removed pieces only.");
+                ValheimFloorPlanPlugin.Log.LogInfo(
+                    $"[FloorPlanBuilder] Undo(keep terrain): removed {removed} VFP pieces within {_undoActiveRadius:F0}m from center {_undoCenter}, discarded {discardedChunks} terrain snapshot chunks.");
+                player.Message(MessageHud.MessageType.Center,
+                    $"ValheimFloorPlan: Undone ({removed} pieces removed, leveled terrain kept{(discardedChunks > 0 ? $", {discardedChunks} snapshot chunks discarded" : "")}).");
             }
-
-            ValheimFloorPlanPlugin.Log.LogInfo(
-                $"[FloorPlanBuilder] Undo: removed {removed} VFP pieces within {_undoActiveRadius:F0}m from center {_undoCenter}, restored {restoredChunks} terrain chunks.");
-            player.Message(MessageHud.MessageType.Center,
-                $"ValheimFloorPlan: Undone ({removed} pieces removed, {restoredChunks} terrain chunks restored).");
+            else
+            {
+                ValheimFloorPlanPlugin.Log.LogInfo(
+                    $"[FloorPlanBuilder] Undo: removed {removed} VFP pieces within {_undoActiveRadius:F0}m from center {_undoCenter}, restored {restoredChunks} terrain chunks.");
+                player.Message(MessageHud.MessageType.Center,
+                    $"ValheimFloorPlan: Undone ({removed} pieces removed, {restoredChunks} terrain chunks restored).");
+            }
         }
 
         /// <summary>
@@ -1074,6 +1174,7 @@ namespace ValheimFloorPlan
 
             _undoCountdownCoroutine = null!;
             _undoConfirmationExpireAt = 0f;
+            _undoConfirmationKeepLeveledTerrain = false;
             ClearUndoHighlights();
         }
 
@@ -1150,6 +1251,7 @@ namespace ValheimFloorPlan
                 _undoCountdownCoroutine = null!;
             }
             _undoConfirmationExpireAt = 0f;
+            _undoConfirmationKeepLeveledTerrain = false;
             ClearUndoHighlights();
             player.Message(MessageHud.MessageType.Center, "ValheimFloorPlan: Undo cancelled.");
         }

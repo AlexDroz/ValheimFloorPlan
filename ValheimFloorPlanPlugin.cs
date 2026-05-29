@@ -1,6 +1,11 @@
 using BepInEx;
 using BepInEx.Configuration;
 using BepInEx.Logging;
+using System;
+using System.Collections.Generic;
+using System.Globalization;
+using System.IO;
+using System.IO.Compression;
 using UnityEngine;
 
 namespace ValheimFloorPlan
@@ -34,7 +39,7 @@ namespace ValheimFloorPlan
 
         public const string PluginGUID = "com.alexdroz.valheimfloorplan";
         public const string PluginName = "ValheimFloorPlan";
-        public const string PluginVersion = "2.0.0";
+        public const string PluginVersion = "2.0.1";
 
         internal static ManualLogSource Log = null!;
         internal static ValheimFloorPlanPlugin Instance { get; private set; } = null!;
@@ -90,6 +95,10 @@ namespace ValheimFloorPlan
         private ConfigEntry<int> _floorPlanLevels = null!;
         private ConfigEntry<KeyboardShortcut> _buildHotkey = null!;
         private ConfigEntry<KeyboardShortcut> _undoHotkey = null!;
+        private ConfigEntry<KeyboardShortcut> _undoKeepTerrainHotkey = null!;
+        private ConfigEntry<KeyboardShortcut> _exportBundleHotkey = null!;
+        private ConfigEntry<KeyboardShortcut> _importBundleHotkey = null!;
+        private ConfigEntry<string> _bundleName = null!;
         private ConfigEntry<float> _undoRadius = null!;
         private ConfigEntry<string> _progressMessagePosition = null!;
         private ConfigEntry<string> _warningMessagePosition = null!;
@@ -133,6 +142,57 @@ namespace ValheimFloorPlan
         private ConfigEntry<KeyCode> _previewCancelKey = null!;
         private ConfigEntry<KeyCode> _previewFineAdjustKey = null!;
         private bool _applyingScaffoldingRules;
+        private bool _bundleImportSelectionActive;
+        private float _bundleImportSelectionExpireAt;
+        private int _bundleImportSelectionIndex;
+        private string[] _bundleImportSelectionNames = Array.Empty<string>();
+        private int _bundleImportLastShownSecond = -1;
+        private const float BundleImportSelectionTimeoutSeconds = 5f;
+        private const string BundleExtension = ".vpfset";
+        private const string LegacyBundleExtension = ".vfpset";
+
+        [Serializable]
+        private sealed class PresetBundleSettings
+        {
+            public int FloorPlanLevels = 1;
+            public float UndoRadius = 15f;
+            public string ProgressMessagePosition = "CenterLeft";
+            public string WarningMessagePosition = "TopLeft";
+
+            public int ScaffoldingLevels = 1;
+            public int ScaffoldingFloorHeight = 4;
+            public int ScaffoldingFloorHeight2 = 4;
+            public int ScaffoldingFloorHeight3 = 4;
+            public bool RoofScaffolding;
+            public string RoofScaffoldingType = "Gable";
+            public string RoofScaffoldingGableFlooring = "RoofWithFloorUnderlay";
+            public bool ScaffoldingFloors;
+            public bool TransverseScaffoldingBeams;
+            public bool LongitudinalScaffoldingBeams;
+
+            public int ExternalWallHeightLevel1 = 1;
+            public int ExternalWallHeightLevel2 = 1;
+            public int ExternalWallHeightLevel3 = 1;
+            public string WallPillarMaterial = "Stone";
+            public bool DisableWelcomePost;
+            public string StaircaseReachMode = "ToTheNextLevelOnly";
+
+            public float BuildOriginForwardOffset;
+            public float MoveStep = 2f;
+            public float FineMoveStep = 0.5f;
+            public float BuildRotationSnapDegrees = 90f;
+            public float RotateStepDegrees = 90f;
+            public float FineRotateStepDegrees = 22.5f;
+
+            public int TerrainLevelPasses = 2;
+            public int TerrainSpikeCleanupPasses = 2;
+            public float TerrainStampRadius = 3f;
+            public float TerrainHighPointDelta;
+            public bool TerrainUseStagedRaise;
+            public float TerrainRaiseStepHeight = 0.5f;
+            public int TerrainMaxRaiseStages = 1;
+            public bool TerrainSkipSatisfiedCenterStamps = true;
+        }
 
         private void Awake()
         {
@@ -172,6 +232,22 @@ namespace ValheimFloorPlan
             _undoHotkey = Config.Bind(
                 "General", "UndoHotkey", new KeyboardShortcut(KeyCode.F9),
                 "Hotkey to undo the last floor plan build (removes pieces and restores terrain).");
+
+            _undoKeepTerrainHotkey = Config.Bind(
+                "General", "UndoKeepTerrainHotkey", new KeyboardShortcut(KeyCode.F9, KeyCode.LeftControl),
+                "Hotkey for undo-without-terrain-restore mode (removes pieces and discards the current terrain snapshot so leveled terrain remains). Default: Ctrl+F9.");
+
+            _bundleName = Config.Bind(
+                "Preset Bundles", "BundleName", "MyBuild",
+                "Preset bundle file name (without extension) used by bundle export/import hotkeys.");
+
+            _exportBundleHotkey = Config.Bind(
+                "Preset Bundles", "ExportBundleHotkey", new KeyboardShortcut(KeyCode.F8, KeyCode.LeftControl),
+                "Exports current floor plan files + non-key config settings into a .vfpset bundle. Key mappings are intentionally excluded.");
+
+            _importBundleHotkey = Config.Bind(
+                "Preset Bundles", "ImportBundleHotkey", new KeyboardShortcut(KeyCode.F8, KeyCode.LeftAlt),
+                "Starts timed bundle selection mode. Right/Left arrows choose bundle, Enter imports, Escape cancels.");
 
             _undoRadius = Config.Bind(
                 "General", "UndoRadius", 15f,
@@ -505,11 +581,29 @@ namespace ValheimFloorPlan
             gameObject.AddComponent<FloorPlanBuilder>();
 
             Log.LogInfo($"{PluginName} v{PluginVersion} loaded! " +
-                $"Build: {_buildHotkey.Value}  Undo: {_undoHotkey.Value}  Progress HUD: {ProgressMessageType}  Terrain passes: {TerrainLevelPasses}  Spike cleanup passes: {TerrainSpikeCleanupPasses}  High-point delta: {TerrainHighPointDelta:F2}m  Staged raise: {TerrainUseStagedRaise} ({TerrainRaiseStepHeight:F2}m, max {TerrainMaxRaiseStages})  Skip satisfied center stamps: {TerrainSkipSatisfiedCenterStamps}  External wall heights: L1={ExternalWallHeightLevel1}, L2={ExternalWallHeightLevel2}, L3={ExternalWallHeightLevel3}  Wall/Pillar material: {WallPillarMaterial}  Staircase reach: {StaircaseReachMode}  Roof scaffolding: {RoofScaffolding} ({RoofScaffoldingType}/{RoofScaffoldingGableFlooring})  Scaffolding levels: {ScaffoldingLevels}  Scaffolding floor height: {ScaffoldingFloorHeight}m  Scaffolding floors: {ScaffoldingFloors}  Transverse beams: {TransverseScaffoldingBeams}  Longitudinal beams: {LongitudinalScaffoldingBeams}  Origin extra offset: {BuildOriginForwardOffset:F1}m  Preview move: {PreviewMoveStep:F2}/{PreviewFineMoveStep:F2}m  Preview rotate: {PreviewRotateStepDeg:F0}/{PreviewFineRotateStepDeg:F0}°  Build snap: {BuildRotationSnapDegrees:F1}°");
+                $"Build: {_buildHotkey.Value}  Undo: {_undoHotkey.Value}  Undo(keep terrain): {_undoKeepTerrainHotkey.Value}  Progress HUD: {ProgressMessageType}  Terrain passes: {TerrainLevelPasses}  Spike cleanup passes: {TerrainSpikeCleanupPasses}  High-point delta: {TerrainHighPointDelta:F2}m  Staged raise: {TerrainUseStagedRaise} ({TerrainRaiseStepHeight:F2}m, max {TerrainMaxRaiseStages})  Skip satisfied center stamps: {TerrainSkipSatisfiedCenterStamps}  External wall heights: L1={ExternalWallHeightLevel1}, L2={ExternalWallHeightLevel2}, L3={ExternalWallHeightLevel3}  Wall/Pillar material: {WallPillarMaterial}  Staircase reach: {StaircaseReachMode}  Roof scaffolding: {RoofScaffolding} ({RoofScaffoldingType}/{RoofScaffoldingGableFlooring})  Scaffolding levels: {ScaffoldingLevels}  Scaffolding floor height: {ScaffoldingFloorHeight}m  Scaffolding floors: {ScaffoldingFloors}  Transverse beams: {TransverseScaffoldingBeams}  Longitudinal beams: {LongitudinalScaffoldingBeams}  Origin extra offset: {BuildOriginForwardOffset:F1}m  Preview move: {PreviewMoveStep:F2}/{PreviewFineMoveStep:F2}m  Preview rotate: {PreviewRotateStepDeg:F0}/{PreviewFineRotateStepDeg:F0}°  Build snap: {BuildRotationSnapDegrees:F1}°");
         }
 
         private void Update()
         {
+            if (_bundleImportSelectionActive)
+            {
+                UpdateBundleImportSelection();
+                return;
+            }
+
+            if (_exportBundleHotkey.Value.IsDown())
+            {
+                ExportPresetBundle();
+                return;
+            }
+
+            if (_importBundleHotkey.Value.IsDown())
+            {
+                StartBundleImportSelection();
+                return;
+            }
+
             if (_buildHotkey.Value.IsDown())
             {
                 var path = _vfpFilePath.Value.Trim();
@@ -523,8 +617,578 @@ namespace ValheimFloorPlan
                 FloorPlanBuilder.Instance.StartPreview(path);
             }
 
-            if (_undoHotkey.Value.IsDown())
+            if (_undoKeepTerrainHotkey.Value.IsDown())
+                FloorPlanBuilder.Instance.Undo(keepLeveledTerrain: true);
+            else if (_undoHotkey.Value.IsDown())
                 FloorPlanBuilder.Instance.Undo();
+        }
+
+        private void StartBundleImportSelection()
+        {
+            try
+            {
+                string[] bundleNames = GetAvailableBundleNames();
+                if (bundleNames.Length == 0)
+                {
+                    ShowProgressMessage($"No {BundleExtension} bundles found in PresetBundles.");
+                    return;
+                }
+
+                _bundleImportSelectionNames = bundleNames;
+                _bundleImportSelectionIndex = 0;
+                _bundleImportSelectionActive = true;
+                _bundleImportSelectionExpireAt = Time.time + BundleImportSelectionTimeoutSeconds;
+                _bundleImportLastShownSecond = -1;
+
+                ShowBundleImportSelectionMessage();
+            }
+            catch (Exception ex)
+            {
+                Log.LogError($"[Bundles] Could not start bundle selection: {ex}");
+                ShowProgressMessage("Could not start bundle selection. Check BepInEx log.");
+            }
+        }
+
+        private void UpdateBundleImportSelection()
+        {
+            int secondsLeft = Mathf.Max(0, Mathf.CeilToInt(_bundleImportSelectionExpireAt - Time.time));
+            if (Time.time >= _bundleImportSelectionExpireAt)
+            {
+                CancelBundleImportSelection("Bundle import canceled (timeout).");
+                return;
+            }
+
+            if (Input.GetKeyDown(KeyCode.Escape))
+            {
+                CancelBundleImportSelection("Bundle import canceled.");
+                return;
+            }
+
+            if (Input.GetKeyDown(KeyCode.RightArrow))
+            {
+                _bundleImportSelectionIndex = (_bundleImportSelectionIndex + 1) % _bundleImportSelectionNames.Length;
+                _bundleImportSelectionExpireAt = Time.time + BundleImportSelectionTimeoutSeconds;
+                _bundleImportLastShownSecond = -1;
+                ShowBundleImportSelectionMessage();
+                return;
+            }
+
+            if (Input.GetKeyDown(KeyCode.LeftArrow))
+            {
+                _bundleImportSelectionIndex = (_bundleImportSelectionIndex - 1 + _bundleImportSelectionNames.Length) % _bundleImportSelectionNames.Length;
+                _bundleImportSelectionExpireAt = Time.time + BundleImportSelectionTimeoutSeconds;
+                _bundleImportLastShownSecond = -1;
+                ShowBundleImportSelectionMessage();
+                return;
+            }
+
+            if (Input.GetKeyDown(KeyCode.Return) || Input.GetKeyDown(KeyCode.KeypadEnter))
+            {
+                string selected = _bundleImportSelectionNames[_bundleImportSelectionIndex];
+                _bundleImportSelectionActive = false;
+                ImportPresetBundle(selected);
+                return;
+            }
+
+            // Refresh prompt each second while active.
+            if (secondsLeft != _bundleImportLastShownSecond)
+                ShowBundleImportSelectionMessage();
+        }
+
+        private void CancelBundleImportSelection(string reason)
+        {
+            _bundleImportSelectionActive = false;
+            _bundleImportSelectionNames = Array.Empty<string>();
+            _bundleImportSelectionIndex = 0;
+            _bundleImportSelectionExpireAt = 0f;
+            _bundleImportLastShownSecond = -1;
+            ShowProgressMessage(reason);
+        }
+
+        private void ShowBundleImportSelectionMessage()
+        {
+            if (_bundleImportSelectionNames.Length == 0)
+                return;
+
+            int index = Mathf.Clamp(_bundleImportSelectionIndex, 0, _bundleImportSelectionNames.Length - 1);
+            int displayIndex = index + 1;
+            int total = _bundleImportSelectionNames.Length;
+            int secondsLeft = Mathf.Max(0, Mathf.CeilToInt(_bundleImportSelectionExpireAt - Time.time));
+            string selected = _bundleImportSelectionNames[index];
+            _bundleImportLastShownSecond = secondsLeft;
+            ShowProgressMessage($"{selected} : bundle {displayIndex} of {total}, press <Right-Arrow> for next, <Left-Arrow> for previous, <ENTER> import, <ESC> cancel ({secondsLeft}s)");
+        }
+
+        private void ExportPresetBundle()
+        {
+            try
+            {
+                string level1Path = (_vfpFilePath.Value ?? string.Empty).Trim();
+                string level2Path = (_vfpFilePathLevel2.Value ?? string.Empty).Trim();
+                string level3Path = (_vfpFilePathLevel3.Value ?? string.Empty).Trim();
+
+                if (string.IsNullOrEmpty(level1Path) || !File.Exists(level1Path))
+                {
+                    ShowProgressMessage("Export failed: Level 1 FloorPlanFile is missing or not found.");
+                    return;
+                }
+
+                if (FloorPlanLevels >= 2 && (string.IsNullOrEmpty(level2Path) || !File.Exists(level2Path)))
+                {
+                    ShowProgressMessage("Export failed: Level 2 FloorPlanFileLevel2 is missing or not found.");
+                    return;
+                }
+
+                if (FloorPlanLevels >= 3 && (string.IsNullOrEmpty(level3Path) || !File.Exists(level3Path)))
+                {
+                    ShowProgressMessage("Export failed: Level 3 FloorPlanFileLevel3 is missing or not found.");
+                    return;
+                }
+
+                string bundlePrefix = GetSafeBundleName(_bundleName.Value);
+                string bundleName = bundlePrefix + "-" + DateTime.Now.ToString("yyyyMMdd-HHmmss", CultureInfo.InvariantCulture);
+                string bundlesDir = GetBundlesDirectory();
+                Directory.CreateDirectory(bundlesDir);
+                string bundlePath = Path.Combine(bundlesDir, bundleName + BundleExtension);
+
+                var settings = new PresetBundleSettings
+                {
+                    FloorPlanLevels = Mathf.Clamp(_floorPlanLevels.Value, 1, 3),
+                    UndoRadius = Mathf.Clamp(_undoRadius.Value, 5f, 150f),
+                    ProgressMessagePosition = (_progressMessagePosition.Value ?? string.Empty).Trim(),
+                    WarningMessagePosition = (_warningMessagePosition.Value ?? string.Empty).Trim(),
+
+                    ScaffoldingLevels = Mathf.Clamp(_scaffoldingLevels.Value, 1, 3),
+                    ScaffoldingFloorHeight = _scaffoldingFloorHeight.Value,
+                    ScaffoldingFloorHeight2 = _scaffoldingFloorHeight2.Value,
+                    ScaffoldingFloorHeight3 = _scaffoldingFloorHeight3.Value,
+                    RoofScaffolding = _roofScaffolding.Value,
+                    RoofScaffoldingType = (_roofScaffoldingType.Value ?? "Gable").Trim(),
+                    RoofScaffoldingGableFlooring = (_roofScaffoldingGableFlooring.Value ?? "RoofWithFloorUnderlay").Trim(),
+                    ScaffoldingFloors = _scaffoldingFloors.Value,
+                    TransverseScaffoldingBeams = _transverseScaffoldingBeams.Value,
+                    LongitudinalScaffoldingBeams = _longitudinalScaffoldingBeams.Value,
+
+                    ExternalWallHeightLevel1 = Mathf.Clamp(_externalWallHeightLevel1.Value, 1, 6),
+                    ExternalWallHeightLevel2 = Mathf.Clamp(_externalWallHeightLevel2.Value, 1, 6),
+                    ExternalWallHeightLevel3 = Mathf.Clamp(_externalWallHeightLevel3.Value, 1, 6),
+                    WallPillarMaterial = (_wallPillarMaterial.Value ?? "Stone").Trim(),
+                    DisableWelcomePost = _disableWelcomePost.Value,
+                    StaircaseReachMode = (_staircaseReachMode.Value ?? "ToTheNextLevelOnly").Trim(),
+
+                    BuildOriginForwardOffset = Mathf.Clamp(_buildOriginForwardOffset.Value, 0f, 20f),
+                    MoveStep = Mathf.Clamp(_previewMoveStep.Value, 0.25f, 10f),
+                    FineMoveStep = Mathf.Clamp(_previewFineMoveStep.Value, 0.05f, 5f),
+                    BuildRotationSnapDegrees = _buildRotationSnapDeg.Value,
+                    RotateStepDegrees = _previewRotateStepDeg.Value,
+                    FineRotateStepDegrees = _previewFineRotateStepDeg.Value,
+
+                    TerrainLevelPasses = Mathf.Clamp(_terrainLevelPasses.Value, 1, 5),
+                    TerrainSpikeCleanupPasses = Mathf.Clamp(_terrainSpikeCleanupPasses.Value, 1, 5),
+                    TerrainStampRadius = Mathf.Clamp(_terrainStampRadius.Value, 3f, 6f),
+                    TerrainHighPointDelta = Mathf.Clamp(_terrainHighPointDelta.Value, 0f, 4f),
+                    TerrainUseStagedRaise = _terrainUseStagedRaise.Value,
+                    TerrainRaiseStepHeight = Mathf.Clamp(_terrainRaiseStepHeight.Value, 0.15f, 1.5f),
+                    TerrainMaxRaiseStages = Mathf.Clamp(_terrainMaxRaiseStages.Value, 1, 16),
+                    TerrainSkipSatisfiedCenterStamps = _terrainSkipSatisfiedCenterStamps.Value
+                };
+
+                if (File.Exists(bundlePath))
+                    File.Delete(bundlePath);
+
+                using (var stream = new FileStream(bundlePath, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+                using (var archive = new ZipArchive(stream, ZipArchiveMode.Create))
+                {
+                    WriteZipEntryFromFile(archive, "level1.vfp", level1Path);
+                    if (!string.IsNullOrEmpty(level2Path) && File.Exists(level2Path))
+                        WriteZipEntryFromFile(archive, "level2.vfp", level2Path);
+                    if (!string.IsNullOrEmpty(level3Path) && File.Exists(level3Path))
+                        WriteZipEntryFromFile(archive, "level3.vfp", level3Path);
+
+                    var settingsEntry = archive.CreateEntry("settings.json", System.IO.Compression.CompressionLevel.Optimal);
+                    using (var writer = new StreamWriter(settingsEntry.Open()))
+                        writer.Write(SerializeSettings(settings));
+                }
+
+                _bundleName.Value = bundlePrefix;
+                Config.Save();
+                ShowProgressMessage($"Preset bundle exported: {bundleName}{BundleExtension}");
+                Log.LogInfo($"[Bundles] Exported preset bundle to '{bundlePath}'. Key mappings were excluded by design.");
+            }
+            catch (Exception ex)
+            {
+                Log.LogError($"[Bundles] Export failed: {ex}");
+                ShowProgressMessage("Export failed. Check BepInEx log for details.");
+            }
+        }
+
+        private void ImportPresetBundle(string? bundleNameOverride = null)
+        {
+            try
+            {
+                string bundleName = GetSafeBundleName(bundleNameOverride ?? _bundleName.Value);
+                string bundlesDir = GetBundlesDirectory();
+                string bundlePath = ResolveBundlePath(bundlesDir, bundleName);
+                if (string.IsNullOrEmpty(bundlePath) || !File.Exists(bundlePath))
+                {
+                    ShowProgressMessage($"Import failed: {bundleName}{BundleExtension} not found.");
+                    return;
+                }
+
+                string extractedDir = Path.Combine(bundlesDir, bundleName);
+                Directory.CreateDirectory(extractedDir);
+
+                string level1Out = Path.Combine(extractedDir, "level1.vfp");
+                string level2Out = Path.Combine(extractedDir, "level2.vfp");
+                string level3Out = Path.Combine(extractedDir, "level3.vfp");
+                string settingsJson = string.Empty;
+
+                using (var stream = new FileStream(bundlePath, FileMode.Open, FileAccess.Read, FileShare.Read))
+                using (var archive = new ZipArchive(stream, ZipArchiveMode.Read))
+                {
+                    bool hasLevel1 = false;
+                    bool hasLevel2 = false;
+                    bool hasLevel3 = false;
+
+                    foreach (var entry in archive.Entries)
+                    {
+                        string name = entry.Name;
+                        if (string.Equals(name, "level1.vfp", StringComparison.OrdinalIgnoreCase))
+                        {
+                            ExtractZipEntry(entry, level1Out);
+                            hasLevel1 = true;
+                        }
+                        else if (string.Equals(name, "level2.vfp", StringComparison.OrdinalIgnoreCase))
+                        {
+                            ExtractZipEntry(entry, level2Out);
+                            hasLevel2 = true;
+                        }
+                        else if (string.Equals(name, "level3.vfp", StringComparison.OrdinalIgnoreCase))
+                        {
+                            ExtractZipEntry(entry, level3Out);
+                            hasLevel3 = true;
+                        }
+                        else if (string.Equals(name, "settings.json", StringComparison.OrdinalIgnoreCase))
+                        {
+                            using (var reader = new StreamReader(entry.Open()))
+                                settingsJson = reader.ReadToEnd();
+                        }
+                    }
+
+                    if (!hasLevel1)
+                    {
+                        ShowProgressMessage("Import failed: bundle does not contain level1.vfp.");
+                        return;
+                    }
+
+                    if (string.IsNullOrWhiteSpace(settingsJson))
+                    {
+                        ShowProgressMessage("Import failed: bundle does not contain settings.json.");
+                        return;
+                    }
+
+                    if (!TryParseSettings(settingsJson, out var settings) || settings == null)
+                    {
+                        ShowProgressMessage("Import failed: settings.json could not be parsed.");
+                        return;
+                    }
+
+                    _floorPlanLevels.Value = Mathf.Clamp(settings.FloorPlanLevels, 1, 3);
+                    _undoRadius.Value = Mathf.Clamp(settings.UndoRadius, 5f, 150f);
+                    _progressMessagePosition.Value = settings.ProgressMessagePosition ?? "CenterLeft";
+                    _warningMessagePosition.Value = settings.WarningMessagePosition ?? "TopLeft";
+
+                    _scaffoldingLevels.Value = Mathf.Clamp(settings.ScaffoldingLevels, 1, 3);
+                    _scaffoldingFloorHeight.Value = settings.ScaffoldingFloorHeight;
+                    _scaffoldingFloorHeight2.Value = settings.ScaffoldingFloorHeight2;
+                    _scaffoldingFloorHeight3.Value = settings.ScaffoldingFloorHeight3;
+                    _roofScaffolding.Value = settings.RoofScaffolding;
+                    _roofScaffoldingType.Value = string.IsNullOrWhiteSpace(settings.RoofScaffoldingType) ? "Gable" : settings.RoofScaffoldingType;
+                    _roofScaffoldingGableFlooring.Value = string.IsNullOrWhiteSpace(settings.RoofScaffoldingGableFlooring) ? "RoofWithFloorUnderlay" : settings.RoofScaffoldingGableFlooring;
+                    _scaffoldingFloors.Value = settings.ScaffoldingFloors;
+                    _transverseScaffoldingBeams.Value = settings.TransverseScaffoldingBeams;
+                    _longitudinalScaffoldingBeams.Value = settings.LongitudinalScaffoldingBeams;
+
+                    _externalWallHeightLevel1.Value = Mathf.Clamp(settings.ExternalWallHeightLevel1, 1, 6);
+                    _externalWallHeightLevel2.Value = Mathf.Clamp(settings.ExternalWallHeightLevel2, 1, 6);
+                    _externalWallHeightLevel3.Value = Mathf.Clamp(settings.ExternalWallHeightLevel3, 1, 6);
+                    _wallPillarMaterial.Value = string.IsNullOrWhiteSpace(settings.WallPillarMaterial) ? "Stone" : settings.WallPillarMaterial;
+                    _disableWelcomePost.Value = settings.DisableWelcomePost;
+                    _staircaseReachMode.Value = string.IsNullOrWhiteSpace(settings.StaircaseReachMode) ? "ToTheNextLevelOnly" : settings.StaircaseReachMode;
+
+                    _buildOriginForwardOffset.Value = Mathf.Clamp(settings.BuildOriginForwardOffset, 0f, 20f);
+                    _previewMoveStep.Value = Mathf.Clamp(settings.MoveStep, 0.25f, 10f);
+                    _previewFineMoveStep.Value = Mathf.Clamp(settings.FineMoveStep, 0.05f, 5f);
+                    _buildRotationSnapDeg.Value = settings.BuildRotationSnapDegrees;
+                    _previewRotateStepDeg.Value = settings.RotateStepDegrees;
+                    _previewFineRotateStepDeg.Value = settings.FineRotateStepDegrees;
+
+                    _terrainLevelPasses.Value = Mathf.Clamp(settings.TerrainLevelPasses, 1, 5);
+                    _terrainSpikeCleanupPasses.Value = Mathf.Clamp(settings.TerrainSpikeCleanupPasses, 1, 5);
+                    _terrainStampRadius.Value = Mathf.Clamp(settings.TerrainStampRadius, 3f, 6f);
+                    _terrainHighPointDelta.Value = Mathf.Clamp(settings.TerrainHighPointDelta, 0f, 4f);
+                    _terrainUseStagedRaise.Value = settings.TerrainUseStagedRaise;
+                    _terrainRaiseStepHeight.Value = Mathf.Clamp(settings.TerrainRaiseStepHeight, 0.15f, 1.5f);
+                    _terrainMaxRaiseStages.Value = Mathf.Clamp(settings.TerrainMaxRaiseStages, 1, 16);
+                    _terrainSkipSatisfiedCenterStamps.Value = settings.TerrainSkipSatisfiedCenterStamps;
+
+                    _vfpFilePath.Value = level1Out;
+                    _vfpFilePathLevel2.Value = hasLevel2 ? level2Out : string.Empty;
+                    _vfpFilePathLevel3.Value = hasLevel3 ? level3Out : string.Empty;
+
+                    ApplyScaffoldingRules();
+                    Config.Save();
+                }
+
+                string importedBundleDisplayName = Path.GetFileNameWithoutExtension(bundlePath);
+                _bundleName.Value = StripTimestampSuffix(importedBundleDisplayName);
+                Config.Save();
+
+                ShowProgressMessage($"Preset bundle imported: {Path.GetFileName(bundlePath)}");
+                Log.LogInfo($"[Bundles] Imported preset bundle from '{bundlePath}'. Key mappings were intentionally left unchanged.");
+            }
+            catch (Exception ex)
+            {
+                Log.LogError($"[Bundles] Import failed: {ex}");
+                ShowProgressMessage("Import failed. Check BepInEx log for details.");
+            }
+        }
+
+        private static void WriteZipEntryFromFile(ZipArchive archive, string entryName, string sourceFile)
+        {
+            var entry = archive.CreateEntry(entryName, System.IO.Compression.CompressionLevel.Optimal);
+            using (var inStream = new FileStream(sourceFile, FileMode.Open, FileAccess.Read, FileShare.Read))
+            using (var outStream = entry.Open())
+                inStream.CopyTo(outStream);
+        }
+
+        private static string SerializeSettings(PresetBundleSettings s)
+        {
+            return string.Join("\n", new[]
+            {
+                "FloorPlanLevels=" + s.FloorPlanLevels.ToString(CultureInfo.InvariantCulture),
+                "UndoRadius=" + s.UndoRadius.ToString(CultureInfo.InvariantCulture),
+                "ProgressMessagePosition=" + (s.ProgressMessagePosition ?? string.Empty),
+                "WarningMessagePosition=" + (s.WarningMessagePosition ?? string.Empty),
+                "ScaffoldingLevels=" + s.ScaffoldingLevels.ToString(CultureInfo.InvariantCulture),
+                "ScaffoldingFloorHeight=" + s.ScaffoldingFloorHeight.ToString(CultureInfo.InvariantCulture),
+                "ScaffoldingFloorHeight2=" + s.ScaffoldingFloorHeight2.ToString(CultureInfo.InvariantCulture),
+                "ScaffoldingFloorHeight3=" + s.ScaffoldingFloorHeight3.ToString(CultureInfo.InvariantCulture),
+                "RoofScaffolding=" + s.RoofScaffolding.ToString(),
+                "RoofScaffoldingType=" + (s.RoofScaffoldingType ?? string.Empty),
+                "RoofScaffoldingGableFlooring=" + (s.RoofScaffoldingGableFlooring ?? string.Empty),
+                "ScaffoldingFloors=" + s.ScaffoldingFloors.ToString(),
+                "TransverseScaffoldingBeams=" + s.TransverseScaffoldingBeams.ToString(),
+                "LongitudinalScaffoldingBeams=" + s.LongitudinalScaffoldingBeams.ToString(),
+                "ExternalWallHeightLevel1=" + s.ExternalWallHeightLevel1.ToString(CultureInfo.InvariantCulture),
+                "ExternalWallHeightLevel2=" + s.ExternalWallHeightLevel2.ToString(CultureInfo.InvariantCulture),
+                "ExternalWallHeightLevel3=" + s.ExternalWallHeightLevel3.ToString(CultureInfo.InvariantCulture),
+                "WallPillarMaterial=" + (s.WallPillarMaterial ?? string.Empty),
+                "DisableWelcomePost=" + s.DisableWelcomePost.ToString(),
+                "StaircaseReachMode=" + (s.StaircaseReachMode ?? string.Empty),
+                "BuildOriginForwardOffset=" + s.BuildOriginForwardOffset.ToString(CultureInfo.InvariantCulture),
+                "MoveStep=" + s.MoveStep.ToString(CultureInfo.InvariantCulture),
+                "FineMoveStep=" + s.FineMoveStep.ToString(CultureInfo.InvariantCulture),
+                "BuildRotationSnapDegrees=" + s.BuildRotationSnapDegrees.ToString(CultureInfo.InvariantCulture),
+                "RotateStepDegrees=" + s.RotateStepDegrees.ToString(CultureInfo.InvariantCulture),
+                "FineRotateStepDegrees=" + s.FineRotateStepDegrees.ToString(CultureInfo.InvariantCulture),
+                "TerrainLevelPasses=" + s.TerrainLevelPasses.ToString(CultureInfo.InvariantCulture),
+                "TerrainSpikeCleanupPasses=" + s.TerrainSpikeCleanupPasses.ToString(CultureInfo.InvariantCulture),
+                "TerrainStampRadius=" + s.TerrainStampRadius.ToString(CultureInfo.InvariantCulture),
+                "TerrainHighPointDelta=" + s.TerrainHighPointDelta.ToString(CultureInfo.InvariantCulture),
+                "TerrainUseStagedRaise=" + s.TerrainUseStagedRaise.ToString(),
+                "TerrainRaiseStepHeight=" + s.TerrainRaiseStepHeight.ToString(CultureInfo.InvariantCulture),
+                "TerrainMaxRaiseStages=" + s.TerrainMaxRaiseStages.ToString(CultureInfo.InvariantCulture),
+                "TerrainSkipSatisfiedCenterStamps=" + s.TerrainSkipSatisfiedCenterStamps.ToString()
+            });
+        }
+
+        private static bool TryParseSettings(string raw, out PresetBundleSettings settings)
+        {
+            settings = new PresetBundleSettings();
+            if (string.IsNullOrWhiteSpace(raw))
+                return false;
+
+            var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            string[] lines = raw.Replace("\r", string.Empty).Split('\n');
+            for (int i = 0; i < lines.Length; i++)
+            {
+                string line = lines[i].Trim();
+                if (line.Length == 0 || line.StartsWith("#"))
+                    continue;
+
+                int idx = line.IndexOf('=');
+                if (idx <= 0)
+                    continue;
+
+                string key = line.Substring(0, idx).Trim();
+                string value = line.Substring(idx + 1).Trim();
+                map[key] = value;
+            }
+
+            settings.FloorPlanLevels = ReadInt(map, "FloorPlanLevels", settings.FloorPlanLevels);
+            settings.UndoRadius = ReadFloat(map, "UndoRadius", settings.UndoRadius);
+            settings.ProgressMessagePosition = ReadString(map, "ProgressMessagePosition", settings.ProgressMessagePosition);
+            settings.WarningMessagePosition = ReadString(map, "WarningMessagePosition", settings.WarningMessagePosition);
+            settings.ScaffoldingLevels = ReadInt(map, "ScaffoldingLevels", settings.ScaffoldingLevels);
+            settings.ScaffoldingFloorHeight = ReadInt(map, "ScaffoldingFloorHeight", settings.ScaffoldingFloorHeight);
+            settings.ScaffoldingFloorHeight2 = ReadInt(map, "ScaffoldingFloorHeight2", settings.ScaffoldingFloorHeight2);
+            settings.ScaffoldingFloorHeight3 = ReadInt(map, "ScaffoldingFloorHeight3", settings.ScaffoldingFloorHeight3);
+            settings.RoofScaffolding = ReadBool(map, "RoofScaffolding", settings.RoofScaffolding);
+            settings.RoofScaffoldingType = ReadString(map, "RoofScaffoldingType", settings.RoofScaffoldingType);
+            settings.RoofScaffoldingGableFlooring = ReadString(map, "RoofScaffoldingGableFlooring", settings.RoofScaffoldingGableFlooring);
+            settings.ScaffoldingFloors = ReadBool(map, "ScaffoldingFloors", settings.ScaffoldingFloors);
+            settings.TransverseScaffoldingBeams = ReadBool(map, "TransverseScaffoldingBeams", settings.TransverseScaffoldingBeams);
+            settings.LongitudinalScaffoldingBeams = ReadBool(map, "LongitudinalScaffoldingBeams", settings.LongitudinalScaffoldingBeams);
+            settings.ExternalWallHeightLevel1 = ReadInt(map, "ExternalWallHeightLevel1", settings.ExternalWallHeightLevel1);
+            settings.ExternalWallHeightLevel2 = ReadInt(map, "ExternalWallHeightLevel2", settings.ExternalWallHeightLevel2);
+            settings.ExternalWallHeightLevel3 = ReadInt(map, "ExternalWallHeightLevel3", settings.ExternalWallHeightLevel3);
+            settings.WallPillarMaterial = ReadString(map, "WallPillarMaterial", settings.WallPillarMaterial);
+            settings.DisableWelcomePost = ReadBool(map, "DisableWelcomePost", settings.DisableWelcomePost);
+            settings.StaircaseReachMode = ReadString(map, "StaircaseReachMode", settings.StaircaseReachMode);
+            settings.BuildOriginForwardOffset = ReadFloat(map, "BuildOriginForwardOffset", settings.BuildOriginForwardOffset);
+            settings.MoveStep = ReadFloat(map, "MoveStep", settings.MoveStep);
+            settings.FineMoveStep = ReadFloat(map, "FineMoveStep", settings.FineMoveStep);
+            settings.BuildRotationSnapDegrees = ReadFloat(map, "BuildRotationSnapDegrees", settings.BuildRotationSnapDegrees);
+            settings.RotateStepDegrees = ReadFloat(map, "RotateStepDegrees", settings.RotateStepDegrees);
+            settings.FineRotateStepDegrees = ReadFloat(map, "FineRotateStepDegrees", settings.FineRotateStepDegrees);
+            settings.TerrainLevelPasses = ReadInt(map, "TerrainLevelPasses", settings.TerrainLevelPasses);
+            settings.TerrainSpikeCleanupPasses = ReadInt(map, "TerrainSpikeCleanupPasses", settings.TerrainSpikeCleanupPasses);
+            settings.TerrainStampRadius = ReadFloat(map, "TerrainStampRadius", settings.TerrainStampRadius);
+            settings.TerrainHighPointDelta = ReadFloat(map, "TerrainHighPointDelta", settings.TerrainHighPointDelta);
+            settings.TerrainUseStagedRaise = ReadBool(map, "TerrainUseStagedRaise", settings.TerrainUseStagedRaise);
+            settings.TerrainRaiseStepHeight = ReadFloat(map, "TerrainRaiseStepHeight", settings.TerrainRaiseStepHeight);
+            settings.TerrainMaxRaiseStages = ReadInt(map, "TerrainMaxRaiseStages", settings.TerrainMaxRaiseStages);
+            settings.TerrainSkipSatisfiedCenterStamps = ReadBool(map, "TerrainSkipSatisfiedCenterStamps", settings.TerrainSkipSatisfiedCenterStamps);
+
+            return true;
+        }
+
+        private static string ReadString(Dictionary<string, string> map, string key, string fallback)
+        {
+            return map.TryGetValue(key, out string value) ? value : fallback;
+        }
+
+        private static int ReadInt(Dictionary<string, string> map, string key, int fallback)
+        {
+            return map.TryGetValue(key, out string value) &&
+                   int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int parsed)
+                ? parsed
+                : fallback;
+        }
+
+        private static float ReadFloat(Dictionary<string, string> map, string key, float fallback)
+        {
+            return map.TryGetValue(key, out string value) &&
+                   float.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out float parsed)
+                ? parsed
+                : fallback;
+        }
+
+        private static bool ReadBool(Dictionary<string, string> map, string key, bool fallback)
+        {
+            return map.TryGetValue(key, out string value) && bool.TryParse(value, out bool parsed)
+                ? parsed
+                : fallback;
+        }
+
+        private static void ExtractZipEntry(ZipArchiveEntry entry, string destinationPath)
+        {
+            string? dir = Path.GetDirectoryName(destinationPath);
+            if (!string.IsNullOrEmpty(dir))
+                Directory.CreateDirectory(dir);
+
+            using (var inStream = entry.Open())
+            using (var outStream = new FileStream(destinationPath, FileMode.Create, FileAccess.Write, FileShare.None))
+                inStream.CopyTo(outStream);
+        }
+
+        private string GetBundlesDirectory()
+        {
+            string pluginDir = Path.GetDirectoryName(Info.Location) ?? ".";
+            return Path.Combine(pluginDir, "PresetBundles");
+        }
+
+        private string[] GetAvailableBundleNames()
+        {
+            string bundlesDir = GetBundlesDirectory();
+            if (!Directory.Exists(bundlesDir))
+                return Array.Empty<string>();
+
+            string[] filesNew = Directory.GetFiles(bundlesDir, "*" + BundleExtension, SearchOption.TopDirectoryOnly);
+            string[] filesLegacy = Directory.GetFiles(bundlesDir, "*" + LegacyBundleExtension, SearchOption.TopDirectoryOnly);
+            var names = new List<string>(filesNew.Length + filesLegacy.Length);
+            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            for (int i = 0; i < filesNew.Length; i++)
+            {
+                string name = Path.GetFileNameWithoutExtension(filesNew[i]);
+                if (!string.IsNullOrWhiteSpace(name) && seen.Add(name))
+                    names.Add(name);
+            }
+
+            for (int i = 0; i < filesLegacy.Length; i++)
+            {
+                string name = Path.GetFileNameWithoutExtension(filesLegacy[i]);
+                if (!string.IsNullOrWhiteSpace(name) && seen.Add(name))
+                    names.Add(name);
+            }
+
+            names.Sort(StringComparer.OrdinalIgnoreCase);
+            return names.ToArray();
+        }
+
+        private static string ResolveBundlePath(string bundlesDir, string bundleName)
+        {
+            string newPath = Path.Combine(bundlesDir, bundleName + BundleExtension);
+            if (File.Exists(newPath))
+                return newPath;
+
+            string legacyPath = Path.Combine(bundlesDir, bundleName + LegacyBundleExtension);
+            if (File.Exists(legacyPath))
+                return legacyPath;
+
+            return string.Empty;
+        }
+
+        private static string GetSafeBundleName(string raw)
+        {
+            string name = (raw ?? string.Empty).Trim();
+            if (string.IsNullOrEmpty(name))
+                name = "MyBuild";
+
+            foreach (char c in Path.GetInvalidFileNameChars())
+                name = name.Replace(c, '_');
+
+            return name;
+        }
+
+        private static string StripTimestampSuffix(string bundleName)
+        {
+            string safe = GetSafeBundleName(bundleName);
+            if (safe.Length < 17)
+                return safe;
+
+            int tsStart = safe.Length - 16;
+            if (safe[tsStart] != '-')
+                return safe;
+
+            // Expected suffix: -YYYYMMDD-HHMMSS
+            for (int i = tsStart + 1; i < safe.Length; i++)
+            {
+                if (i == tsStart + 9)
+                {
+                    if (safe[i] != '-')
+                        return safe;
+                    continue;
+                }
+
+                if (!char.IsDigit(safe[i]))
+                    return safe;
+            }
+
+            string prefix = safe.Substring(0, tsStart).TrimEnd('-', ' ');
+            return string.IsNullOrWhiteSpace(prefix) ? safe : prefix;
         }
 
         /// <summary>Persists a new undo radius to the config and updates the in-memory property.</summary>

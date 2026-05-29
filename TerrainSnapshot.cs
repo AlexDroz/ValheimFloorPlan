@@ -119,6 +119,22 @@ namespace ValheimFloorPlan
         public static int GetSnapshotChunkCount() => _saved.Count;
 
         /// <summary>
+        /// Discards the current in-memory snapshot without modifying terrain.
+        /// Useful for piece-only undo flows that intentionally keep leveled terrain.
+        /// </summary>
+        public static void Clear()
+        {
+            int dropped = _saved.Count;
+            _saved.Clear();
+            _savedIds.Clear();
+            _initialCaptureCount = 0;
+            _onDemandCaptureCount = 0;
+
+            ValheimFloorPlanPlugin.Log.LogInfo(
+                $"[TerrainSnapshot] Discarded {dropped} terrain snapshot chunk(s) without restore.");
+        }
+
+        /// <summary>
         /// Ensures a specific chunk is captured exactly once in the current snapshot.
         /// Call this immediately before mutating terrain so late-loaded chunks are still restorable.
         /// </summary>

@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.0.1
+
+- **Upper-level preview bands:** when `FloorPlanLevels` is `2` or `3`, the in-world build preview now shows a red floating rectangle at the height of each upper floor (based on `ScaffoldingFloorHeight` / `ScaffoldingFloorHeight#2`), so you can see the full multi-storey footprint before confirming placement.
+- **Keep-terrain undo mode (`Ctrl+F9`):** a new hotkey (configurable via `UndoKeepTerrainHotkey`, default `Ctrl+F9`) starts a piece-only undo that removes VFP pieces but discards the terrain snapshot, so leveled ground is preserved. Confirmation works the same as normal undo — the mode is latched so you can confirm with either `Ctrl+F9` or `F9` within the 5-second window.
+- **In-game preset bundle manager (`.vpfset`):** added timestamped export (`Ctrl+F8`) and interactive timed import selection (`Alt+F8`) for sharing/reloading full build presets (layout files + non-key config settings). Export file names now use `<BundleName>-YYYYMMDD-HHMMSS.vpfset`, and after import the config `BundleName` is normalized back to the imported preset prefix (timestamp removed). Import selection shows bundle name plus index (`X of N`), supports `Right/Left` navigation, `Enter` to confirm import, `Escape` to cancel, and auto-cancels on timeout.
+
+
+- **3 Level Build Demo video published:** https://youtu.be/jz39KSSfhJ0
+
+
 ## 2.0.0
 
 - **Critical bug fix — terrain levelling restored:** A long-standing coordinate offset error in `TerrainLeveler` caused all stamp positions to be calculated hundreds of metres away from the actual build site whenever the player was not near world origin. As a result, terrain levelling was silently skipped on virtually all real-world builds. This has been corrected; levelling now works correctly at any world position.
