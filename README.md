@@ -295,6 +295,17 @@ The `samples/` folder contains ready-to-use `.vfp` examples:
 ![Valheim Floor Plan screenshot 17](https://raw.githubusercontent.com/AlexDroz/ValheimFloorPlan/master/images/Ex4.png)
 
 
+## Three Level Floor Plan
+
+![Valheim Floor Plan screenshot 18](https://raw.githubusercontent.com/AlexDroz/ValheimFloorPlan/master/images/Ex5_0.png)
+![Valheim Floor Plan screenshot 19](https://raw.githubusercontent.com/AlexDroz/ValheimFloorPlan/master/images/Ex5_1.png)
+![Valheim Floor Plan screenshot 20](https://raw.githubusercontent.com/AlexDroz/ValheimFloorPlan/master/images/Ex5_2.png)
+![Valheim Floor Plan screenshot 21](https://raw.githubusercontent.com/AlexDroz/ValheimFloorPlan/master/images/Ex5_3.png)
+![Valheim Floor Plan screenshot 22](https://raw.githubusercontent.com/AlexDroz/ValheimFloorPlan/master/images/Ex5_4.png)
+![Valheim Floor Plan screenshot 23](https://raw.githubusercontent.com/AlexDroz/ValheimFloorPlan/master/images/Ex5_5.png)
+![Valheim Floor Plan screenshot 24](https://raw.githubusercontent.com/AlexDroz/ValheimFloorPlan/master/images/Ex5_6.png)
+
+
 
 ## Package contents include:
 

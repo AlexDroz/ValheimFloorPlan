@@ -1,4 +1,4 @@
-const DESIGNER_VERSION = "2.0.1";
+const DESIGNER_VERSION = "2.0.2";
 
 const MAX_LAYOUT_LEVELS = 3;
 

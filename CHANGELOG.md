@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.0.2
+
+- **Documentation updates:** Example images showing Three Level Floor Plan.
+
+
 ## 2.0.1
 
 - **Upper-level preview bands:** when `FloorPlanLevels` is `2` or `3`, the in-world build preview now shows a red floating rectangle at the height of each upper floor (based on `ScaffoldingFloorHeight` / `ScaffoldingFloorHeight#2`), so you can see the full multi-storey footprint before confirming placement.
