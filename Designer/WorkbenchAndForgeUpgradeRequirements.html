@@ -1,0 +1,676 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Valheim Meta Upgrade & Progression Matrix</title>
+    <style>
+        :root {
+            --bg-color: #121316;
+            --card-bg: #1c1e24;
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+            --border-color: #334155;
+            
+            /* Custom Distinct Label Colors */
+            --label-workbench: #d97706;  /* Amber */
+            --label-forge: #dc2626;      /* Deep Red */
+            --label-cauldron: #16a34a;   /* Emerald Green */
+            --label-artisan: #a855f7;    /* Purple */
+            --label-ind-unit: #0891b2;   /* Cyan */
+            --label-blackforge: #3b82f6; /* Blue */
+            --label-galdrtable: #06b6d4; /* Cyan */
+            
+            --accent-boss: #f43f5e;
+            --accent-guide: #10b981;
+        }
+
+        body {
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            margin: 0;
+            padding: 20px;
+            line-height: 1.5;
+        }
+
+        .container {
+            max-width: 1450px;
+            margin: 0 auto;
+        }
+
+        header {
+            text-align: center;
+            margin-bottom: 14px;
+            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 10px;
+        }
+
+        h1 {
+            margin: 0 0 5px 0;
+            font-size: 1.55rem;
+            letter-spacing: 0.5px;
+            color: #f8fafc;
+            text-transform: uppercase;
+        }
+
+        p.subtitle {
+            color: var(--text-muted);
+            margin: 0;
+            font-size: 0.88rem;
+        }
+
+        .controls {
+            display: flex;
+            justify-content: center;
+            gap: 8px;
+            margin-bottom: 14px;
+            flex-wrap: wrap;
+        }
+
+        .btn {
+            background-color: var(--card-bg);
+            color: var(--text-main);
+            border: 1px solid var(--border-color);
+            padding: 8px 16px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 600;
+            font-size: 0.9rem;
+            transition: all 0.15s ease;
+        }
+
+        .btn:hover {
+            background-color: #2e333f;
+        }
+
+        .btn.active[data-filter="all"] { border-color: #fff; }
+        .btn.active[data-filter="workbench"] { border-color: var(--label-workbench); background-color: rgba(217, 119, 6, 0.15); }
+        .btn.active[data-filter="forge"] { border-color: var(--label-forge); background-color: rgba(220, 38, 38, 0.15); }
+        .btn.active[data-filter="cauldron"] { border-color: var(--label-cauldron); background-color: rgba(22, 147, 74, 0.15); }
+        .btn.active[data-filter="artisan"] { border-color: var(--label-artisan); background-color: rgba(168, 85, 247, 0.15); }
+        .btn.active[data-filter="advanced"] { border-color: var(--label-blackforge); background-color: rgba(59, 130, 246, 0.15); }
+        .btn.active[data-filter="boss-gates"] { border-color: var(--accent-boss); background-color: rgba(244, 63, 94, 0.15); }
+        .btn.active[data-filter="guide"] { border-color: var(--accent-guide); background-color: rgba(16, 185, 129, 0.15); }
+
+        /* Guide Section Layout */
+        #guide-section {
+            background-color: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            padding: 25px;
+            margin-bottom: 25px;
+            display: none;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+        }
+
+        .guide-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin-top: 20px;
+        }
+
+        .guide-card {
+            background-color: #14161b;
+            border: 1px solid #334155;
+            border-radius: 6px;
+            padding: 20px;
+        }
+
+        .guide-card h3 {
+            color: var(--accent-guide);
+            margin-top: 0;
+            border-bottom: 1px solid #334155;
+            padding-bottom: 10px;
+            text-transform: uppercase;
+            font-size: 1.1rem;
+        }
+
+        .guide-card ul {
+            padding-left: 20px;
+            margin-bottom: 0;
+        }
+
+        .guide-card li {
+            margin-bottom: 8px;
+            font-size: 0.95rem;
+            color: #cbd5e1;
+        }
+
+        .blueprint-ascii {
+            font-family: Consolas, "Courier New", monospace;
+            white-space: pre;
+            line-height: 1.35;
+            tab-size: 2;
+        }
+
+        .matrix-table {
+            width: 100%;
+            border-collapse: collapse;
+            background-color: var(--card-bg);
+            border-radius: 6px;
+            overflow: hidden;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+        }
+
+        th, td {
+            padding: 12px 16px;
+            text-align: left;
+            font-size: 0.95rem;
+        }
+
+        th {
+            background-color: #14161b;
+            color: #cbd5e1;
+            font-weight: 600;
+            text-transform: uppercase;
+            font-size: 0.8rem;
+            letter-spacing: 0.5px;
+            border-bottom: 2px solid var(--border-color);
+        }
+
+        tr {
+            border-bottom: 1px solid rgba(51, 65, 85, 0.4);
+        }
+
+        tr:hover {
+            background-color: rgba(255, 255, 255, 0.01);
+        }
+
+        /* Highly Differentiated Table Badges */
+        .badge {
+            display: inline-block;
+            padding: 4px 10px;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            font-weight: bold;
+            text-transform: uppercase;
+            border-left: 4px solid rgba(0,0,0,0.4);
+        }
+
+        .bg-workbench { background-color: rgba(217, 119, 6, 0.2); color: #fbbf24; border: 1px solid var(--label-workbench); }
+        .bg-forge { background-color: rgba(220, 38, 38, 0.2); color: #fca5a5; border: 1px solid var(--label-forge); }
+        .bg-cauldron { background-color: rgba(22, 147, 74, 0.2); color: #86efac; border: 1px solid var(--label-cauldron); }
+        .bg-artisan { background-color: rgba(168, 85, 247, 0.2); color: #e9d5ff; border: 1px solid var(--label-artisan); }
+        .bg-indunit { background-color: rgba(8, 145, 178, 0.2); color: #67e8f9; border: 1px solid var(--label-ind-unit); }
+        .bg-blackforge { background-color: rgba(59, 130, 246, 0.2); color: #93c5fd; border: 1px solid var(--label-blackforge); }
+        .bg-galdrtable { background-color: rgba(6, 182, 212, 0.2); color: #a5f3fc; border: 1px solid var(--label-galdrtable); }
+
+        .level-cell {
+            font-weight: bold;
+            text-align: center;
+            color: #fff;
+            width: 50px;
+        }
+        
+        th.lvl-header { text-align: center; }
+        .mats-list { color: #e2e8f0; font-weight: 500; }
+        .footprint-cell {
+            color: #e2e8f0;
+            font-weight: 600;
+            text-align: center;
+            white-space: nowrap;
+        }
+        .layout-cell { color: #f1f5f9; font-size: 0.9rem; }
+        .progression-cell { color: #cbd5e1; font-size: 0.9rem; }
+        
+        .radius-alert { color: #f59e0b; font-weight: bold; }
+        .radius-wide { color: #0891b2; font-weight: bold; }
+        .boss-tag { color: #f43f5e; font-weight: bold; }
+        .item-tag { color: #38bdf8; font-style: italic; }
+
+        @media (max-width: 1200px) {
+            th, td { padding: 8px 10px; font-size: 0.85rem; }
+            .btn { padding: 6px 12px; font-size: 0.8rem; }
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <header>
+        <h1>Valheim Complete Structural Matrix</h1>
+        <p class="subtitle">Competitive reference sheet tracking layouts, tether boundaries, and boss lock logic.</p>
+        <p class="subtitle" style="margin-top: 2px; font-size: 0.8rem;">Filter legend: <strong>Hard Boss Gates Only</strong> shows strict hard-lock progression only (soft-skip routes are excluded).</p>
+    </header>
+
+    <div class="controls">
+        <button class="btn active" data-filter="all">All Stations</button>
+        <button class="btn" data-filter="workbench">Workbench</button>
+        <button class="btn" data-filter="forge">Forge</button>
+        <button class="btn" data-filter="cauldron">Cauldron</button>
+        <button class="btn" data-filter="artisan">Artisan/Industrial</button>
+        <button class="btn" data-filter="advanced">Advanced Tables</button>
+        <button class="btn" data-filter="boss-gates" style="border-color: var(--accent-boss)">🎯 Hard Boss Gates Only</button>
+        <button class="btn" data-filter="guide" style="border-color: var(--accent-guide)">👷 Base Building Guide</button>
+    </div>
+
+    <!-- Hidden Base Building Section -->
+    <div id="guide-section">
+        <h2 style="margin-top:0; color: var(--accent-guide); text-transform: uppercase; font-size: 1.5rem;">Pro Layout & Base Optimization Strategy</h2>
+        <p style="color: #cbd5e1; margin-bottom: 20px;">Competitive players hide bulky upgrades to maximize walkable floor area and optimize item pathing inside compact craft rooms.</p>
+        
+        <div class="guide-grid">
+            <div class="guide-card">
+                <h3>👇 Under-Floor Burying (Sub-Flooring)</h3>
+                <ul>
+                    <li><strong>Concept:</strong> Dig a 1-meter deep crawlspace under your craft room floorboards.</li>
+                    <li><strong>Execution:</strong> Drop structures like the <em>Chopping Block</em>, <em>Anvils</em>, and <em>Forge Cooler</em> directly into the pit, then snap wood floors cleanly over them.</li>
+                    <li><strong>Benefit:</strong> Retains 100% upgrade line tethers while keeping floors clear for quick storage-box movement.</li>
+                </ul>
+            </div>
+            
+            <div class="guide-card">
+                <h3>🧱 False Walls (Vertical Stacking)</h3>
+                <ul>
+                    <li><strong>Concept:</strong> Build a hollow, 1x1 meter double wall behind your active workstations.</li>
+                    <li><strong>Execution:</strong> Place bulky or wide upgrades (like the <em>Tanning Rack</em>, <em>Bellows</em>, or <em>Tool Shelf</em>) inside this cavity, then enclose them using thin wood paneling or stone curtains.</li>
+                    <li><strong>Benefit:</strong> Keeps your production stations looking clean while bypassing messy structural collision errors.</li>
+                </ul>
+            </div>
+            
+            <div class="guide-card">
+                <h3>🌐 Exterior Venting (Outside Placements)</h3>
+                <ul>
+                    <li><strong>Concept:</strong> Exploit tether limits by punching structural upgrades right through outside perimeter walls.</li>
+                    <li><strong>Execution:</strong> Place large-footprint objects like the <em>Grinding Wheel</em> or <em>Adze</em> immediately outside the house against the outer wall directly behind the indoor workbench.</li>
+                    <li><strong>Benefit:</strong> Clears interior floor space entirely; just ensure you throw a small roof over them to prevent weather decay.</li>
+                </ul>
+            </div>
+        </div>
+		
+		<div class="section-box">
+			<h3>📐 Split-Level Workshop ASCII Blueprint</h3>
+			<pre class="blueprint-ascii">
+		   ====================== [ SECOND FLOOR DECK ] =====================
+		  |                                                                 |
+		  |   [WALL MOUNT]     [WALL MOUNT]     [CEILING]      [CEILING]    |
+		  |    Tool Shelf     Forge Toolrack    Spice Rack   Feathery Wreath|
+		  |        ||               ||              ||             ||       |
+		  |   +-----------+    +-------+      +----------+   +-----------+  |
+		  |   | WORKBENCH |    | FORGE |      | CAULDRON |   |GALDR TABLE|  |
+		  |   +-----------+    +-------+      +----------+   +-----------+  |
+		  |                                                                 |
+		   ======= || ============ || ============ || ============ || =======
+		  | 		(Floor upgrades tether straight UP from below)      |
+		   ======= || ============ || ============ || ============ || =======
+		  |                                                                 |
+		  |   [GROUND FLOOR MECHANICAL ROOM]                                |
+		  |                                                                 |
+		  |    Chopping Blk     Forge Anvils   Butcher Tbl    Rune Table    |
+		  |    Tanning Rack     Forge Cooler   Mortar/Pest    Candles       |
+		  |    Adze             Smith Anvil                                 |
+		  |                     Bellows/Wheel                               |
+		  |                                                                 |
+		   ====================== [ GROUND FLOOR BASE ] =====================</pre>
+		</div>		
+		
+		<div class="blueprint-container">
+			<h3>📐 Space-Saving 6x6 Crafting Room Blueprint</h3>
+			<p style="color: #cbd5e1; font-size: 0.95rem; margin-bottom: 15px;">A maximum-efficiency floor plan optimized around upgrade line tethers (~5m limits) and outer-perimeter proximity routing.</p>
+			<pre class="blueprint-ascii">
+            ====================== [ BACK WALL ] ========================
+            |                                                           |
+            |   [WALL RACK]        [WALL RACK]              [CEILING]   |
+            |   Tool Shelf        Forge Toolrack          Spice Rack    |
+            |       ||                  ||                    ||        |
+            |  +----------+       +------------+        +------------+  |
+            |  | WORKBENCH|       |   FORGE    |        |  CAULDRON  |  |
+        [W] |  +----------+       +------------+        +------------+  | [E]
+        [E] |  [SUB-FLOOR]        [SUB-FLOOR]           [SUB-FLOOR]     | [X]
+        [S] |  Chopping Blk       Forge Anvils          Butcher Tbl     | [T]
+        [T] |  Tanning Rack       Forge Cooler          Pots & Pans     | [E]
+        [.] |                                                           | [R]
+        [W] |                                                           | [I]
+        [A] |          ===================================              | [O]
+        [L] |         |      OPEN CORE WALKING PATH       |             | [R]
+        [L] |         |    (Zero obstruction layouts)     |             | [Y]
+            |          ===================================              | [A]
+            |                                                           | [R]
+            |  +----------+       +------------+        +------------+  | [D]
+            |  | BLACK    |       |   GALDR    |        |   PORTAL   |  |
+            |  | FORGE    |       |   TABLE    |        |    HUB     |  |
+            |  +----------+       +------------+        +------------+  |
+            |  [WALL / EXT]       [WALL RACK]                           |
+            |  Vice / Metal Cutter Rune Table                           |
+            |  Gem Cutter          Feathery Wreath                      |
+            |                                                           |
+            =================== [ FRONT DOOR / WALL ] ===================
+                            |   |                    |   |
+                            |   |                    |   |
+            -----------------   ----------------------   --------------------
+            | OUTSIDE YARD:                                                 |
+            |  * Grinding Wheel (Pressed against back exterior Forge wall)  |
+            |  * Forge Bellows (Pressed against back exterior Forge wall)   |
+            |  * Mortar and Pestle (Vented outdoors behind Cauldron)        |
+            |                                                               |
+            | ARTISAN CYLINDER ZONE (Within 40m proximity):                 |
+            |  * Blast Furnace     * Windmill     * Spinning Wheel          |
+            -----------------------------------------------------------------</pre>
+		</div>
+    </div>
+
+        <p class="subtitle" style="margin: 0 0 10px 0; text-align: center;">Base station footprint note: Workbench, Forge, Cauldron, Artisan Table, Black Forge, and Galdr Table are planned as <strong>2x2</strong> core footprints in this matrix (rows below list upgrade node footprints).</p>
+
+    <table class="matrix-table" id="main-matrix-table">
+        <thead>
+            <tr>
+                <th>Station Label</th>
+                <th class="lvl-header">Lvl</th>
+                <th>Upgrade / Dependency Structure</th>
+                <th>Exact Raw Materials</th>
+                <th>Approx. Footprint</th>
+                <th>Layout & Proximity Logic</th>
+                <th>Indirect Boss Gates & Mechanics</th>
+            </tr>
+        </thead>
+        <tbody id="matrix-body">
+            <!-- Workbench -->
+            <tr data-type="workbench" data-boss="false">
+                <td><span class="badge bg-workbench">Workbench</span></td>
+                <td class="level-cell">2</td>
+                <td><strong>Chopping Block</strong></td>
+                <td class="mats-list">10 Wood, 10 Flint</td>
+                <td class="footprint-cell">1x1</td>
+                <td class="layout-cell"><span class="radius-alert">~5m cylinder tether</span>. Must place close to the table. Easily buried under floors.</td>
+                <td class="progression-cell">Early Meadows. No boss required.</td>
+            </tr>
+            <tr data-type="workbench" data-boss="false">
+                <td><span class="badge bg-workbench">Workbench</span></td>
+                <td class="level-cell">3</td>
+                <td><strong>Tanning Rack</strong></td>
+                <td class="mats-list">10 Wood, 15 Flint, 20 Leather Scraps, 5 Deer Hide</td>
+                <td class="footprint-cell">1x2</td>
+                <td class="layout-cell"><span class="radius-alert">~5m cylinder tether</span>. Tall footprint. Best tucked behind false walls.</td>
+                <td class="progression-cell">Meadows hunting tier. No boss gate.</td>
+            </tr>
+            <tr data-type="workbench" data-boss="true">
+                <td><span class="badge bg-workbench">Workbench</span></td>
+                <td class="level-cell">4</td>
+                <td><strong>Adze</strong></td>
+                <td class="mats-list">10 Fine wood, 3 Bronze</td>
+                <td class="footprint-cell">2x1</td>
+                <td class="layout-cell"><span class="radius-alert">~5m cylinder tether</span>. Floor structure. Can be pushed outside through back walls.</td>
+                <td class="progression-cell">Kill <span class="boss-tag">Eikthyr</span> for <span class="item-tag">Hard Antler</span> → craft Antler Pickaxe → Mine Copper/Tin → Smelt into Bronze.</td>
+            </tr>
+            <tr data-type="workbench" data-boss="false">
+                <td><span class="badge bg-workbench">Workbench</span></td>
+                <td class="level-cell">5</td>
+                <td><strong>Tool Shelf</strong></td>
+                <td class="mats-list">10 Fine wood, 4 Iron, 4 Obsidian</td>
+                <td class="footprint-cell">2x1</td>
+                <td class="layout-cell"><span class="radius-alert">~5m cylinder tether</span>. Wall-mounted unit hanging directly above the station.</td>
+                <td class="progression-cell">Normally follows <span class="boss-tag">The Elder</span> progression for reliable iron, but can be soft-skipped through alternate iron routes.</td>
+            </tr>
+
+            <!-- Forge -->
+            <tr data-type="forge" data-boss="true">
+                <td><span class="badge bg-forge">Forge</span></td>
+                <td class="level-cell">2</td>
+                <td><strong>Forge Anvils</strong></td>
+                <td class="mats-list">5 Wood, 2 Bronze</td>
+                <td class="footprint-cell">1x1</td>
+                <td class="layout-cell"><span class="radius-alert">~5m cylinder tether</span>. Small floor asset. Fits under standard floor tiles.</td>
+                <td class="progression-cell">Requires Bronze. Locked behind <span class="boss-tag">Eikthyr</span> pickaxe tier.</td>
+            </tr>
+            <tr data-type="forge" data-boss="true">
+                <td><span class="badge bg-forge">Forge</span></td>
+                <td class="level-cell">3</td>
+                <td><strong>Forge Cooler</strong></td>
+                <td class="mats-list">25 Fine wood, 10 Copper</td>
+                <td class="footprint-cell">1x1</td>
+                <td class="layout-cell"><span class="radius-alert">~5m cylinder tether</span>. Tall barrel profile. Perfect choice for vertical false walls.</td>
+                <td class="progression-cell">Requires Copper mining (<span class="boss-tag">Eikthyr</span>) and Fine Wood chopping (requires Bronze Axe).</td>
+            </tr>
+            <tr data-type="forge" data-boss="false">
+                <td><span class="badge bg-forge">Forge</span></td>
+                <td class="level-cell">4</td>
+                <td><strong>Smith's Anvil</strong></td>
+                <td class="mats-list">5 Wood, 20 Iron</td>
+                <td class="footprint-cell">1x1</td>
+                <td class="layout-cell"><span class="radius-alert">~5m cylinder tether</span>. Medium floor block. Can sit flat inside sub-floor pits.</td>
+                <td class="progression-cell">Requires smelted iron. Usually obtained after <span class="boss-tag">The Elder</span>, but not a strict hard gate.</td>
+            </tr>
+            <tr data-type="forge" data-boss="false">
+                <td><span class="badge bg-forge">Forge</span></td>
+                <td class="level-cell">5</td>
+                <td><strong>Forge Toolrack</strong></td>
+                <td class="mats-list">10 Wood, 15 Iron</td>
+                <td class="footprint-cell">2x1</td>
+                <td class="layout-cell"><span class="radius-alert">~5m cylinder tether</span>. Wall hanging item. Snaps onto rafters directly over the Forge.</td>
+                <td class="progression-cell">Iron tier upgrade. Usually follows <span class="boss-tag">The Elder</span> progression but can be soft-skipped.</td>
+            </tr>
+            <tr data-type="forge" data-boss="false">
+                <td><span class="badge bg-forge">Forge</span></td>
+                <td class="level-cell">6</td>
+                <td><strong>Grinding Wheel</strong></td>
+                <td class="mats-list">25 Stone, 1 Sharpening Stone</td>
+                <td class="footprint-cell">2x2</td>
+                <td class="layout-cell"><span class="radius-alert">~5m cylinder tether</span>. Enormous rotating unit. Place outdoors against the back partition.</td>
+                <td class="progression-cell">Needs Stonecutter + Sharpening Stone chain; typically post-<span class="boss-tag">The Elder</span>, but not a strict hard gate.</td>
+            </tr>
+            <tr data-type="forge" data-boss="false">
+                <td><span class="badge bg-forge">Forge</span></td>
+                <td class="level-cell">7</td>
+                <td><strong>Forge Bellows</strong></td>
+                <td class="mats-list">5 Wood, 5 Deer Hide, 4 Chain</td>
+                <td class="footprint-cell">2x1</td>
+                <td class="layout-cell"><span class="radius-alert">~4.5m strict cylinder tether</span>. Tight radius limits; hide in closest side wall panels.</td>
+                <td class="progression-cell">Requires Chains. Usually crypt-driven progression, but chain can also come from night Wraith drops (soft gate).</td>
+            </tr>
+
+            <!-- Cauldron -->
+            <tr data-type="cauldron" data-boss="false">
+                <td><span class="badge bg-cauldron">Cauldron</span></td>
+                <td class="level-cell">2</td>
+                <td><strong>Spice Rack</strong></td>
+                <td class="mats-list">3 Dandelion, 2 Carrot seeds, 5 Mushroom, 3 Thistle, 3 Turnip seeds</td>
+                <td class="footprint-cell">2x1</td>
+                <td class="layout-cell"><span class="radius-alert">~5m cylinder tether</span>. Roof-suspended hanging asset above hearth/cauldron.</td>
+                <td class="progression-cell">Swamp vegetation access. Skilled runners skip bosses to scavenge Swamp Turnips.</td>
+            </tr>
+            <tr data-type="cauldron" data-boss="false">
+                <td><span class="badge bg-cauldron">Cauldron</span></td>
+                <td class="level-cell">3</td>
+                <td><strong>Butcher's Table</strong></td>
+                <td class="mats-list">2 Ancient Bark, 4 Core wood, 4 Fine wood, 2 Silver</td>
+                <td class="footprint-cell">2x1</td>
+                <td class="layout-cell"><span class="radius-alert">~5m cylinder tether</span>. Flat workbench counter next to hearth. Needs ground floor room.</td>
+                <td class="progression-cell">Commonly unlocked via <span class="boss-tag">Bonemass</span> Wishbone path, but silver can be soft-skipped by advanced prospecting methods.</td>
+            </tr>
+            <tr data-type="cauldron" data-boss="true">
+                <td><span class="badge bg-cauldron">Cauldron</span></td>
+                <td class="level-cell">4</td>
+                <td><strong>Pots and Pans</strong></td>
+                <td class="mats-list">10 Fine wood, 5 Copper, 5 Iron, 5 Black Metal</td>
+                <td class="footprint-cell">3x1</td>
+                <td class="layout-cell"><span class="radius-alert">~5m cylinder tether</span>. Massive wall hanging collection layout item. Place high on rafters.</td>
+                <td class="progression-cell">Requires Black Metal. Smelting Black Metal requires Blast Furnace via Artisan chain, making this a practical hard gate at <span class="boss-tag">Moder</span>.</td>
+            </tr>
+            <tr data-type="cauldron" data-boss="false">
+                <td><span class="badge bg-cauldron">Cauldron</span></td>
+                <td class="level-cell">5</td>
+                <td><strong>Mortar and Pestle</strong></td>
+                <td class="mats-list">8 Black Marble, 6 Fine wood, 4 Core wood</td>
+                <td class="footprint-cell">1x1</td>
+                <td class="layout-cell"><span class="radius-alert">~5m cylinder tether</span>. Small table-top asset. Easily blends into standard counter layouts.</td>
+                <td class="progression-cell">Typically reached through <span class="boss-tag">Yagluth</span> Mistlands flow, though Black Marble acquisition is not strictly hard-gated.</td>
+            </tr>
+            <tr data-type="cauldron" data-boss="true">
+                <td><span class="badge bg-cauldron">Cauldron</span></td>
+                <td class="level-cell">6</td>
+                <td><strong>Rolling Pins and Cutting Boards</strong></td>
+                <td class="mats-list">8 Ashwood, 6 Fine wood, 4 Flametal</td>
+                <td class="footprint-cell">2x1</td>
+                <td class="layout-cell"><span class="radius-alert">~5m cylinder tether</span>. Compact prep rack that can sit above counters or against side walls.</td>
+                <td class="progression-cell">Ashlands tier. Requires reaching Ashlands (typically via <span class="boss-tag">The Queen</span> progression for Drakkar access).</td>
+            </tr>
+
+            <!-- Artisan Table Network -->
+            <tr data-type="artisan" data-boss="true">
+                <td><span class="badge bg-artisan">Artisan Table</span></td>
+                <td class="level-cell">1</td>
+                <td><strong>Base Station Anchor</strong></td>
+                <td class="mats-list">10 Wood, 2 Dragon Tear</td>
+                <td class="footprint-cell">2x2</td>
+                <td class="layout-cell"><span class="radius-wide">40m Build Zone Cylinder Anchor</span>. Centralizes construction across your crafting compound.</td>
+                <td class="progression-cell">Kill <span class="boss-tag">Moder</span> to obtain <span class="item-tag">Dragon Tears</span>. Central prerequisite layout structure.</td>
+            </tr>
+            <tr data-type="artisan" data-boss="true">
+                <td><span class="badge bg-artisan">Artisan Table</span></td>
+                <td class="level-cell">2</td>
+                <td><strong>Artisan Press</strong></td>
+                <td class="mats-list">5 Black marble, 5 Bronze, 1 Majestic Carapace</td>
+                <td class="footprint-cell">1x1</td>
+                <td class="layout-cell"><span class="radius-wide">40m Build Zone Cylinder Anchor</span>. Wall/floor attachment used as the Artisan Table level upgrade node.</td>
+                <td class="progression-cell">Ashlands progression. <span class="item-tag">Majestic Carapace</span> is obtained after defeating <span class="boss-tag">The Queen</span>.</td>
+            </tr>
+            <tr data-type="artisan" data-boss="true">
+                <td><span class="badge bg-indunit">Industrial Unit</span></td>
+                <td class="level-cell">-</td>
+                <td><strong>Blast Furnace</strong></td>
+                <td class="mats-list">20 Stone, 5 Surtling Core, 10 Iron, 20 Fine wood</td>
+                <td class="footprint-cell">3x3</td>
+                <td class="layout-cell"><span class="radius-wide">Artisan Proximity Range (40m)</span>. Place outside in an industrial yard setup. Highly bulky.</td>
+                <td class="progression-cell">Proximity dependency to Artisan Table (<span class="boss-tag">Moder</span>). Used to melt Black Metal and Flametal.</td>
+            </tr>
+            <tr data-type="artisan" data-boss="true">
+                <td><span class="badge bg-indunit">Industrial Unit</span></td>
+                <td class="level-cell">-</td>
+                <td><strong>Spinning Wheel</strong></td>
+                <td class="mats-list">20 Fine wood, 10 Iron Nails, 5 Leather Scraps</td>
+                <td class="footprint-cell">2x2</td>
+                <td class="layout-cell"><span class="radius-wide">Artisan Proximity Range (40m)</span>. Requires interior indoor structural sheltering or it decays.</td>
+                <td class="progression-cell">Requires proximity to Artisan Table (<span class="boss-tag">Moder</span>). Converts Flax harvested into Linen Thread.</td>
+            </tr>
+            <tr data-type="artisan" data-boss="true">
+                <td><span class="badge bg-indunit">Industrial Unit</span></td>
+                <td class="level-cell">-</td>
+                <td><strong>Windmill</strong></td>
+                <td class="mats-list">20 Stone, 30 Wood, 30 Iron Nails</td>
+                <td class="footprint-cell">3x3</td>
+                <td class="layout-cell"><span class="radius-wide">Artisan Proximity Range (40m)</span>. Massive exterior tower layout. Do not enclose in standard walls.</td>
+                <td class="progression-cell">Proximity dependency to Artisan Table (<span class="boss-tag">Moder</span>). Processes Barley into Flour.</td>
+            </tr>
+            <tr data-type="artisan" data-boss="true">
+                <td><span class="badge bg-indunit">Industrial Unit</span></td>
+                <td class="level-cell">-</td>
+                <td><strong>Stone Oven</strong></td>
+                <td class="mats-list">20 Stone, 4 Surtling Core, 15 Iron</td>
+                <td class="footprint-cell">2x2</td>
+                <td class="layout-cell"><span class="radius-wide">Artisan Proximity Range (40m)</span>. Requires indoor/covered ventilation kitchen footprint to trap smoke.</td>
+                <td class="progression-cell">Proximity dependency to Artisan Table (<span class="boss-tag">Moder</span>). Bakes Bread/Lox Pies.</td>
+            </tr>
+
+            <!-- Advanced -->
+            <tr data-type="advanced" data-boss="false">
+                <td><span class="badge bg-blackforge">Black Forge</span></td>
+                <td class="level-cell">2</td>
+                <td><strong>Black Forge Cooler</strong></td>
+                <td class="mats-list">5 Iron, 5 Copper, 4 Black marble</td>
+                <td class="footprint-cell">2x1</td>
+                <td class="layout-cell"><span class="radius-alert">~5m cylinder tether</span>. Intricate wall attachment unit. Best hung above or in adjacent partitions.</td>
+                <td class="progression-cell">Mistlands tier. Primarily gated by Mistlands access and refinery chain setup.</td>
+            </tr>
+            <tr data-type="advanced" data-boss="false">
+                <td><span class="badge bg-blackforge">Black Forge</span></td>
+                <td class="level-cell">3</td>
+                <td><strong>Vice</strong></td>
+                <td class="mats-list">5 Iron, 8 Copper, 2 Mechanical Spring</td>
+                <td class="footprint-cell">1x1</td>
+                <td class="layout-cell"><span class="radius-alert">~5m cylinder tether</span>. Compact bench-side upgrade attachment.</td>
+                <td class="progression-cell">Requires Mechanical Springs from Mistlands (Infested Mine progression loop).</td>
+            </tr>
+            <tr data-type="advanced" data-boss="true">
+                <td><span class="badge bg-blackforge">Black Forge</span></td>
+                <td class="level-cell">4</td>
+                <td><strong>Metal Cutter</strong></td>
+                <td class="mats-list">5 Black marble, 5 Flametal, 5 Ashwood, 4 Charred Bone</td>
+                <td class="footprint-cell">1x1</td>
+                <td class="layout-cell"><span class="radius-alert">~5m cylinder tether</span>. Small side fixture; easy to mount along edge lanes.</td>
+                <td class="progression-cell">Ashlands tier upgrade branch. Needs post-Drakkar Ashlands material flow.</td>
+            </tr>
+            <tr data-type="advanced" data-boss="true">
+                <td><span class="badge bg-blackforge">Black Forge</span></td>
+                <td class="level-cell">5</td>
+                <td><strong>Gem Cutter</strong></td>
+                <td class="mats-list">5 Flametal, 8 Ashwood, 2 Morgen Sinew, 1 Bloodstone</td>
+                <td class="footprint-cell">1x1</td>
+                <td class="layout-cell"><span class="radius-alert">~5m cylinder tether</span>. Small standing table layout item. Place directly beside the main Forge.</td>
+                <td class="progression-cell">Kill <span class="boss-tag">The Queen</span> to acquire <span class="item-tag">Majestic Carapace</span> → fabricate Drakkar ship hull to cross to Ashlands.</td>
+            </tr>
+            <tr data-type="advanced" data-boss="false">
+                <td><span class="badge bg-galdrtable">Galdr Table</span></td>
+                <td class="level-cell">2</td>
+                <td><strong>Rune Table</strong></td>
+                <td class="mats-list">5 Yggdrasil wood, 10 Black marble, 10 Refined Eitr</td>
+                <td class="footprint-cell">1x1</td>
+                <td class="layout-cell"><span class="radius-alert">~5m cylinder tether</span>. Side lectern addition. Needs flat floor space.</td>
+                <td class="progression-cell">Requires full Mistlands refinery loop for Refined Eitr (typically reached after <span class="boss-tag">Yagluth</span> progression).</td>
+            </tr>
+            <tr data-type="advanced" data-boss="false">
+                <td><span class="badge bg-galdrtable">Galdr Table</span></td>
+                <td class="level-cell">3</td>
+                <td><strong>Unfading Candles</strong></td>
+                <td class="mats-list">15 Resin, 10 Black marble, 10 Refined Eitr, 3 Skeleton Trophy</td>
+                <td class="footprint-cell">1x1</td>
+                <td class="layout-cell"><span class="radius-alert">~5m cylinder tether</span>. Tall magical candle cluster flanking the main table. Flank both sides.</td>
+                <td class="progression-cell">Mistlands magical upgrade loop. Requires basic resource extraction.</td>
+            </tr>
+            <tr data-type="advanced" data-boss="true">
+                <td><span class="badge bg-galdrtable">Galdr Table</span></td>
+                <td class="level-cell">4</td>
+                <td><strong>Feathery Wreath</strong></td>
+                <td class="mats-list">3 Ashwood, 10 Refined Eitr, 8 Celestial Feather, 1 Asksvin Trophy</td>
+                <td class="footprint-cell">2x1</td>
+                <td class="layout-cell"><span class="radius-alert">~5m cylinder tether</span>. Hanging overhead wreath element. Keeps floor space entirely open.</td>
+                <td class="progression-cell">Kill <span class="boss-tag">The Queen</span> to penetrate Ashlands → gather Celestial Feathers from Fallen Valkyries.</td>
+            </tr>
+        </tbody>
+    </table>
+</div>
+
+<script>
+    const buttons = document.querySelectorAll('.btn');
+    const rows = document.querySelectorAll('#matrix-body tr');
+    const matrixTable = document.getElementById('main-matrix-table');
+    const guideSection = document.getElementById('guide-section');
+
+    buttons.forEach(button => {
+        button.addEventListener('click', () => {
+            buttons.forEach(btn => btn.classList.remove('active'));
+            button.classList.add('active');
+
+            const filterValue = button.getAttribute('data-filter');
+            
+            // Handle the Base Building Guide View toggle
+            if (filterValue === 'guide') {
+                matrixTable.style.display = 'none';
+                guideSection.style.display = 'block';
+                return;
+            } else {
+                matrixTable.style.display = 'table';
+                guideSection.style.display = 'none';
+            }
+
+            rows.forEach(row => {
+                const rowType = row.getAttribute('data-type');
+                const isBossGated = row.getAttribute('data-boss') === 'true';
+
+                if (filterValue === 'all') {
+                    row.style.display = '';
+                } else if (filterValue === 'boss-gates') {
+                    row.style.display = isBossGated ? '' : 'none';
+                } else if (rowType === filterValue) {
+                    row.style.display = '';
+                } else {
+                    row.style.display = 'none';
+                }
+            });
+        });
+    });
+</script>
+
+</body>
+</html>

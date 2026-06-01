@@ -6,21 +6,21 @@
   <title>Valheim Floor Plan Designer v2.0.2 - User Guide</title>
   <style>
     :root {
-      --bg: #f6efe2;
-      --card: #fffaf1;
-      --ink: #2e241a;
-      --muted: #6b5d4f;
-      --accent: #b45309;
-      --border: #e8d7bc;
+      --bg: #121316;
+      --card: #1c1e24;
+      --ink: #f8fafc;
+      --muted: #94a3b8;
+      --accent: #f8fafc;
+      --border: #334155;
     }
 
     * { box-sizing: border-box; }
 
     body {
       margin: 0;
-      font-family: "Trebuchet MS", "Segoe UI", sans-serif;
+      font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
       color: var(--ink);
-      background: linear-gradient(135deg, #f8f2e7 0%, #ead8b3 100%);
+      background: radial-gradient(circle at 20% 0%, #1f2530 0%, #121316 55%);
     }
 
     .wrap {
@@ -47,14 +47,102 @@
     .muted { color: var(--muted); }
 
     code {
-      background: #f2e6d2;
-      border: 1px solid #e8d7bc;
+      background: #14161b;
+      border: 1px solid var(--border);
       border-radius: 6px;
       padding: 1px 6px;
+      color: #e2e8f0;
+    }
+
+    .view-toggle {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-top: 12px;
+    }
+
+    .view-btn {
+      border: 1px solid var(--border);
+      background: var(--card);
+      color: var(--ink);
+      border-radius: 8px;
+      padding: 8px 12px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    .view-btn:hover {
+      background: #2e333f;
+    }
+
+    #show-guide.view-btn.active {
+      background: rgba(59, 130, 246, 0.18);
+      border-color: #3b82f6;
+    }
+
+    #show-matrix.view-btn.active {
+      background: rgba(14, 116, 144, 0.2);
+      border-color: #0e7490;
+    }
+
+    .hub-card {
+      padding: 12px 14px;
+      margin-bottom: 10px;
+    }
+
+    .hub-card h1 {
+      margin: 0 0 6px;
+      font-size: 1.3rem;
+      line-height: 1.2;
+    }
+
+    .hub-card .muted {
+      margin: 0;
+      font-size: 0.88rem;
+      line-height: 1.25;
+    }
+
+    .hub-card .view-toggle {
+      margin-top: 8px;
+      gap: 8px;
+    }
+
+    .hub-card .view-btn {
+      padding: 6px 10px;
+      font-size: 0.9rem;
+      border-radius: 7px;
+    }
+
+    .hidden { display: none; }
+
+    .matrix-wrap {
+      max-width: 1450px;
+      margin: 0 auto;
+      padding: 0 24px 24px;
+    }
+
+    .matrix-frame {
+      width: 100%;
+      min-height: 82vh;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: #111318;
     }
   </style>
 </head>
 <body>
+  <div class="wrap">
+    <div class="card hub-card">
+      <h1>Help And Progression Hub</h1>
+      <p class="muted">Switch between the in-app usage guide and the complete station progression matrix.</p>
+      <div class="view-toggle">
+        <button id="show-guide" class="view-btn active" type="button">User Guide</button>
+        <button id="show-matrix" class="view-btn" type="button">Structural Matrix</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="guide-view">
   <div class="wrap">
     <div class="card">
       <h1>Valheim Floor Plan Designer v2.0.2 - User Guide</h1>
@@ -151,5 +239,35 @@
       <p class="muted">Tip: Use <code>StartLocalhost.bat</code> in the web folder to launch localhost quickly.</p>
     </div>
   </div>
+
+  </div>
+
+  <div id="matrix-view" class="hidden">
+    <div class="matrix-wrap">
+      <iframe class="matrix-frame" src="WorkbenchAndForgeUpgradeRequirements.html" title="Valheim Complete Structural Matrix"></iframe>
+    </div>
+  </div>
+
+  <script>
+    const guideBtn = document.getElementById('show-guide');
+    const matrixBtn = document.getElementById('show-matrix');
+    const guideView = document.getElementById('guide-view');
+    const matrixView = document.getElementById('matrix-view');
+
+    function setView(view) {
+      const showMatrix = view === 'matrix';
+      guideView.classList.toggle('hidden', showMatrix);
+      matrixView.classList.toggle('hidden', !showMatrix);
+      guideBtn.classList.toggle('active', !showMatrix);
+      matrixBtn.classList.toggle('active', showMatrix);
+      window.location.hash = showMatrix ? 'matrix' : 'guide';
+    }
+
+    guideBtn.addEventListener('click', () => setView('guide'));
+    matrixBtn.addEventListener('click', () => setView('matrix'));
+
+    const initialView = window.location.hash === '#matrix' ? 'matrix' : 'guide';
+    setView(initialView);
+  </script>
 </body>
 </html>
