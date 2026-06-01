@@ -37,6 +37,7 @@ const pieceColors = {
   Staircase: "#6d8f48",
   Bed: "#7b5c49",
   Workbench: "#8d5a32",
+  Reserve: "#f59e0b",
   Hearth: "#8a4b3a",
   Wall: "#8b8f99",
   Doorway: "#3aa65a",
@@ -51,6 +52,7 @@ const pieceDefs = {
   Staircase: { w: 4, h: 4 },
   Bed: { w: 2, h: 4 },
   Workbench: { w: 4, h: 4 },
+  Reserve: { w: 1, h: 1 },
   Hearth: { w: 4, h: 3 },
   Wall: { w: 2, h: 1 },
   Doorway: { w: 2, h: 1 },
@@ -373,6 +375,8 @@ function pieceLayerOrder(type) {
       return 4;
     case "Pillar":
       return 5;
+    case "Reserve":
+      return 2;
     default:
       return 99;
   }

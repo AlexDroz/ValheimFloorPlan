@@ -88,7 +88,7 @@
         .btn.active[data-filter="workbench"] { border-color: var(--label-workbench); background-color: rgba(217, 119, 6, 0.15); }
         .btn.active[data-filter="forge"] { border-color: var(--label-forge); background-color: rgba(220, 38, 38, 0.15); }
         .btn.active[data-filter="cauldron"] { border-color: var(--label-cauldron); background-color: rgba(22, 147, 74, 0.15); }
-        .btn.active[data-filter="artisan"] { border-color: var(--label-artisan); background-color: rgba(168, 85, 247, 0.15); }
+        .btn.active[data-filter="industrial"] { border-color: var(--label-artisan); background-color: rgba(168, 85, 247, 0.15); }
         .btn.active[data-filter="advanced"] { border-color: var(--label-blackforge); background-color: rgba(59, 130, 246, 0.15); }
         .btn.active[data-filter="boss-gates"] { border-color: var(--accent-boss); background-color: rgba(244, 63, 94, 0.15); }
         .btn.active[data-filter="guide"] { border-color: var(--accent-guide); background-color: rgba(16, 185, 129, 0.15); }
@@ -236,14 +236,14 @@
     </header>
 
     <div class="controls">
-        <button class="btn active" data-filter="all">All Stations</button>
+        <button class="btn active" data-filter="guide" style="border-color: var(--accent-guide)">👷 Base Building Guide</button>
+        <button class="btn" data-filter="all">All Stations</button>
         <button class="btn" data-filter="workbench">Workbench</button>
         <button class="btn" data-filter="forge">Forge</button>
         <button class="btn" data-filter="cauldron">Cauldron</button>
-        <button class="btn" data-filter="artisan">Artisan/Industrial</button>
+        <button class="btn" data-filter="industrial">Industrial</button>
         <button class="btn" data-filter="advanced">Advanced Tables</button>
         <button class="btn" data-filter="boss-gates" style="border-color: var(--accent-boss)">🎯 Hard Boss Gates Only</button>
-        <button class="btn" data-filter="guide" style="border-color: var(--accent-guide)">👷 Base Building Guide</button>
     </div>
 
     <!-- Hidden Base Building Section -->
@@ -282,73 +282,44 @@
 		
 		<div class="section-box">
 			<h3>📐 Split-Level Workshop ASCII Blueprint</h3>
-			<pre class="blueprint-ascii">
-		   ====================== [ SECOND FLOOR DECK ] =====================
-		  |                                                                 |
-		  |   [WALL MOUNT]     [WALL MOUNT]     [CEILING]      [CEILING]    |
-		  |    Tool Shelf     Forge Toolrack    Spice Rack   Feathery Wreath|
-		  |        ||               ||              ||             ||       |
-		  |   +-----------+    +-------+      +----------+   +-----------+  |
-		  |   | WORKBENCH |    | FORGE |      | CAULDRON |   |GALDR TABLE|  |
-		  |   +-----------+    +-------+      +----------+   +-----------+  |
-		  |                                                                 |
-		   ======= || ============ || ============ || ============ || =======
-		  | 		(Floor upgrades tether straight UP from below)      |
-		   ======= || ============ || ============ || ============ || =======
-		  |                                                                 |
-		  |   [GROUND FLOOR MECHANICAL ROOM]                                |
-		  |                                                                 |
-		  |    Chopping Blk     Forge Anvils   Butcher Tbl    Rune Table    |
-		  |    Tanning Rack     Forge Cooler   Mortar/Pest    Candles       |
-		  |    Adze             Smith Anvil                                 |
-		  |                     Bellows/Wheel                               |
-		  |                                                                 |
-		   ====================== [ GROUND FLOOR BASE ] =====================</pre>
+            			<pre class="blueprint-ascii">
+        ======================================= [ FIRST FLOOR DECK ] ===============================================
+        |                                                                                                          |
+        | +------------+ +------------+ +------------+ +------------+ +------------+ +------------+ +------------+ |
+        | |WALL MOUNT  | |WALL MOUNT  | |WALL/CEILING| | CEILING    | |WALL MOUNT  | |WALL MOUNT  | | CEILING    | |
+        | |Tool Shelf  | |Forge Rack  | |Spice Rack  | |PotsAndPans | |ArtisanPress| |Vice/Cutter | |Feathery Wr.| |
+        | |            | |            | |RollingPins | |            | |            | |            | |            | |
+        | +------------+ +------------+ +------------+ +------------+ +------------+ +------------+ +------------+ |
+        |       ||             ||             ||             ||             ||             ||             ||       |
+        | +------------+ +------------+ +------------+ +------------+ +------------+ +------------+ +------------+ |
+        | | WORKBENCH  | |   FORGE    | | CAULDRON   | | STONE OVEN | |ARTISAN TBL | |BLACK FORGE | |GALDR TABLE | |
+        | +------------+ +------------+ +------------+ +------------+ +------------+ +------------+ +------------+ |
+        |                                                                                                          |
+        |       ||             ||             ||             ||             ||             ||             ||       |
+        |                           (Floor upgrades tether straight UP from below)                                 |
+        |       ||             ||             ||             ||             ||             ||             ||       |
+        |                                                                                                          |
+        ========================================= [ GROUND FLOOR ] =================================================
+        |                                                                                                          |
+        | +------------+ +------------+ +------------+ +------------+ +------------+ +------------+ +------------+ |
+        | | WORKBENCH  | |   FORGE    | | CAULDRON   | | STONE OVEN | |ARTISAN TBL | |BLACK FORGE | |GALDR TABLE | |
+        | +------------+ +------------+ +------------+ +------------+ +------------+ +------------+ +------------+ |
+        | |Chopping Blk| |Forge Anvils| | Butcher Tbl| |            | | Base Anchor| |BF Cooler   | | Rune Table | |
+        | |Tanning Rack| |Forge Cooler| | MortarPest | |            | |            | |Vice        | | Candles    | |
+        | |Adze        | |Smith Anvil | |            | |            | |            | |Metal Cutter| |            | |
+        | |            | |ForgeBellows| |            | |            | |            | |Gem Cutter  | |            | |
+        | |            | |GrindWheel  | |            | |            | |            | |            | |            | |
+        | +------------+ +------------+ +------------+ +------------+ +------------+ +------------+ +------------+ |
+
+        =========================================== [ OUTSIDE ] ====================================================
+        | +------------+ +------------+ +------------+ +------------+ +------------+ +------------+ +------------+ |
+        | | WORKBENCH  | |   FORGE    | | CAULDRON   | | STONE OVEN | |ARTISAN TBL | |BLACK FORGE | |GALDR TABLE | |
+        | +------------+ +------------+ +------------+ +------------+ +------------+ +------------+ +------------+ |
+        | |            | |GrindWheel  | |            | |            | |            | |            | |            | |
+        | +------------+ +------------+ +------------+ +------------+ +------------+ +------------+ +------------+ |
+                        </pre>
 		</div>		
 		
-		<div class="blueprint-container">
-			<h3>📐 Space-Saving 6x6 Crafting Room Blueprint</h3>
-			<p style="color: #cbd5e1; font-size: 0.95rem; margin-bottom: 15px;">A maximum-efficiency floor plan optimized around upgrade line tethers (~5m limits) and outer-perimeter proximity routing.</p>
-			<pre class="blueprint-ascii">
-            ====================== [ BACK WALL ] ========================
-            |                                                           |
-            |   [WALL RACK]        [WALL RACK]              [CEILING]   |
-            |   Tool Shelf        Forge Toolrack          Spice Rack    |
-            |       ||                  ||                    ||        |
-            |  +----------+       +------------+        +------------+  |
-            |  | WORKBENCH|       |   FORGE    |        |  CAULDRON  |  |
-        [W] |  +----------+       +------------+        +------------+  | [E]
-        [E] |  [SUB-FLOOR]        [SUB-FLOOR]           [SUB-FLOOR]     | [X]
-        [S] |  Chopping Blk       Forge Anvils          Butcher Tbl     | [T]
-        [T] |  Tanning Rack       Forge Cooler          Pots & Pans     | [E]
-        [.] |                                                           | [R]
-        [W] |                                                           | [I]
-        [A] |          ===================================              | [O]
-        [L] |         |      OPEN CORE WALKING PATH       |             | [R]
-        [L] |         |    (Zero obstruction layouts)     |             | [Y]
-            |          ===================================              | [A]
-            |                                                           | [R]
-            |  +----------+       +------------+        +------------+  | [D]
-            |  | BLACK    |       |   GALDR    |        |   PORTAL   |  |
-            |  | FORGE    |       |   TABLE    |        |    HUB     |  |
-            |  +----------+       +------------+        +------------+  |
-            |  [WALL / EXT]       [WALL RACK]                           |
-            |  Vice / Metal Cutter Rune Table                           |
-            |  Gem Cutter          Feathery Wreath                      |
-            |                                                           |
-            =================== [ FRONT DOOR / WALL ] ===================
-                            |   |                    |   |
-                            |   |                    |   |
-            -----------------   ----------------------   --------------------
-            | OUTSIDE YARD:                                                 |
-            |  * Grinding Wheel (Pressed against back exterior Forge wall)  |
-            |  * Forge Bellows (Pressed against back exterior Forge wall)   |
-            |  * Mortar and Pestle (Vented outdoors behind Cauldron)        |
-            |                                                               |
-            | ARTISAN CYLINDER ZONE (Within 40m proximity):                 |
-            |  * Blast Furnace     * Windmill     * Spinning Wheel          |
-            -----------------------------------------------------------------</pre>
-		</div>
     </div>
 
         <p class="subtitle" style="margin: 0 0 10px 0; text-align: center;">Base station footprint note: Workbench, Forge, Cauldron, Artisan Table, Black Forge, and Galdr Table are planned as <strong>2x2</strong> core footprints in this matrix (rows below list upgrade node footprints).</p>
@@ -507,8 +478,8 @@
                 <td class="progression-cell">Ashlands tier. Requires reaching Ashlands (typically via <span class="boss-tag">The Queen</span> progression for Drakkar access).</td>
             </tr>
 
-            <!-- Artisan Table Network -->
-            <tr data-type="artisan" data-boss="true">
+            <!-- Industrial Network -->
+            <tr data-type="industrial" data-boss="true">
                 <td><span class="badge bg-artisan">Artisan Table</span></td>
                 <td class="level-cell">1</td>
                 <td><strong>Base Station Anchor</strong></td>
@@ -517,7 +488,7 @@
                 <td class="layout-cell"><span class="radius-wide">40m Build Zone Cylinder Anchor</span>. Centralizes construction across your crafting compound.</td>
                 <td class="progression-cell">Kill <span class="boss-tag">Moder</span> to obtain <span class="item-tag">Dragon Tears</span>. Central prerequisite layout structure.</td>
             </tr>
-            <tr data-type="artisan" data-boss="true">
+            <tr data-type="industrial" data-boss="true">
                 <td><span class="badge bg-artisan">Artisan Table</span></td>
                 <td class="level-cell">2</td>
                 <td><strong>Artisan Press</strong></td>
@@ -526,7 +497,25 @@
                 <td class="layout-cell"><span class="radius-wide">40m Build Zone Cylinder Anchor</span>. Wall/floor attachment used as the Artisan Table level upgrade node.</td>
                 <td class="progression-cell">Ashlands progression. <span class="item-tag">Majestic Carapace</span> is obtained after defeating <span class="boss-tag">The Queen</span>.</td>
             </tr>
-            <tr data-type="artisan" data-boss="true">
+            <tr data-type="industrial" data-boss="false">
+                <td><span class="badge bg-indunit">Industrial Unit</span></td>
+                <td class="level-cell">-</td>
+                <td><strong>Charcoal Kiln</strong></td>
+                <td class="mats-list">20 Stone, 5 Surtling Core</td>
+                <td class="footprint-cell">2x2</td>
+                <td class="layout-cell">No station tether. Exterior smelting-yard placement is ideal to keep smoke, traffic, and storage flow clean.</td>
+                <td class="progression-cell">Black Forest utility structure. Requires Surtling Cores from Burial Chambers or Surtling sources. No hard boss gate.</td>
+            </tr>
+            <tr data-type="industrial" data-boss="false">
+                <td><span class="badge bg-indunit">Industrial Unit</span></td>
+                <td class="level-cell">-</td>
+                <td><strong>Furnace (Smelter)</strong></td>
+                <td class="mats-list">20 Stone, 5 Surtling Core</td>
+                <td class="footprint-cell">2x2</td>
+                <td class="layout-cell">No station tether. Keep next to Charcoal Kiln and ore chests for compact ore-to-bar throughput.</td>
+                <td class="progression-cell">Early smelting chain for Copper/Tin/Iron. Core requirement is Black Forest exploration; no strict boss kill required.</td>
+            </tr>
+            <tr data-type="industrial" data-boss="true">
                 <td><span class="badge bg-indunit">Industrial Unit</span></td>
                 <td class="level-cell">-</td>
                 <td><strong>Blast Furnace</strong></td>
@@ -535,7 +524,7 @@
                 <td class="layout-cell"><span class="radius-wide">Artisan Proximity Range (40m)</span>. Place outside in an industrial yard setup. Highly bulky.</td>
                 <td class="progression-cell">Proximity dependency to Artisan Table (<span class="boss-tag">Moder</span>). Used to melt Black Metal and Flametal.</td>
             </tr>
-            <tr data-type="artisan" data-boss="true">
+            <tr data-type="industrial" data-boss="true">
                 <td><span class="badge bg-indunit">Industrial Unit</span></td>
                 <td class="level-cell">-</td>
                 <td><strong>Spinning Wheel</strong></td>
@@ -544,7 +533,7 @@
                 <td class="layout-cell"><span class="radius-wide">Artisan Proximity Range (40m)</span>. Requires interior indoor structural sheltering or it decays.</td>
                 <td class="progression-cell">Requires proximity to Artisan Table (<span class="boss-tag">Moder</span>). Converts Flax harvested into Linen Thread.</td>
             </tr>
-            <tr data-type="artisan" data-boss="true">
+            <tr data-type="industrial" data-boss="true">
                 <td><span class="badge bg-indunit">Industrial Unit</span></td>
                 <td class="level-cell">-</td>
                 <td><strong>Windmill</strong></td>
@@ -553,7 +542,7 @@
                 <td class="layout-cell"><span class="radius-wide">Artisan Proximity Range (40m)</span>. Massive exterior tower layout. Do not enclose in standard walls.</td>
                 <td class="progression-cell">Proximity dependency to Artisan Table (<span class="boss-tag">Moder</span>). Processes Barley into Flour.</td>
             </tr>
-            <tr data-type="artisan" data-boss="true">
+            <tr data-type="industrial" data-boss="true">
                 <td><span class="badge bg-indunit">Industrial Unit</span></td>
                 <td class="level-cell">-</td>
                 <td><strong>Stone Oven</strong></td>
@@ -670,6 +659,12 @@
             });
         });
     });
+
+    // Default to the Base Building Guide on initial load.
+    const defaultGuideButton = document.querySelector('.btn[data-filter="guide"]');
+    if (defaultGuideButton) {
+        defaultGuideButton.click();
+    }
 </script>
 
 </body>
