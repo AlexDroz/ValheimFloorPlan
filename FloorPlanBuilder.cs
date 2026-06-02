@@ -2064,6 +2064,10 @@ namespace ValheimFloorPlan
                             rotationDeg,
                             spawnedGo,
                             Player.m_localPlayer!);
+                        placed += PlaceHearthSupportBeam(
+                            piece.Col, piece.Row, effW, effH,
+                            minCol, maxColExclusive, minRow, maxRowExclusive,
+                            origin, rotationDeg, pos.y, Player.m_localPlayer!);
                     }
 
                     placed++;
@@ -3178,6 +3182,10 @@ namespace ValheimFloorPlan
                             rotationDeg,
                             spawnedGo,
                             player);
+                        placed += PlaceHearthSupportBeam(
+                            piece.Col, piece.Row, effW, effH,
+                            minCol, maxColExclusive, minRow, maxRowExclusive,
+                            origin, rotationDeg, y, player);
                     }
 
                     placed++;
@@ -5077,6 +5085,57 @@ namespace ValheimFloorPlan
             placed += PlaceBeamRun(maxX, minZ, maxX, maxZ, ringY, origin, rotationDeg, beamPrefab, player); // east
 
             return placed;
+        }
+
+        /// <summary>
+        /// Places a single woodiron_beam span through the Hearth centre so the Hearth
+        /// is structurally connected to the scaffold network on both sides.
+        /// The shorter plan axis is chosen (transverse = X, longitudinal = Z) so the
+        /// beam runs the minimum distance while still reaching scaffold elements at
+        /// both plan edges.
+        /// </summary>
+        private int PlaceHearthSupportBeam(
+            int hearthCol, int hearthRow, int effW, int effH,
+            int minCol, int maxColExclusive, int minRow, int maxRowExclusive,
+            Vector3 origin, float rotationDeg, float beamY, Player player)
+        {
+            const string SUPPORT_BEAM_PREFAB = "woodiron_beam";
+
+            var beamPrefab = ZNetScene.instance?.GetPrefab(SUPPORT_BEAM_PREFAB);
+            if (beamPrefab == null)
+            {
+                ValheimFloorPlanPlugin.Log.LogWarning("[HearthSupport] woodiron_beam prefab not found — support beam skipped.");
+                return 0;
+            }
+
+            float cx = hearthCol + effW * 0.5f;
+            float cz = hearthRow + effH * 0.5f;
+
+            float dLeft   = cx - minCol;
+            float dRight  = maxColExclusive - cx;
+            float dBottom = cz - minRow;
+            float dTop    = maxRowExclusive - cz;
+
+            float dTransverse   = Mathf.Min(dLeft, dRight);
+            float dLongitudinal = Mathf.Min(dBottom, dTop);
+
+            float startX, startZ, endX, endZ;
+            if (dTransverse <= dLongitudinal)
+            {
+                // Transverse (X): nearest plan edge → far Hearth edge, at Hearth centre Z
+                startZ = endZ = cz;
+                if (dLeft <= dRight) { startX = minCol;          endX = hearthCol + effW; }
+                else                 { startX = maxColExclusive; endX = hearthCol;         }
+            }
+            else
+            {
+                // Longitudinal (Z): nearest plan edge → far Hearth edge, at Hearth centre X
+                startX = endX = cx;
+                if (dBottom <= dTop) { startZ = minRow;          endZ = hearthRow + effH; }
+                else                 { startZ = maxRowExclusive; endZ = hearthRow;         }
+            }
+
+            return PlaceBeamRun(startX, startZ, endX, endZ, beamY, origin, rotationDeg, beamPrefab, player);
         }
 
         private int PlaceBeamRun(
