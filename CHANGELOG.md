@@ -3,6 +3,8 @@
 ## 2.0.2
 
 - **Documentation updates:** Example images showing Three Level Floor Plan.
+- **Cosmectic :** Log Beams surround Hearth to make it look better.
+- **Hearth Upper Floor Limits:** If you place a Hearth on an upper level it may break unless it is supported properly. Best to place it so it connects/touches to a Stone outer edge wall which has scaffolding support
 
 
 ## 2.0.1
