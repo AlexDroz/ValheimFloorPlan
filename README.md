@@ -243,6 +243,7 @@ The `samples/` folder contains ready-to-use `.vfp` examples:
 - `samples/myfloorplan20x20_double.vfp`
 - `samples/myfloorplan24x24.vfp`
 - `samples/myfloorplan28x28.vfp`
+- `samples/StarBase20x20.vfp`
 - `samples/ThreeFloorBuild_Level_1_16x20.vfp`
 - `samples/ThreeFloorBuild_Level_2_16x20.vfp`
 - `samples/ThreeFloorBuild_Level_3_16x20.vfp`
@@ -305,7 +306,10 @@ The `samples/` folder contains ready-to-use `.vfp` examples:
 ![Valheim Floor Plan screenshot 23](https://raw.githubusercontent.com/AlexDroz/ValheimFloorPlan/master/images/Ex5_5.png)
 ![Valheim Floor Plan screenshot 24](https://raw.githubusercontent.com/AlexDroz/ValheimFloorPlan/master/images/Ex5_6.png)
 
-
+## Starbase
+![Valheim Floor Plan screenshot 25](https://raw.githubusercontent.com/AlexDroz/ValheimFloorPlan/master/images/Ex6_1.png)
+![Valheim Floor Plan screenshot 26](https://raw.githubusercontent.com/AlexDroz/ValheimFloorPlan/master/images/Ex6_2.png)
+![Valheim Floor Plan screenshot 26](https://raw.githubusercontent.com/AlexDroz/ValheimFloorPlan/master/images/Ex6_3.png)
 
 ## Package contents include:
 

@@ -4775,7 +4775,8 @@ namespace ValheimFloorPlan
             Player player)
         {
             int placed = 0;
-            bool ridgeRunsAlongX = (maxColExclusive - minCol) >= (maxRowExclusive - minRow);
+            // Keep gable apex ridge aligned to the plan's north-south axis.
+            bool ridgeRunsAlongX = false;
             const float GABLE_PITCH_DEGREES = 26f;
             const float SLOPED_SEGMENT_LENGTH = 2f;
             float pitchRadians = GABLE_PITCH_DEGREES * Mathf.Deg2Rad;

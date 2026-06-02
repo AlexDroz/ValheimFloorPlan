@@ -1,6 +1,9 @@
 const DESIGNER_VERSION = "2.0.2";
 
 const MAX_LAYOUT_LEVELS = 3;
+const WHEEL_ROTATION_STEP = 22.5;
+const DEFAULT_ROTATION_STEP = 90;
+const ROTATION_EPSILON = 0.001;
 
 function createEmptyLayout() {
   return {
@@ -206,9 +209,59 @@ function markDirty(isDirty = true) {
 
 function effectiveSize(type, rotation) {
   const base = pieceDefs[type] || { w: 1, h: 1 };
-  return rotation === 90 || rotation === 270
+  const normalized = normalizeAngle(rotation || 0);
+  const quarterTurn =
+    Math.abs(normalized - 90) < ROTATION_EPSILON ||
+    Math.abs(normalized - 270) < ROTATION_EPSILON;
+  return quarterTurn
     ? { w: base.h, h: base.w }
     : { w: base.w, h: base.h };
+}
+
+function normalizeAngle(angle) {
+  let normalized = Number.isFinite(angle) ? angle : 0;
+  normalized %= 360;
+  if (normalized < 0) normalized += 360;
+  return normalized;
+}
+
+function snapAngle(angle, step) {
+  if (!Number.isFinite(step) || step <= 0) return normalizeAngle(angle);
+  return normalizeAngle(Math.round(normalizeAngle(angle) / step) * step);
+}
+
+function formatAngleLabel(angle) {
+  const rounded = Math.round(angle * 10) / 10;
+  return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1);
+}
+
+function getRotationStepForPieceType(pieceType) {
+  return pieceType === "Workbench" ? WHEEL_ROTATION_STEP : DEFAULT_ROTATION_STEP;
+}
+
+function getRotationStepForCurrentTool() {
+  return getRotationStepForPieceType(state.currentPiece);
+}
+
+function ensureRotationOptions(step = WHEEL_ROTATION_STEP) {
+  const current = Number.parseFloat(rotSelect.value);
+  const normalized = normalizeAngle(Number.isFinite(current) ? current : state.rotation);
+  const options = [];
+  for (let a = 0; a < 360; a += step) {
+    options.push(formatAngleLabel(a));
+  }
+
+  rotSelect.innerHTML = options
+    .map((label) => `<option value="${label}">${label}</option>`)
+    .join("");
+
+  const snapped = snapAngle(normalized, step);
+  rotSelect.value = formatAngleLabel(snapped);
+  state.rotation = snapped;
+}
+
+function syncRotationControlsForCurrentTool() {
+  ensureRotationOptions(getRotationStepForCurrentTool());
 }
 
 function gridLayout() {
@@ -350,9 +403,11 @@ function getCrossLayerOverlapInfo() {
   return marksByLayer;
 }
 
-function rotateActivePiece(step) {
-  state.rotation = (state.rotation + step + 360) % 360;
-  rotSelect.value = String(state.rotation);
+function rotateActivePiece(direction = 1) {
+  const step = getRotationStepForCurrentTool();
+  const dir = direction < 0 ? -1 : 1;
+  state.rotation = snapAngle(state.rotation + dir * step, step);
+  rotSelect.value = formatAngleLabel(state.rotation);
   draw();
 }
 
@@ -673,11 +728,31 @@ function draw() {
     const { w, h } = effectiveSize(state.currentPiece, state.rotation);
     const x = originX + state.hover.col * cell;
     const y = originY + state.hover.row * cell;
+    const wPx = w * cell;
+    const hPx = h * cell;
     const hoverBase = pieceColors[state.currentPiece] || "#999999";
     const hoverTint = lightenHexColor(hoverBase, 0.6);
     ctx.fillStyle = `rgba(${hoverTint.r}, ${hoverTint.g}, ${hoverTint.b}, 0.38)`;
-    ctx.fillRect(x, y, w * cell, h * cell);
-    drawPieceOrientation(state.currentPiece, state.rotation, x, y, w * cell, h * cell, true);
+
+    const normalizedRotation = normalizeAngle(state.rotation);
+    const nearestOrth = Math.round(normalizedRotation / 90) * 90;
+    const isOrthogonal = Math.abs(normalizedRotation - nearestOrth) < ROTATION_EPSILON;
+
+    if (isOrthogonal) {
+      // Keep snapped tools aligned to their occupied grid footprint.
+      ctx.fillRect(x, y, wPx, hPx);
+    } else {
+      // For non-orth rotations (Workbench), rotate the preview rectangle.
+      const cx = x + wPx * 0.5;
+      const cy = y + hPx * 0.5;
+      ctx.save();
+      ctx.translate(cx, cy);
+      ctx.rotate((-state.rotation * Math.PI) / 180);
+      ctx.fillRect(-wPx * 0.5, -hPx * 0.5, wPx, hPx);
+      ctx.restore();
+    }
+
+    drawPieceOrientation(state.currentPiece, state.rotation, x, y, wPx, hPx, true);
   }
 }
 
@@ -1057,14 +1132,22 @@ for (const radio of pieceTypeRadios) {
   radio.addEventListener("change", () => {
     if (!radio.checked) return;
     state.currentPiece = radio.value;
+    syncRotationControlsForCurrentTool();
     draw();
   });
 }
 
 rotSelect.addEventListener("change", () => {
-  state.rotation = parseInt(rotSelect.value, 10) || 0;
+  state.rotation = snapAngle(Number.parseFloat(rotSelect.value) || 0, getRotationStepForCurrentTool());
+  rotSelect.value = formatAngleLabel(state.rotation);
   draw();
 });
+
+canvas.addEventListener("wheel", (ev) => {
+  ev.preventDefault();
+  const direction = ev.deltaY > 0 ? 1 : -1;
+  rotateActivePiece(direction);
+}, { passive: false });
 
 window.addEventListener("keydown", (ev) => {
   if (ev.altKey && !ev.shiftKey && !ev.ctrlKey && !ev.metaKey) {
@@ -1082,9 +1165,9 @@ window.addEventListener("keydown", (ev) => {
   if (state.isCanvasHovered) {
     ev.preventDefault();
     if (ev.key === "ArrowRight" || ev.key === "ArrowUp") {
-      rotateActivePiece(90);
+      rotateActivePiece(1);
     } else {
-      rotateActivePiece(-90);
+      rotateActivePiece(-1);
     }
     return;
   }
@@ -1105,6 +1188,7 @@ window.addEventListener("beforeunload", (ev) => {
 });
 
 initPieceSwatches();
+syncRotationControlsForCurrentTool();
 loadLayoutIntoState(0);
 updateLevelButtons();
 draw();
