@@ -2051,7 +2051,21 @@ namespace ValheimFloorPlan
                 for (int i = 0; i < stackCount; i++)
                 {
                     Vector3 stackedPos = new Vector3(pos.x, pos.y + stackStepY * i, pos.z) + materialOffset;
-                    SpawnRegisteredPiece(prefab, stackedPos, rot, Player.m_localPlayer!, centerWorkbench);
+                    var spawnedGo = SpawnRegisteredPiece(prefab, stackedPos, rot, Player.m_localPlayer!, centerWorkbench);
+
+                    if (isUpperHearth && i == stackCount - 1)
+                    {
+                        placed += PlaceHearthBeamRing(
+                            piece.Col,
+                            piece.Row,
+                            effW,
+                            effH,
+                            origin,
+                            rotationDeg,
+                            spawnedGo,
+                            Player.m_localPlayer!);
+                    }
+
                     placed++;
 
                     if (placed % 10 == 0)
@@ -3151,7 +3165,20 @@ namespace ValheimFloorPlan
                     }
 
                     bool centerWorkbench = piece.Type == "Workbench";
-                    SpawnRegisteredPiece(prefab, stackedPos, rot, player, centerWorkbench);
+                    var spawnedGo = SpawnRegisteredPiece(prefab, stackedPos, rot, player, centerWorkbench);
+
+                    if (piece.Type == "Hearth" && i == stackCount - 1)
+                    {
+                        placed += PlaceHearthBeamRing(
+                            piece.Col,
+                            piece.Row,
+                            effW,
+                            effH,
+                            origin,
+                            rotationDeg,
+                            spawnedGo,
+                            player);
+                    }
 
                     placed++;
 
@@ -5010,6 +5037,96 @@ namespace ValheimFloorPlan
 
             return placed;
         }
+
+        private int PlaceHearthBeamRing(
+            int minCol,
+            int minRow,
+            int widthCells,
+            int heightCells,
+            Vector3 origin,
+            float rotationDeg,
+            GameObject? hearthGo,
+            Player player)
+        {
+            const string HEARTH_RING_BEAM_PREFAB = "wood_wall_log";
+            const float HEARTH_RING_BEAM_LIFT = 0.06f;
+
+            if (widthCells <= 0 || heightCells <= 0)
+                return 0;
+
+            var beamPrefab = ZNetScene.instance?.GetPrefab(HEARTH_RING_BEAM_PREFAB);
+            if (beamPrefab == null)
+            {   
+                ValheimFloorPlanPlugin.Log.LogWarning(
+                    $"[HearthBeams] Prefab '{HEARTH_RING_BEAM_PREFAB}' not found - hearth ring skipped.");
+                return 0;
+            }
+
+            float ringY = ringY = hearthGo != null ? hearthGo.transform.position.y + HEARTH_RING_BEAM_LIFT : TerrainLeveler.TargetLevelY + HEARTH_RING_BEAM_LIFT;
+
+            float minX = minCol;
+            float maxX = minCol + widthCells;
+            float minZ = minRow;
+            float maxZ = minRow + heightCells;
+
+            int placed = 0;
+            placed += PlaceBeamRun(minX, minZ, maxX, minZ, ringY, origin, rotationDeg, beamPrefab, player); // south
+            placed += PlaceBeamRun(minX, maxZ, maxX, maxZ, ringY, origin, rotationDeg, beamPrefab, player); // north
+            placed += PlaceBeamRun(minX, minZ, minX, maxZ, ringY, origin, rotationDeg, beamPrefab, player); // west
+            placed += PlaceBeamRun(maxX, minZ, maxX, maxZ, ringY, origin, rotationDeg, beamPrefab, player); // east
+
+            return placed;
+        }
+
+        private int PlaceBeamRun(
+            float startLocalX,
+            float startLocalZ,
+            float endLocalX,
+            float endLocalZ,
+            float worldY,
+            Vector3 origin,
+            float rotationDeg,
+            GameObject beamPrefab,
+            Player player)
+        {
+            const float HORIZ_LEN = 2f;
+            const float HORIZ_HALF = HORIZ_LEN * 0.5f;
+            const float JOINT_OVERLAP = 0.08f;
+
+            Vector3 pA = PieceMap.TransformPlanPoint(origin, startLocalX, startLocalZ, worldY, rotationDeg);
+            Vector3 pB = PieceMap.TransformPlanPoint(origin, endLocalX, endLocalZ, worldY, rotationDeg);
+
+            float dx = pB.x - pA.x;
+            float dz = pB.z - pA.z;
+            float dist = Mathf.Sqrt(dx * dx + dz * dz);
+            if (dist < 0.1f)
+                return 0;
+
+            int placed = 0;
+            Vector3 dir = new Vector3(dx / dist, 0f, dz / dist);
+            Quaternion beamRot = Quaternion.Euler(0f, Mathf.Atan2(-dir.z, dir.x) * Mathf.Rad2Deg, 0f);
+
+            int nFull = Mathf.FloorToInt(dist / HORIZ_LEN);
+            float remainder = dist - nFull * HORIZ_LEN;
+
+            for (int b = 0; b < nFull; b++)
+            {
+                Vector3 center = pA + dir * (b * HORIZ_LEN + HORIZ_HALF - JOINT_OVERLAP * 0.5f);
+                center.y = worldY;
+                SpawnScaffoldPole(beamPrefab, center, beamRot, player);
+                placed++;
+            }
+
+            if (remainder > 0.05f)
+            {
+                Vector3 center = pB - dir * (HORIZ_HALF - JOINT_OVERLAP * 0.5f);
+                center.y = worldY;
+                SpawnScaffoldPole(beamPrefab, center, beamRot, player);
+                placed++;
+            }
+
+            return placed;
+        }        
 
         private int PlaceTopRoofPieceIfClear(
             float localX,
