@@ -3218,11 +3218,11 @@ namespace ValheimFloorPlan
             float? startBaseYOverride = null,
             float? targetTopYOverride = null)
         {
-            const float STEP_RISE      = 0.25f;
-            const float STEP_ANGLE_DEG = 20f;
+            float STEP_RISE      = ValheimFloorPlanPlugin.StaircaseStepRise;
+            float STEP_ANGLE_DEG = ValheimFloorPlanPlugin.StaircaseStepAngleDeg;
             const float STAIR_START_ANGLE_CORRECTION_DEG = 90f;
             // Keep steps inside the 4m x 4m staircase footprint while preserving a readable spiral.
-            const float STEP_RADIUS    = 0.75f;
+            float STEP_RADIUS    = ValheimFloorPlanPlugin.StaircaseStepRadius;
             const float STEP_HALF_LENGTH = 1f; // 2m beam tread.
             // Sink the first tread a little more so its exposed rise matches the later steps.
             const float STEP_START_OFFSET = -0.15f;

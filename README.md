@@ -169,6 +169,9 @@ All values below are configurable in that file.
 | `ExternalWallHeightLevel3` | `1` | `1` to `6` | Stacks Level 3 outer-perimeter `Wall`/`Pillar` pieces vertically. Dynamic cap: `ScaffoldingFloorHeight#3 x 2`. |
 | `WallPillarMaterial` | `Stone` | `Stone`, `Wood` | Chooses material set used for `Wall` and `Pillar` types. |
 | `StaircaseReachMode` | `ToTheNextLevelOnly` | `ToTheNextLevelOnly`, `AllTheWay` | Controls staircase vertical reach. `ToTheNextLevelOnly` climbs one level at a time. `AllTheWay` climbs toward the highest available scaffold level. |
+| `StaircaseStepRise` | `0.16` | `0.10` to `0.40` | Vertical height in metres between staircase treads. Lower values produce shallower, easier-to-climb steps but increase total tread count. |
+| `StaircaseStepAngleDeg` | `15` | `10` to `30` | Degrees of rotation between staircase treads. Lower values produce a wider, gentler spiral. |
+| `StaircaseStepRadius` | `0.75` | `0.50` to `1.00` | Distance in metres from the center pole to the midpoint of each tread. Keep at or below `1.0` to stay within the 4×4 staircase footprint. |
 
 ### Scaffolding
 

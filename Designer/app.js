@@ -1082,11 +1082,60 @@ function cmdShell() {
   if (doorLeftRow - 1 >= 0)          state.pieces.push({ col: cols - 1, row: doorLeftRow - 1, type: "Pillar", rot: 0 });
   if (doorLeftRow + 2 <= rows - 1)   state.pieces.push({ col: cols - 1, row: doorLeftRow + 2, type: "Pillar", rot: 0 });
 
-  // 9. Corner pillars
-  state.pieces.push({ col: 0,        row: rows - 1, type: "Pillar", rot: 0 });
-  state.pieces.push({ col: cols - 1, row: rows - 1, type: "Pillar", rot: 0 });
-  state.pieces.push({ col: 0,        row: 0,        type: "Pillar", rot: 0 });
-  state.pieces.push({ col: cols - 1, row: 0,        type: "Pillar", rot: 0 });
+  markDirty(true);
+  draw();
+}
+
+function cmdOneDoor() {
+  state.pieces = [];
+
+  const cols = state.cols;
+  const rows = state.rows;
+
+  // 1. Fill with Floor2x2 tiles
+  for (let r = 0; r <= rows - 2; r += 2) {
+    for (let c = 0; c <= cols - 2; c += 2) {
+      state.pieces.push({ col: c, row: r, type: "Floor2x2", rot: 0 });
+    }
+  }
+
+  // 2. Single doorway centered on the bottom (front) edge
+  const doorCol = Math.floor((cols - 2) / 2);
+  const door = { col: doorCol, row: rows - 1, type: "Doorway", rot: 0 };
+  state.pieces.push(door);
+
+  function wallOverlapsDoor(col, row, rot) {
+    const ws = effectiveSize("Wall", rot);
+    const ds = effectiveSize("Doorway", door.rot);
+    return col < door.col + ds.w && col + ws.w > door.col &&
+           row < door.row + ds.h && row + ws.h > door.row;
+  }
+
+  // 3. Bottom (front) edge walls (rot 0), skipping doorway
+  for (let c = 0; c <= cols - 2; c += 2) {
+    if (wallOverlapsDoor(c, rows - 1, 0)) continue;
+    state.pieces.push({ col: c, row: rows - 1, type: "Wall", rot: 0 });
+  }
+
+  // 4. Top (back) edge walls (rot 180)
+  for (let c = 0; c <= cols - 2; c += 2) {
+    state.pieces.push({ col: c, row: 0, type: "Wall", rot: 180 });
+  }
+
+  // 5. Left edge walls (rot 270 = outer face left)
+  for (let r = 0; r <= rows - 2; r += 2) {
+    state.pieces.push({ col: 0, row: r, type: "Wall", rot: 270 });
+  }
+
+  // 6. Right edge walls (rot 90 = outer face right)
+  for (let r = 0; r <= rows - 2; r += 2) {
+    state.pieces.push({ col: cols - 1, row: r, type: "Wall", rot: 90 });
+  }
+
+  // 7. Pillars flanking the doorway
+  if (doorCol - 1 >= 0)        state.pieces.push({ col: doorCol - 1, row: rows - 1, type: "Pillar", rot: 0 });
+  if (doorCol + 2 <= cols - 1) state.pieces.push({ col: doorCol + 2, row: rows - 1, type: "Pillar", rot: 0 });
+
 
   markDirty(true);
   draw();
@@ -1105,6 +1154,7 @@ document.getElementById("helpBtn").addEventListener("click", () => {
 });
 document.getElementById("applyGridBtn").addEventListener("click", applyGrid);
 document.getElementById("shellBtn").addEventListener("click", cmdShell);
+document.getElementById("oneDoorBtn").addEventListener("click", cmdOneDoor);
 
 for (const btn of levelButtons) {
   btn.addEventListener("click", () => {

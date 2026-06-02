@@ -58,6 +58,9 @@ namespace ValheimFloorPlan
         internal static int ExternalWallHeightLevel3 { get; private set; } = 1;
         internal static StructuralMaterial WallPillarMaterial { get; private set; } = StructuralMaterial.Stone;
         internal static StaircaseReachModeOption StaircaseReachMode { get; private set; } = StaircaseReachModeOption.ToTheNextLevelOnly;
+        internal static float StaircaseStepRise { get; private set; } = 0.16f;
+        internal static float StaircaseStepAngleDeg { get; private set; } = 15f;
+        internal static float StaircaseStepRadius { get; private set; } = 0.75f;
         internal static bool RoofScaffolding { get; private set; } = false;
         internal static RoofScaffoldingTypeOption RoofScaffoldingType { get; private set; } = RoofScaffoldingTypeOption.Gable;
         internal static RoofScaffoldingGableFlooringOption RoofScaffoldingGableFlooring { get; private set; } = RoofScaffoldingGableFlooringOption.RoofWithFloorUnderlay;
@@ -115,6 +118,9 @@ namespace ValheimFloorPlan
         private ConfigEntry<int> _externalWallHeightLevel3 = null!;
         private ConfigEntry<string> _wallPillarMaterial = null!;
         private ConfigEntry<string> _staircaseReachMode = null!;
+        private ConfigEntry<float> _staircaseStepRise = null!;
+        private ConfigEntry<float> _staircaseStepAngleDeg = null!;
+        private ConfigEntry<float> _staircaseStepRadius = null!;
         private ConfigEntry<bool> _roofScaffolding = null!;
         private ConfigEntry<string> _roofScaffoldingType = null!;
         private ConfigEntry<string> _roofScaffoldingGableFlooring = null!;
@@ -176,6 +182,9 @@ namespace ValheimFloorPlan
             public string WallPillarMaterial = "Stone";
             public bool DisableWelcomePost;
             public string StaircaseReachMode = "ToTheNextLevelOnly";
+            public float StaircaseStepRise = 0.16f;
+            public float StaircaseStepAngleDeg = 15f;
+            public float StaircaseStepRadius = 0.75f;
 
             public float BuildOriginForwardOffset;
             public float MoveStep = 2f;
@@ -398,6 +407,30 @@ namespace ValheimFloorPlan
             _staircaseReachMode.SettingChanged += (_, _) =>
                 StaircaseReachMode = ParseStaircaseReachMode(_staircaseReachMode.Value);
             StaircaseReachMode = ParseStaircaseReachMode(_staircaseReachMode.Value);
+
+            _staircaseStepRise = Config.Bind(
+                "Building", "StaircaseStepRise", 0.16f,
+                new ConfigDescription(
+                    "Vertical height in metres between staircase treads. Lower values produce shallower, easier-to-climb steps but increase total tread count.",
+                    new AcceptableValueRange<float>(0.10f, 0.40f)));
+            _staircaseStepRise.SettingChanged += (_, _) => StaircaseStepRise = Mathf.Clamp(_staircaseStepRise.Value, 0.10f, 0.40f);
+            StaircaseStepRise = Mathf.Clamp(_staircaseStepRise.Value, 0.10f, 0.40f);
+
+            _staircaseStepAngleDeg = Config.Bind(
+                "Building", "StaircaseStepAngleDeg", 15f,
+                new ConfigDescription(
+                    "Degrees of rotation between staircase treads. Lower values produce a wider, gentler spiral.",
+                    new AcceptableValueRange<float>(10f, 30f)));
+            _staircaseStepAngleDeg.SettingChanged += (_, _) => StaircaseStepAngleDeg = Mathf.Clamp(_staircaseStepAngleDeg.Value, 10f, 30f);
+            StaircaseStepAngleDeg = Mathf.Clamp(_staircaseStepAngleDeg.Value, 10f, 30f);
+
+            _staircaseStepRadius = Config.Bind(
+                "Building", "StaircaseStepRadius", 0.75f,
+                new ConfigDescription(
+                    "Distance in metres from the center pole to the midpoint of each tread. Keep at or below 1.0 to stay within the 4x4 staircase footprint.",
+                    new AcceptableValueRange<float>(0.50f, 1.00f)));
+            _staircaseStepRadius.SettingChanged += (_, _) => StaircaseStepRadius = Mathf.Clamp(_staircaseStepRadius.Value, 0.50f, 1.00f);
+            StaircaseStepRadius = Mathf.Clamp(_staircaseStepRadius.Value, 0.50f, 1.00f);
 
             _buildOriginForwardOffset = Config.Bind(
                 "Preview", "BuildOriginForwardOffset", 0f,
@@ -775,6 +808,9 @@ namespace ValheimFloorPlan
                     WallPillarMaterial = (_wallPillarMaterial.Value ?? "Stone").Trim(),
                     DisableWelcomePost = _disableWelcomePost.Value,
                     StaircaseReachMode = (_staircaseReachMode.Value ?? "ToTheNextLevelOnly").Trim(),
+                    StaircaseStepRise = Mathf.Clamp(_staircaseStepRise.Value, 0.10f, 0.40f),
+                    StaircaseStepAngleDeg = Mathf.Clamp(_staircaseStepAngleDeg.Value, 10f, 30f),
+                    StaircaseStepRadius = Mathf.Clamp(_staircaseStepRadius.Value, 0.50f, 1.00f),
 
                     BuildOriginForwardOffset = Mathf.Clamp(_buildOriginForwardOffset.Value, 0f, 20f),
                     MoveStep = Mathf.Clamp(_previewMoveStep.Value, 0.25f, 10f),
@@ -915,6 +951,9 @@ namespace ValheimFloorPlan
                     _wallPillarMaterial.Value = string.IsNullOrWhiteSpace(settings.WallPillarMaterial) ? "Stone" : settings.WallPillarMaterial;
                     _disableWelcomePost.Value = settings.DisableWelcomePost;
                     _staircaseReachMode.Value = string.IsNullOrWhiteSpace(settings.StaircaseReachMode) ? "ToTheNextLevelOnly" : settings.StaircaseReachMode;
+                    _staircaseStepRise.Value = Mathf.Clamp(settings.StaircaseStepRise, 0.10f, 0.40f);
+                    _staircaseStepAngleDeg.Value = Mathf.Clamp(settings.StaircaseStepAngleDeg, 10f, 30f);
+                    _staircaseStepRadius.Value = Mathf.Clamp(settings.StaircaseStepRadius, 0.50f, 1.00f);
 
                     _buildOriginForwardOffset.Value = Mathf.Clamp(settings.BuildOriginForwardOffset, 0f, 20f);
                     _previewMoveStep.Value = Mathf.Clamp(settings.MoveStep, 0.25f, 10f);
@@ -986,6 +1025,9 @@ namespace ValheimFloorPlan
                 "WallPillarMaterial=" + (s.WallPillarMaterial ?? string.Empty),
                 "DisableWelcomePost=" + s.DisableWelcomePost.ToString(),
                 "StaircaseReachMode=" + (s.StaircaseReachMode ?? string.Empty),
+                "StaircaseStepRise=" + s.StaircaseStepRise.ToString(CultureInfo.InvariantCulture),
+                "StaircaseStepAngleDeg=" + s.StaircaseStepAngleDeg.ToString(CultureInfo.InvariantCulture),
+                "StaircaseStepRadius=" + s.StaircaseStepRadius.ToString(CultureInfo.InvariantCulture),
                 "BuildOriginForwardOffset=" + s.BuildOriginForwardOffset.ToString(CultureInfo.InvariantCulture),
                 "MoveStep=" + s.MoveStep.ToString(CultureInfo.InvariantCulture),
                 "FineMoveStep=" + s.FineMoveStep.ToString(CultureInfo.InvariantCulture),
@@ -1046,6 +1088,9 @@ namespace ValheimFloorPlan
             settings.WallPillarMaterial = ReadString(map, "WallPillarMaterial", settings.WallPillarMaterial);
             settings.DisableWelcomePost = ReadBool(map, "DisableWelcomePost", settings.DisableWelcomePost);
             settings.StaircaseReachMode = ReadString(map, "StaircaseReachMode", settings.StaircaseReachMode);
+            settings.StaircaseStepRise = ReadFloat(map, "StaircaseStepRise", settings.StaircaseStepRise);
+            settings.StaircaseStepAngleDeg = ReadFloat(map, "StaircaseStepAngleDeg", settings.StaircaseStepAngleDeg);
+            settings.StaircaseStepRadius = ReadFloat(map, "StaircaseStepRadius", settings.StaircaseStepRadius);
             settings.BuildOriginForwardOffset = ReadFloat(map, "BuildOriginForwardOffset", settings.BuildOriginForwardOffset);
             settings.MoveStep = ReadFloat(map, "MoveStep", settings.MoveStep);
             settings.FineMoveStep = ReadFloat(map, "FineMoveStep", settings.FineMoveStep);

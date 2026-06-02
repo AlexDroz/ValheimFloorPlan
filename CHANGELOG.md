@@ -1,5 +1,10 @@
 # Changelog
 
+## Pending
+
+- **Minor Staircase Teaks:** Minor changes to Step Height and Rotation Angle to make the climb up the steps smoother. Step parameters are now exposed in the config.
+
+
 ## 2.0.2
 
 - **Documentation updates:** Example images showing Three Level Floor Plan.
