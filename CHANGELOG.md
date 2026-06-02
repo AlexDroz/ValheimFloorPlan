@@ -2,7 +2,7 @@
 
 ## Pending
 
-- **Minor Staircase Teaks:** Minor changes to Step Height and Rotation Angle to make the climb up the steps smoother. Step parameters are now exposed in the config.
+- **Minor Staircase Tweaks:** Minor changes to Step Height and Rotation Angle to make the climb up the steps smoother. Step parameters are now exposed in the config.
 - **Support for Upper Level Hearths:** An extra horizontal scaffolding support is added underneath the Hearth to prevent it from collapsing when they are on upper levels. May not work in every case but if you place the Hearth near a wall (wood or stone) it should be stable now.
 
 - **Designer Help Expanded:** An attempt to build a Valheim Complete Structural Matrix describing Workbenches, their build material requirements and related Boss info. All intended to help with layout design.
