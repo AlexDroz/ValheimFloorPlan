@@ -87,8 +87,10 @@ This package includes two components:
 Preset bundles let you share/reload a complete setup: Level 1/2/3 `.vfp` files plus non-key build/config values.
 
 - Bundle format: `.vpfset` (zip container)
-- Bundle output folder: `BepInEx/plugins/RetiredCoders-ValheimFloorPlan/ValheimFloorPlan/PresetBundles/`
+- Bundle output folder: `BepInEx/plugins/RetiredCoders-ValheimFloorPlan/ValheimFloorPlan/PresetBundles/` by default. If `FloorPlanDirectory` is set, bundles are exported to and imported from that folder instead.
 - Key mappings are intentionally **not** included in exported/imported bundle settings.
+
+**Note:** when a bundle is imported, the extracted `.vfp` files are written into a subfolder named after the bundle inside the bundle output folder, and `FloorPlanFile`/`FloorPlanFileLevel2`/`FloorPlanFileLevel3` are updated to those full extracted paths. If you are using `FloorPlanDirectory`, you may want to move the extracted files into your directory and update the file fields to bare filenames afterwards.
 
 Default controls:
 
@@ -146,10 +148,11 @@ All values below are configurable in that file.
 
 | Option | Default | Allowed values | What it does |
 |---|---|---|---|
-| `FloorPlanFile` | *(empty)* | Any valid file path | Full path to the `.vfp` file exported by the Designer. |
+| `FloorPlanDirectory` | *(empty)* | Any valid folder path | Optional base folder for `.vfp` files and preset bundles. When set, `FloorPlanFile`, `FloorPlanFileLevel2`, and `FloorPlanFileLevel3` can be bare filenames instead of full paths, and bundle export/import uses this folder instead of the default `PresetBundles` subfolder. Existing configs with full absolute paths in the file fields continue to work unchanged. |
+| `FloorPlanFile` | *(empty)* | File path or bare filename | Path to the `.vfp` file exported by the Designer. A bare filename (e.g. `myhouse.vfp`) is sufficient when `FloorPlanDirectory` is set; otherwise provide the full path. |
 | `FloorPlanLevels` | `1` | `1` to `3` | Number of layout levels to build. `1` uses only `FloorPlanFile`, `2` also uses `FloorPlanFileLevel2`, `3` also uses `FloorPlanFileLevel3`. Values above `1` enforce multi-level scaffolding requirements. |
-| `FloorPlanFileLevel2` | *(empty)* | Any valid file path | Optional full path to a Level 2 `.vfp` file. If set, its footprint must fit within the Level 1 (`FloorPlanFile`) footprint. |
-| `FloorPlanFileLevel3` | *(empty)* | Any valid file path | Optional full path to a Level 3 `.vfp` file. If set, its footprint must fit within the Level 1 (`FloorPlanFile`) footprint. |
+| `FloorPlanFileLevel2` | *(empty)* | File path or bare filename | Optional Level 2 `.vfp` file. A bare filename is sufficient when `FloorPlanDirectory` is set. If set, its footprint must fit within the Level 1 (`FloorPlanFile`) footprint. |
+| `FloorPlanFileLevel3` | *(empty)* | File path or bare filename | Optional Level 3 `.vfp` file. A bare filename is sufficient when `FloorPlanDirectory` is set. If set, its footprint must fit within the Level 1 (`FloorPlanFile`) footprint. |
 | `BuildHotkey` | `F8` | Any valid `KeyboardShortcut` | Starts plan preview/build flow. |
 | `UndoHotkey` | `F9` | Any valid `KeyboardShortcut` | Removes placed VFP-tagged pieces and restores terrain snapshot. |
 | `UndoKeepTerrainHotkey` | `LeftControl + F9` | Any valid `KeyboardShortcut` | Starts piece-only undo mode: removes VFP pieces and discards the current terrain snapshot so leveled terrain remains. |
