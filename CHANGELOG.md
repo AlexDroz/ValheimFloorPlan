@@ -1,10 +1,12 @@
 # Changelog
 
-## Pending
+## 2.0.3
 
+- **New `FloorPlanDirectory` config option:** Set this to a folder path and the `FloorPlanFile`, `FloorPlanFileLevel2`, and `FloorPlanFileLevel3` fields can then be bare filenames instead of full paths. Preset bundles are also read from and written to this folder when set. Existing deployments with full paths in the file fields continue to work unchanged — full absolute paths are always used as-is regardless of this setting.
 - **Minor Staircase Tweaks:** Minor changes to Step Height and Rotation Angle to make the climb up the steps smoother. Step parameters are now exposed in the config.
 - **Support for Upper Level Hearths:** An extra horizontal scaffolding support is added underneath the Hearth to prevent it from collapsing when they are on upper levels. May not work in every case but if you place the Hearth near a wall (wood or stone) it should be stable now.
 
+- **Designer Graphics Improved:** Improved graphics to help with placement including better overlap detection.
 - **Designer Help Expanded:** An attempt to build a Valheim Complete Workbench Matrix describing Workbenches, their build material requirements and related Boss info. All intended to help with layout design.
 
 

@@ -141,7 +141,6 @@ piece,8,0,Wall,180
 piece,10,0,Wall,180
 piece,19,8,Wall,270
 piece,19,10,Wall,270
-piece,8,2,Workbench,0
 piece,4,3,Workbench,45
 piece,12,3,Workbench,315
 piece,3,7,Workbench,90
@@ -150,3 +149,4 @@ piece,12,11,Workbench,225
 piece,15,16,Hearth,180
 piece,1,17,Bed,270
 piece,4,11,Workbench,135
+piece,8,2,Workbench,0

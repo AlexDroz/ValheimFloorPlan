@@ -1,4 +1,4 @@
-const DESIGNER_VERSION = "2.0.2";
+const DESIGNER_VERSION = "2.0.3";
 
 const MAX_LAYOUT_LEVELS = 3;
 const WHEEL_ROTATION_STEP = 22.5;
@@ -277,44 +277,18 @@ function gridLayout() {
 }
 
 function getOverlapInfo() {
-  const counts = Array.from({ length: state.rows }, () => Array(state.cols).fill(0));
-
-  for (const p of state.pieces) {
-    if (isFloorType(p.type)) continue;
-    const { w, h } = effectiveSize(p.type, p.rot);
-    for (let r = p.row; r < p.row + h; r += 1) {
-      for (let c = p.col; c < p.col + w; c += 1) {
-        if (r < 0 || r >= state.rows || c < 0 || c >= state.cols) continue;
-        counts[r][c] += 1;
-      }
-    }
-  }
-
   const topOverlappingPieceIndexes = new Set();
-  for (let r = 0; r < state.rows; r += 1) {
-    for (let c = 0; c < state.cols; c += 1) {
-      if (counts[r][c] <= 1) continue;
-
-      let bestIndex = -1;
-      let bestLayer = -1;
-      for (let i = 0; i < state.pieces.length; i += 1) {
-        const p = state.pieces[i];
-        if (isFloorType(p.type)) continue;
-        if (!pieceOccupiesCell(p, c, r)) continue;
-
-        const layer = pieceLayerOrder(p.type);
-        if (layer > bestLayer || (layer === bestLayer && i > bestIndex)) {
-          bestLayer = layer;
-          bestIndex = i;
-        }
-      }
-
-      if (bestIndex >= 0) {
-        topOverlappingPieceIndexes.add(bestIndex);
+  const nonFloor = state.pieces
+    .map((p, i) => ({ p, i }))
+    .filter(({ p }) => !isFloorType(p.type));
+  for (let a = 0; a < nonFloor.length - 1; a += 1) {
+    for (let b = a + 1; b < nonFloor.length; b += 1) {
+      if (obbOverlap(getPieceObb(nonFloor[a].p), getPieceObb(nonFloor[b].p))) {
+        topOverlappingPieceIndexes.add(nonFloor[a].i);
+        topOverlappingPieceIndexes.add(nonFloor[b].i);
       }
     }
   }
-
   return { topOverlappingPieceIndexes };
 }
 
@@ -351,52 +325,30 @@ function isDirectionalOverlapConflict(a, b) {
 function getCrossLayerOverlapInfo() {
   const visibleLayerIndexes = getVisibleLayerIndexes();
   const marksByLayer = new Map();
-  if (visibleLayerIndexes.length <= 1)
-    return marksByLayer;
+  if (visibleLayerIndexes.length <= 1) return marksByLayer;
 
-  const cellOccupants = Array.from({ length: state.rows }, () =>
-    Array.from({ length: state.cols }, () => [])
-  );
-
-  for (let v = 0; v < visibleLayerIndexes.length; v += 1) {
-    const layerIndex = visibleLayerIndexes[v];
+  const allPieces = [];
+  for (const layerIndex of visibleLayerIndexes) {
     const layout = state.layouts[layerIndex];
     for (let pieceIndex = 0; pieceIndex < layout.pieces.length; pieceIndex += 1) {
       const piece = layout.pieces[pieceIndex];
       if (!shouldCountToolOverlap(piece.type)) continue;
-
-      const { w, h } = effectiveSize(piece.type, piece.rot);
-      for (let r = piece.row; r < piece.row + h; r += 1) {
-        if (r < 0 || r >= state.rows) continue;
-        for (let c = piece.col; c < piece.col + w; c += 1) {
-          if (c < 0 || c >= state.cols) continue;
-          cellOccupants[r][c].push({ layerIndex, pieceIndex, pieceType: piece.type });
-        }
-      }
+      allPieces.push({ layerIndex, pieceIndex, pieceType: piece.type, obb: getPieceObb(piece) });
     }
   }
 
-  for (let r = 0; r < state.rows; r += 1) {
-    for (let c = 0; c < state.cols; c += 1) {
-      const occupants = cellOccupants[r][c];
-      if (occupants.length <= 1) continue;
+  for (let a = 0; a < allPieces.length - 1; a += 1) {
+    for (let b = a + 1; b < allPieces.length; b += 1) {
+      const occA = allPieces[a];
+      const occB = allPieces[b];
+      if (occA.layerIndex === occB.layerIndex) continue;
+      if (!isDirectionalOverlapConflict(occA, occB)) continue;
+      if (!obbOverlap(occA.obb, occB.obb)) continue;
 
-      for (let i = 0; i < occupants.length; i += 1) {
-        for (let j = i + 1; j < occupants.length; j += 1) {
-          const occA = occupants[i];
-          const occB = occupants[j];
-          if (!isDirectionalOverlapConflict(occA, occB))
-            continue;
-
-          if (!marksByLayer.has(occA.layerIndex))
-            marksByLayer.set(occA.layerIndex, new Set());
-          if (!marksByLayer.has(occB.layerIndex))
-            marksByLayer.set(occB.layerIndex, new Set());
-
-          marksByLayer.get(occA.layerIndex).add(occA.pieceIndex);
-          marksByLayer.get(occB.layerIndex).add(occB.pieceIndex);
-        }
-      }
+      if (!marksByLayer.has(occA.layerIndex)) marksByLayer.set(occA.layerIndex, new Set());
+      if (!marksByLayer.has(occB.layerIndex)) marksByLayer.set(occB.layerIndex, new Set());
+      marksByLayer.get(occA.layerIndex).add(occA.pieceIndex);
+      marksByLayer.get(occB.layerIndex).add(occB.pieceIndex);
     }
   }
 
@@ -459,6 +411,31 @@ function lightenHexColor(hex, amount = 0.55) {
 function pieceOccupiesCell(piece, col, row) {
   const { w, h } = effectiveSize(piece.type, piece.rot);
   return col >= piece.col && col < piece.col + w && row >= piece.row && row < piece.row + h;
+}
+
+function getPieceObb(piece) {
+  if (piece.type === "Workbench") {
+    // Use inner 3×2 bench rectangle: center (col+2, row+2), half-extents (1.5, 1.0)
+    return { cx: piece.col + 2, cy: piece.row + 2, hw: 1.5, hh: 1.0, rot: -(piece.rot || 0) * Math.PI / 180 };
+  }
+  const { w, h } = effectiveSize(piece.type, piece.rot);
+  // effectiveSize already handles orthogonal rotation by swapping dims, so rot=0 here
+  return { cx: piece.col + w / 2, cy: piece.row + h / 2, hw: w / 2, hh: h / 2, rot: 0 };
+}
+
+function obbOverlap(a, b) {
+  const axA = { x: Math.cos(a.rot), y: Math.sin(a.rot) };
+  const ayA = { x: -Math.sin(a.rot), y: Math.cos(a.rot) };
+  const axB = { x: Math.cos(b.rot), y: Math.sin(b.rot) };
+  const ayB = { x: -Math.sin(b.rot), y: Math.cos(b.rot) };
+  const T = { x: b.cx - a.cx, y: b.cy - a.cy };
+  const dot = (u, v) => u.x * v.x + u.y * v.y;
+  const projR = (obb, ax, ay, axis) => obb.hw * Math.abs(dot(ax, axis)) + obb.hh * Math.abs(dot(ay, axis));
+  for (const axis of [axA, ayA, axB, ayB]) {
+    if (Math.abs(dot(T, axis)) >= projR(a, axA, ayA, axis) + projR(b, axB, ayB, axis))
+      return false;
+  }
+  return true;
 }
 
 function pieceShowsOrientation(type) {
@@ -563,6 +540,15 @@ function drawPieceOrientation(type, rotation, x, y, wPx, hPx, isPreview = false)
     return;
   }
 
+  const cellPx = wPx / 4;
+  const rwRect = 3 * cellPx;
+  const rhRect = 2 * cellPx;
+  ctx.fillStyle = isPreview ? "rgba(20, 184, 166, 0.12)" : "rgba(20, 184, 166, 0.18)";
+  ctx.strokeStyle = isPreview ? "rgba(20, 184, 166, 0.6)" : "rgba(20, 184, 166, 0.9)";
+  ctx.lineWidth = Math.max(1, cellPx * 0.08);
+  ctx.fillRect(-rwRect * 0.5, -rhRect * 0.5, rwRect, rhRect);
+  ctx.strokeRect(-rwRect * 0.5, -rhRect * 0.5, rwRect, rhRect);
+
   ctx.strokeStyle = isPreview ? "rgba(60, 35, 18, 0.78)" : "rgba(255, 245, 220, 0.95)";
   ctx.fillStyle = ctx.strokeStyle;
   ctx.lineWidth = Math.max(2, Math.min(wPx, hPx) * 0.06);
@@ -618,6 +604,63 @@ function canvasEventToGridCell(ev) {
   return { col, row };
 }
 
+function drawGridCenterLines(originX, originY, gridW, gridH) {
+  const cx = originX + gridW * 0.5;
+  const cy = originY + gridH * 0.5;
+  ctx.save();
+  ctx.strokeStyle = "rgba(255, 255, 255, 0.6)";
+  ctx.lineWidth = 1;
+  ctx.setLineDash([6, 5]);
+  ctx.beginPath();
+  ctx.moveTo(cx, originY);
+  ctx.lineTo(cx, originY + gridH);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(originX, cy);
+  ctx.lineTo(originX + gridW, cy);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.restore();
+}
+
+function drawWorkbenchGrid(rotation, x, y, wPx, hPx) {
+  const { cell } = gridLayout();
+  const cols = Math.round(wPx / cell);
+  const rows = Math.round(hPx / cell);
+  withPieceRotation(x, y, wPx, hPx, rotation, (rx, ry, rw, rh) => {
+    ctx.save();
+    ctx.strokeStyle = "rgba(255, 200, 90, 0.45)";
+    ctx.lineWidth = 0.5;
+    for (let c = 1; c < cols; c++) {
+      ctx.beginPath();
+      ctx.moveTo(rx + c * cell, ry);
+      ctx.lineTo(rx + c * cell, ry + rh);
+      ctx.stroke();
+    }
+    for (let r = 1; r < rows; r++) {
+      ctx.beginPath();
+      ctx.moveTo(rx, ry + r * cell);
+      ctx.lineTo(rx + rw, ry + r * cell);
+      ctx.stroke();
+    }
+    ctx.restore();
+  });
+}
+
+function withPieceRotation(x, y, w, h, rotation, callback) {
+  const normalized = normalizeAngle(rotation || 0);
+  const nearestOrth = Math.round(normalized / 90) * 90;
+  if (Math.abs(normalized - nearestOrth) < ROTATION_EPSILON) {
+    callback(x, y, w, h);
+  } else {
+    ctx.save();
+    ctx.translate(x + w * 0.5, y + h * 0.5);
+    ctx.rotate((-normalized * Math.PI) / 180);
+    callback(-w * 0.5, -h * 0.5, w, h);
+    ctx.restore();
+  }
+}
+
 function draw() {
   const { cell, gridW, gridH, originX, originY } = gridLayout();
   const { topOverlappingPieceIndexes } = getOverlapInfo();
@@ -659,16 +702,23 @@ function draw() {
     const x = originX + p.col * cell;
     const y = originY + p.row * cell;
     ctx.fillStyle = pieceColors[p.type] || "#999";
-    ctx.fillRect(x + 1, y + 1, w * cell - 2, h * cell - 2);
-    ctx.strokeStyle = "rgba(0, 0, 0, 0.35)";
-    ctx.strokeRect(x + 1, y + 1, w * cell - 2, h * cell - 2);
+    ctx.globalAlpha = 0.75;
+    withPieceRotation(x + 1, y + 1, w * cell - 2, h * cell - 2, p.rot, (rx, ry, rw, rh) => {
+      ctx.fillRect(rx, ry, rw, rh);
+      ctx.strokeStyle = "rgba(0, 0, 0, 0.35)";
+      ctx.strokeRect(rx, ry, rw, rh);
+    });
+    if (p.type === "Workbench") drawWorkbenchGrid(p.rot || 0, x + 1, y + 1, w * cell - 2, h * cell - 2);
     drawPieceOrientation(p.type, p.rot || 0, x + 1, y + 1, w * cell - 2, h * cell - 2);
+    ctx.globalAlpha = 1;
 
     if (activeCrossLayerOverlapMarks.has(entry.index)) {
       ctx.strokeStyle = "#ff1f1f";
       ctx.lineWidth = 2.5;
       ctx.setLineDash([5, 3]);
-      ctx.strokeRect(x + 1, y + 1, w * cell - 2, h * cell - 2);
+      withPieceRotation(x + 1, y + 1, w * cell - 2, h * cell - 2, p.rot, (rx, ry, rw, rh) => {
+        ctx.strokeRect(rx, ry, rw, rh);
+      });
       ctx.setLineDash([]);
     }
   }
@@ -691,22 +741,29 @@ function draw() {
       const y = originY + p.row * cell;
       ctx.fillStyle = pieceColors[p.type] || "#999";
       ctx.globalAlpha = 0.22;
-      ctx.fillRect(x + 1, y + 1, w * cell - 2, h * cell - 2);
+      withPieceRotation(x + 1, y + 1, w * cell - 2, h * cell - 2, p.rot, (rx, ry, rw, rh) => {
+        ctx.fillRect(rx, ry, rw, rh);
+      });
       ctx.globalAlpha = 0.7;
       ctx.lineWidth = 1.25;
       ctx.strokeStyle = strokeColor;
-      ctx.strokeRect(x + 1, y + 1, w * cell - 2, h * cell - 2);
+      withPieceRotation(x + 1, y + 1, w * cell - 2, h * cell - 2, p.rot, (rx, ry, rw, rh) => {
+        ctx.strokeRect(rx, ry, rw, rh);
+      });
 
       if (overlayCrossLayerMarks.has(entry.index)) {
         ctx.globalAlpha = 0.95;
         ctx.lineWidth = 2.5;
         ctx.strokeStyle = "#ff1f1f";
         ctx.setLineDash([5, 3]);
-        ctx.strokeRect(x + 1, y + 1, w * cell - 2, h * cell - 2);
+        withPieceRotation(x + 1, y + 1, w * cell - 2, h * cell - 2, p.rot, (rx, ry, rw, rh) => {
+          ctx.strokeRect(rx, ry, rw, rh);
+        });
         ctx.setLineDash([]);
       }
 
       ctx.globalAlpha = 0.55;
+      if (p.type === "Workbench") drawWorkbenchGrid(p.rot || 0, x + 1, y + 1, w * cell - 2, h * cell - 2);
       drawPieceOrientation(p.type, p.rot || 0, x + 1, y + 1, w * cell - 2, h * cell - 2, true);
       ctx.globalAlpha = 1;
     }
@@ -720,7 +777,9 @@ function draw() {
     ctx.strokeStyle = "#ff7a7a";
     ctx.lineWidth = 3;
     ctx.setLineDash([8, 5]);
-    ctx.strokeRect(x + 1, y + 1, w * cell - 2, h * cell - 2);
+    withPieceRotation(x + 1, y + 1, w * cell - 2, h * cell - 2, p.rot, (rx, ry, rw, rh) => {
+      ctx.strokeRect(rx, ry, rw, rh);
+    });
   }
   ctx.setLineDash([]);
 
@@ -754,6 +813,8 @@ function draw() {
 
     drawPieceOrientation(state.currentPiece, state.rotation, x, y, wPx, hPx, true);
   }
+
+  drawGridCenterLines(originX, originY, gridW, gridH);
 }
 
 function parseVfp(text) {

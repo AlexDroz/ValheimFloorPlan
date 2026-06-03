@@ -20,6 +20,7 @@
             --label-ind-unit: #0891b2;   /* Cyan */
             --label-blackforge: #3b82f6; /* Blue */
             --label-galdrtable: #06b6d4; /* Cyan */
+            --label-stonecutter: #64748b; /* Slate Gray */
             
             --accent-boss: #f43f5e;
             --accent-guide: #10b981;
@@ -196,6 +197,7 @@
         .bg-indunit { background-color: rgba(8, 145, 178, 0.2); color: #67e8f9; border: 1px solid var(--label-ind-unit); }
         .bg-blackforge { background-color: rgba(59, 130, 246, 0.2); color: #93c5fd; border: 1px solid var(--label-blackforge); }
         .bg-galdrtable { background-color: rgba(6, 182, 212, 0.2); color: #a5f3fc; border: 1px solid var(--label-galdrtable); }
+        .bg-stonecutter { background-color: rgba(100, 116, 139, 0.2); color: #cbd5e1; border: 1px solid var(--label-stonecutter); }
 
         .level-cell {
             font-weight: bold;
@@ -236,14 +238,14 @@
     </header>
 
     <div class="controls">
-        <button class="btn active" data-filter="guide" style="border-color: var(--accent-guide)">👷 Base Building Guide</button>
-        <button class="btn" data-filter="all">All Stations</button>
+        <button class="btn active" data-filter="all">All Stations</button>
         <button class="btn" data-filter="workbench">Workbench</button>
         <button class="btn" data-filter="forge">Forge</button>
         <button class="btn" data-filter="cauldron">Cauldron</button>
         <button class="btn" data-filter="industrial">Industrial</button>
         <button class="btn" data-filter="advanced">Advanced Tables</button>
         <button class="btn" data-filter="boss-gates" style="border-color: var(--accent-boss)">🎯 Hard Boss Gates Only</button>
+        <button class="btn" data-filter="guide" style="border-color: var(--accent-guide)">👷 Base Building Guide</button>
     </div>
 
     <!-- Hidden Base Building Section -->
@@ -322,8 +324,6 @@
 		
     </div>
 
-        <p class="subtitle" style="margin: 0 0 10px 0; text-align: center;">Base station footprint note: Workbench, Forge, Cauldron, Artisan Table, Black Forge, and Galdr Table are planned as <strong>2x2</strong> core footprints in this matrix (rows below list upgrade node footprints).</p>
-
     <table class="matrix-table" id="main-matrix-table">
         <thead>
             <tr>
@@ -338,6 +338,15 @@
         </thead>
         <tbody id="matrix-body">
             <!-- Workbench -->
+            <tr data-type="workbench" data-boss="false">
+                <td><span class="badge bg-workbench">Workbench</span></td>
+                <td class="level-cell">1</td>
+                <td><strong>Base Station</strong></td>
+                <td class="mats-list">10 Wood</td>
+                <td class="footprint-cell">2x1</td>
+                <td class="layout-cell"><span class="radius-alert">~8m build cylinder</span>. Must be sheltered (roof + enclosing walls) or incurs weather decay penalty. Upgrade nodes tether within ~5m.</td>
+                <td class="progression-cell">No boss gate. Available from the very start of a run.</td>
+            </tr>
             <tr data-type="workbench" data-boss="false">
                 <td><span class="badge bg-workbench">Workbench</span></td>
                 <td class="level-cell">2</td>
@@ -374,8 +383,27 @@
                 <td class="layout-cell"><span class="radius-alert">~5m cylinder tether</span>. Wall-mounted unit hanging directly above the station.</td>
                 <td class="progression-cell">Normally follows <span class="boss-tag">The Elder</span> progression for reliable iron, but can be soft-skipped through alternate iron routes.</td>
             </tr>
+            <!-- Stonecutter -->
+            <tr data-type="workbench" data-boss="true">
+                <td><span class="badge bg-stonecutter">Stonecutter</span></td>
+                <td class="level-cell">-</td>
+                <td><strong>Base Station</strong></td>
+                <td class="mats-list">2 Iron, 4 Stone, 10 Wood</td>
+                <td class="footprint-cell">2x1</td>
+                <td class="layout-cell"><span class="radius-alert">~8m build radius</span>. Standalone station; no tether to other crafting stations. Place on flat ground with clear access for stone-work builds.</td>
+                <td class="progression-cell">Requires Iron. Typically gated behind <span class="boss-tag">The Elder</span> via Swamp Crypt iron sourcing. Also unlocks the <span class="item-tag">Sharpening Stone</span> needed for the Forge Grinding Wheel.</td>
+            </tr>
 
             <!-- Forge -->
+            <tr data-type="forge" data-boss="true">
+                <td><span class="badge bg-forge">Forge</span></td>
+                <td class="level-cell">1</td>
+                <td><strong>Base Station</strong></td>
+                <td class="mats-list">4 Stone, 4 Coal, 10 Wood, 6 Copper</td>
+                <td class="footprint-cell">2x2</td>
+                <td class="layout-cell"><span class="radius-alert">~8m build cylinder</span>. Must be sheltered. Built-in forge fire; no separate heat source required. Upgrade nodes tether within ~5m.</td>
+                <td class="progression-cell">Requires Copper. Gated behind <span class="boss-tag">Eikthyr</span> for the <span class="item-tag">Hard Antler</span> Pickaxe to mine ore.</td>
+            </tr>
             <tr data-type="forge" data-boss="true">
                 <td><span class="badge bg-forge">Forge</span></td>
                 <td class="level-cell">2</td>
@@ -432,6 +460,15 @@
             </tr>
 
             <!-- Cauldron -->
+            <tr data-type="cauldron" data-boss="true">
+                <td><span class="badge bg-cauldron">Cauldron</span></td>
+                <td class="level-cell">1</td>
+                <td><strong>Base Station</strong></td>
+                <td class="mats-list">10 Tin</td>
+                <td class="footprint-cell">1x1</td>
+                <td class="layout-cell"><span class="radius-alert">~8m build cylinder</span>. Must be suspended above an active Hearth or Bonfire; no fire beneath it means it cannot be used. Upgrade nodes tether within ~5m.</td>
+                <td class="progression-cell">Requires Tin. Gated behind <span class="boss-tag">Eikthyr</span> pickaxe to mine Black Forest riverbed deposits.</td>
+            </tr>
             <tr data-type="cauldron" data-boss="false">
                 <td><span class="badge bg-cauldron">Cauldron</span></td>
                 <td class="level-cell">2</td>
@@ -553,6 +590,15 @@
             </tr>
 
             <!-- Advanced -->
+            <tr data-type="advanced" data-boss="true">
+                <td><span class="badge bg-blackforge">Black Forge</span></td>
+                <td class="level-cell">1</td>
+                <td><strong>Base Station</strong></td>
+                <td class="mats-list">10 Black marble, 5 Yggdrasil wood, 5 Refined Eitr, 5 Blackheart</td>
+                <td class="footprint-cell">2x2</td>
+                <td class="layout-cell"><span class="radius-alert">~8m build cylinder</span>. Must be sheltered. Requires an active Eitr refinery chain nearby for consumable Refined Eitr. Upgrade nodes tether within ~5m.</td>
+                <td class="progression-cell">Full Mistlands refinery chain required. Practically gated behind <span class="boss-tag">Yagluth</span> for safe Mistlands access.</td>
+            </tr>
             <tr data-type="advanced" data-boss="false">
                 <td><span class="badge bg-blackforge">Black Forge</span></td>
                 <td class="level-cell">2</td>
@@ -588,6 +634,15 @@
                 <td class="footprint-cell">1x1</td>
                 <td class="layout-cell"><span class="radius-alert">~5m cylinder tether</span>. Small standing table layout item. Place directly beside the main Forge.</td>
                 <td class="progression-cell">Kill <span class="boss-tag">The Queen</span> to acquire <span class="item-tag">Majestic Carapace</span> → fabricate Drakkar ship hull to cross to Ashlands.</td>
+            </tr>
+            <tr data-type="advanced" data-boss="true">
+                <td><span class="badge bg-galdrtable">Galdr Table</span></td>
+                <td class="level-cell">1</td>
+                <td><strong>Base Station</strong></td>
+                <td class="mats-list">10 Fine wood, 5 Black marble, 5 Refined Eitr, 3 Rune Tablet</td>
+                <td class="footprint-cell">2x2</td>
+                <td class="layout-cell"><span class="radius-alert">~8m build cylinder</span>. Must be sheltered. Primary Mistlands magic-crafting station. Upgrade nodes tether within ~5m.</td>
+                <td class="progression-cell">Rune Tablets drop from Dvergr structures. Requires full Mistlands access; practically gated behind <span class="boss-tag">Yagluth</span>.</td>
             </tr>
             <tr data-type="advanced" data-boss="false">
                 <td><span class="badge bg-galdrtable">Galdr Table</span></td>
@@ -660,11 +715,7 @@
         });
     });
 
-    // Default to the Base Building Guide on initial load.
-    const defaultGuideButton = document.querySelector('.btn[data-filter="guide"]');
-    if (defaultGuideButton) {
-        defaultGuideButton.click();
-    }
+    document.querySelector('.btn[data-filter="all"]').click();
 </script>
 
 </body>

@@ -39,7 +39,7 @@ namespace ValheimFloorPlan
 
         public const string PluginGUID = "com.alexdroz.valheimfloorplan";
         public const string PluginName = "ValheimFloorPlan";
-        public const string PluginVersion = "2.0.2";
+        public const string PluginVersion = "2.0.3";
 
         internal static ManualLogSource Log = null!;
         internal static ValheimFloorPlanPlugin Instance { get; private set; } = null!;
@@ -89,9 +89,11 @@ namespace ValheimFloorPlan
         internal static KeyCode PreviewFineAdjustKey { get; private set; } = KeyCode.LeftShift;
         internal static float UndoRadius { get; private set; } = 15f;
         internal static int FloorPlanLevels { get; private set; } = 1;
+        internal static string FloorPlanDirectory { get; private set; } = string.Empty;
         internal static string FloorPlanFileLevel2 { get; private set; } = string.Empty;
         internal static string FloorPlanFileLevel3 { get; private set; } = string.Empty;
 
+        private ConfigEntry<string> _vfpDirectory = null!;
         private ConfigEntry<string> _vfpFilePath = null!;
         private ConfigEntry<string> _vfpFilePathLevel2 = null!;
         private ConfigEntry<string> _vfpFilePathLevel3 = null!;
@@ -208,23 +210,34 @@ namespace ValheimFloorPlan
             Instance = this;
             Log = Logger;
 
+            _vfpDirectory = Config.Bind(
+                "General", "FloorPlanDirectory", "",
+                "Optional base folder for .vfp files and bundles. When set, FloorPlanFile/Level2/Level3 values are treated as filenames relative to this folder unless they are already absolute paths. Leave empty to use full paths in each file field (legacy behaviour).");
+            _vfpDirectory.SettingChanged += (_, _) =>
+            {
+                FloorPlanDirectory = (_vfpDirectory.Value ?? string.Empty).Trim();
+                FloorPlanFileLevel2 = ResolveVfpPath((_vfpFilePathLevel2.Value ?? string.Empty).Trim());
+                FloorPlanFileLevel3 = ResolveVfpPath((_vfpFilePathLevel3.Value ?? string.Empty).Trim());
+            };
+            FloorPlanDirectory = (_vfpDirectory.Value ?? string.Empty).Trim();
+
             _vfpFilePath = Config.Bind(
                 "General", "FloorPlanFile", "",
-                "Full path to the .vfp floor plan file exported from Valheim Floor Plan Designer.");
+                "Full path to the .vfp floor plan file exported from Valheim Floor Plan Designer. If FloorPlanDirectory is set, a bare filename is sufficient.");
 
             _vfpFilePathLevel2 = Config.Bind(
                 "General", "FloorPlanFileLevel2", "",
                 "Optional full path to the Level 2 .vfp floor plan file. When set, its footprint must fit within the Level 1 plan footprint.");
             _vfpFilePathLevel2.SettingChanged += (_, _) =>
-                FloorPlanFileLevel2 = (_vfpFilePathLevel2.Value ?? string.Empty).Trim();
-            FloorPlanFileLevel2 = (_vfpFilePathLevel2.Value ?? string.Empty).Trim();
+                FloorPlanFileLevel2 = ResolveVfpPath((_vfpFilePathLevel2.Value ?? string.Empty).Trim());
+            FloorPlanFileLevel2 = ResolveVfpPath((_vfpFilePathLevel2.Value ?? string.Empty).Trim());
 
             _vfpFilePathLevel3 = Config.Bind(
                 "General", "FloorPlanFileLevel3", "",
-                "Optional full path to the Level 3 .vfp floor plan file. When set, its footprint must fit within the Level 1 plan footprint.");
+                "Optional path to the Level 3 .vfp floor plan file. If FloorPlanDirectory is set, a bare filename is sufficient. When set, its footprint must fit within the Level 1 plan footprint.");
             _vfpFilePathLevel3.SettingChanged += (_, _) =>
-                FloorPlanFileLevel3 = (_vfpFilePathLevel3.Value ?? string.Empty).Trim();
-            FloorPlanFileLevel3 = (_vfpFilePathLevel3.Value ?? string.Empty).Trim();
+                FloorPlanFileLevel3 = ResolveVfpPath((_vfpFilePathLevel3.Value ?? string.Empty).Trim());
+            FloorPlanFileLevel3 = ResolveVfpPath((_vfpFilePathLevel3.Value ?? string.Empty).Trim());
 
             _floorPlanLevels = Config.Bind(
                 "General", "FloorPlanLevels", 1,
@@ -639,7 +652,7 @@ namespace ValheimFloorPlan
 
             if (_buildHotkey.Value.IsDown())
             {
-                var path = _vfpFilePath.Value.Trim();
+                var path = ResolveVfpPath(_vfpFilePath.Value.Trim());
                 if (string.IsNullOrEmpty(path))
                 {
                     Log.LogWarning("No floor plan file configured. Set 'FloorPlanFile' in the BepInEx config.");
@@ -756,9 +769,9 @@ namespace ValheimFloorPlan
         {
             try
             {
-                string level1Path = (_vfpFilePath.Value ?? string.Empty).Trim();
-                string level2Path = (_vfpFilePathLevel2.Value ?? string.Empty).Trim();
-                string level3Path = (_vfpFilePathLevel3.Value ?? string.Empty).Trim();
+                string level1Path = ResolveVfpPath((_vfpFilePath.Value ?? string.Empty).Trim());
+                string level2Path = ResolveVfpPath((_vfpFilePathLevel2.Value ?? string.Empty).Trim());
+                string level3Path = ResolveVfpPath((_vfpFilePathLevel3.Value ?? string.Empty).Trim());
 
                 if (string.IsNullOrEmpty(level1Path) || !File.Exists(level1Path))
                 {
@@ -1109,6 +1122,14 @@ namespace ValheimFloorPlan
             return true;
         }
 
+        private static string ResolveVfpPath(string fileConfig)
+        {
+            if (string.IsNullOrEmpty(fileConfig)) return fileConfig;
+            if (!string.IsNullOrEmpty(FloorPlanDirectory) && !Path.IsPathRooted(fileConfig))
+                return Path.Combine(FloorPlanDirectory, fileConfig);
+            return fileConfig;
+        }
+
         private static string ReadString(Dictionary<string, string> map, string key, string fallback)
         {
             return map.TryGetValue(key, out string value) ? value : fallback;
@@ -1150,6 +1171,8 @@ namespace ValheimFloorPlan
 
         private string GetBundlesDirectory()
         {
+            if (!string.IsNullOrEmpty(FloorPlanDirectory))
+                return FloorPlanDirectory;
             string pluginDir = Path.GetDirectoryName(Info.Location) ?? ".";
             return Path.Combine(pluginDir, "PresetBundles");
         }
