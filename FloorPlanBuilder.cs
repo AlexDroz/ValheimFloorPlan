@@ -4644,6 +4644,47 @@ namespace ValheimFloorPlan
                 ScaffoldDedup(poleParams, 0.5f);
             }
 
+            // ── FlexiWall arc scaffold anchors ────────────────────────────────
+            // Build one ordered chain of local-XZ arc points per FlexiWall (used for
+            // ring beams), and sample one pole anchor per POLE_SPACING meters of arc.
+            var fwArcChains  = new List<List<FlexiWallSegment>>();
+            var fwPoleLocals = new List<Vector2>();
+
+            foreach (var fw in plan.FlexiWalls)
+            {
+                var segs = ComputeFlexiWallSegments(fw, 1f);
+                if (segs.Count == 0) continue;
+                fwArcChains.Add(segs);
+
+                // First pole at arc start
+                fwPoleLocals.Add(new Vector2(segs[0].Lx, segs[0].Lz));
+                float accumulated = 0f;
+                for (int si = 1; si < segs.Count; si++)
+                {
+                    float step = Mathf.Sqrt(
+                        (segs[si].Lx - segs[si-1].Lx) * (segs[si].Lx - segs[si-1].Lx) +
+                        (segs[si].Lz - segs[si-1].Lz) * (segs[si].Lz - segs[si-1].Lz));
+                    accumulated += step;
+                    if (accumulated >= POLE_SPACING - 0.1f)
+                    {
+                        var candidate = new Vector2(segs[si].Lx, segs[si].Lz);
+                        if (!IsNearAnyPole(candidate, fwPoleLocals, POLE_SPACING * 0.35f))
+                            fwPoleLocals.Add(candidate);
+                        accumulated = 0f;
+                    }
+                }
+                // End pole if sufficiently far from last
+                var endPt = new Vector2(segs[segs.Count-1].Lx, segs[segs.Count-1].Lz);
+                if (!IsNearAnyPole(endPt, fwPoleLocals, POLE_SPACING * 0.35f))
+                    fwPoleLocals.Add(endPt);
+            }
+
+            // Build an ordered perimeter polygon for FlexiWall layouts.
+            // Used to clip floor/roof tiles to the actual arc shape.
+            List<Vector2>? fwArcPolygon = null;
+            if (fwArcChains.Count > 0)
+                fwArcPolygon = BuildArcPerimeterPolygon(fwArcChains);
+
             int placed = 0;
             float currentLevelBaseY = scaffoldBaseY;
 
@@ -4653,102 +4694,186 @@ namespace ValheimFloorPlan
                 float levelTopY = currentLevelBaseY + scaffoldFloorHeight;
                 float deckY = levelTopY + FLOOR_DECK_LIFT;
                 var deckOpenings = BuildScaffoldDeckOpenings(plan, deckY, chimneyStartY);
+                bool useFwScaffolding = fwArcChains.Count > 0;
+
+                // occupiedPoleLocals: used by transverse/longitudinal beam pairing.
                 var occupiedPoleLocals = new List<Vector2>(poleParams.Count + 32);
-                for (int pi = 0; pi < poleParams.Count; pi++)
+                if (!useFwScaffolding)
                 {
-                    occupiedPoleLocals.Add(ScaffoldParamToLocal(poleParams[pi], lMinX, lMaxX, lMinZ, lMaxZ, perimeter));
+                    for (int pi = 0; pi < poleParams.Count; pi++)
+                        occupiedPoleLocals.Add(ScaffoldParamToLocal(poleParams[pi], lMinX, lMaxX, lMinZ, lMaxZ, perimeter));
                 }
                 occupiedPoleLocals.Add(new Vector2(localCenterX, localCenterZ));
+                if (useFwScaffolding)
+                {
+                    foreach (var fwLocal in fwPoleLocals)
+                        occupiedPoleLocals.Add(fwLocal);
+                }
 
                 // ── Place vertical poles for this level ──────────────────────
-                foreach (float t in poleParams)
+                if (!useFwScaffolding)
                 {
-                    Vector2 local = ScaffoldParamToLocal(t, lMinX, lMaxX, lMinZ, lMaxZ, perimeter);
-                    Vector3 polePos = PieceMap.TransformPlanPoint(origin, local.x, local.y, currentLevelBaseY + scaffoldFloorHeight * 0.5f, rotationDeg);
-
-                    placed += SpawnScaffoldColumn(vertPrefab,
-                        polePos,
-                        Quaternion.Euler(0, rotationDeg, 0),
-                        player,
-                        scaffoldFloorHeight,
-                        POLE_SEGMENT_HEIGHT);
-                    if (placed % 10 == 0)
-                        yield return new WaitForSeconds(PLACE_DELAY);
-                }
-
-                    Vector3 centerPolePos = PieceMap.TransformPlanPoint(origin, localCenterX, localCenterZ, currentLevelBaseY + scaffoldFloorHeight * 0.5f, rotationDeg);
-                placed += SpawnScaffoldColumn(
-                    vertPrefab,
-                    centerPolePos,
-                    Quaternion.Euler(0, rotationDeg, 0),
-                    player,
-                    scaffoldFloorHeight,
-                    POLE_SEGMENT_HEIGHT);
-                if (placed % 10 == 0)
-                    yield return new WaitForSeconds(PLACE_DELAY);
-
-                // ── Place horizontal perimeter beams for this level ──────────
-                // Corners clockwise: SW(0) → SE(1) → NE(2) → NW(3) → SW(0)
-                var cornerTops = new Vector3[4];
-                for (int ci = 0; ci < 4; ci++)
-                {
-                    Vector2 cl = ScaffoldParamToLocal(cornerT[ci], lMinX, lMaxX, lMinZ, lMaxZ, perimeter);
-                    cornerTops[ci] = PieceMap.TransformPlanPoint(origin, cl.x, cl.y, levelTopY, rotationDeg);
-                }
-
-                for (int e = 0; e < 4; e++)
-                {
-                    Vector2 localEdgeA = ScaffoldParamToLocal(cornerT[edgeFrom[e]], lMinX, lMaxX, lMinZ, lMaxZ, perimeter);
-                    Vector2 localEdgeB = ScaffoldParamToLocal(cornerT[edgeTo[e]], lMinX, lMaxX, lMinZ, lMaxZ, perimeter);
-                    Vector3 cA = cornerTops[edgeFrom[e]];
-                    Vector3 cB = cornerTops[edgeTo[e]];
-                    float edgeDx = cB.x - cA.x;
-                    float edgeDz = cB.z - cA.z;
-                    float edgeDist = Mathf.Sqrt(edgeDx * edgeDx + edgeDz * edgeDz);
-                    if (edgeDist < 0.1f) continue;
-
-                    Vector3 dir = new Vector3(edgeDx / edgeDist, 0f, edgeDz / edgeDist);
-                    float beamY = (cA.y + cB.y) * 0.5f;
-                    // woodiron_beam has its beam length along local X at 0°.
-                    // Unity CW Y-rotation θ maps local X → (cosθ, 0, −sinθ), so θ = atan2(−dz, dx).
-                    Quaternion beamRot = Quaternion.Euler(0f, Mathf.Atan2(-dir.z, dir.x) * Mathf.Rad2Deg, 0f);
-
-                    int nFull = Mathf.FloorToInt(edgeDist / HORIZ_LEN);
-                    float remainder = edgeDist - nFull * HORIZ_LEN;
-
-                    for (int b = 0; b < nFull; b++)
+                    foreach (float t in poleParams)
                     {
-                        float centerDist = b * HORIZ_LEN + HORIZ_HALF - BEAM_JOINT_OVERLAP * 0.5f;
-                        float t = Mathf.Clamp01(centerDist / edgeDist);
-                        Vector2 localCenter = Vector2.Lerp(localEdgeA, localEdgeB, t);
-                        if (IsInsideAnyHearthOpening(localCenter.x, localCenter.y, deckOpenings))
-                            continue;
-
-                        Vector3 center = cA + dir * (b * HORIZ_LEN + HORIZ_HALF - BEAM_JOINT_OVERLAP * 0.5f);
-                        center.y = beamY;
-                        SpawnScaffoldPole(horizPrefab, center, beamRot, player);
-                        placed++;
+                        Vector2 local = ScaffoldParamToLocal(t, lMinX, lMaxX, lMinZ, lMaxZ, perimeter);
+                        Vector3 polePos = PieceMap.TransformPlanPoint(origin, local.x, local.y, currentLevelBaseY + scaffoldFloorHeight * 0.5f, rotationDeg);
+                        placed += SpawnScaffoldColumn(vertPrefab, polePos,
+                            Quaternion.Euler(0, rotationDeg, 0), player, scaffoldFloorHeight, POLE_SEGMENT_HEIGHT);
                         if (placed % 10 == 0) yield return new WaitForSeconds(PLACE_DELAY);
                     }
-
-                    if (remainder > 0.05f)
+                }
+                else
+                {
+                    foreach (var fwLocal in fwPoleLocals)
                     {
-                        float centerDist = edgeDist - (HORIZ_HALF - BEAM_JOINT_OVERLAP * 0.5f);
-                        float t = Mathf.Clamp01(centerDist / edgeDist);
-                        Vector2 localCenter = Vector2.Lerp(localEdgeA, localEdgeB, t);
-                        if (IsInsideAnyHearthOpening(localCenter.x, localCenter.y, deckOpenings))
-                            continue;
+                        Vector3 fwPolePos = PieceMap.TransformPlanPoint(origin, fwLocal.x, fwLocal.y,
+                            currentLevelBaseY + scaffoldFloorHeight * 0.5f, rotationDeg);
+                        placed += SpawnScaffoldColumn(vertPrefab, fwPolePos,
+                            Quaternion.Euler(0, rotationDeg, 0), player, scaffoldFloorHeight, POLE_SEGMENT_HEIGHT);
+                        if (placed % 10 == 0) yield return new WaitForSeconds(PLACE_DELAY);
+                    }
+                }
 
-                        Vector3 center = cB - dir * (HORIZ_HALF - BEAM_JOINT_OVERLAP * 0.5f);
-                        center.y = beamY;
-                        SpawnScaffoldPole(horizPrefab, center, beamRot, player);
-                        placed++;
+                // Center pole — always
+                    Vector3 centerPolePos = PieceMap.TransformPlanPoint(origin, localCenterX, localCenterZ, currentLevelBaseY + scaffoldFloorHeight * 0.5f, rotationDeg);
+                placed += SpawnScaffoldColumn(
+                    vertPrefab, centerPolePos, Quaternion.Euler(0, rotationDeg, 0),
+                    player, scaffoldFloorHeight, POLE_SEGMENT_HEIGHT);
+                if (placed % 10 == 0) yield return new WaitForSeconds(PLACE_DELAY);
+
+                // ── Perimeter ring beams ──────────────────────────────────────
+                if (!useFwScaffolding)
+                {
+                    // Rectangular perimeter: corners clockwise SW→SE→NE→NW→SW
+                    var cornerTops = new Vector3[4];
+                    for (int ci = 0; ci < 4; ci++)
+                    {
+                        Vector2 cl = ScaffoldParamToLocal(cornerT[ci], lMinX, lMaxX, lMinZ, lMaxZ, perimeter);
+                        cornerTops[ci] = PieceMap.TransformPlanPoint(origin, cl.x, cl.y, levelTopY, rotationDeg);
+                    }
+                    for (int e = 0; e < 4; e++)
+                    {
+                        Vector2 localEdgeA = ScaffoldParamToLocal(cornerT[edgeFrom[e]], lMinX, lMaxX, lMinZ, lMaxZ, perimeter);
+                        Vector2 localEdgeB = ScaffoldParamToLocal(cornerT[edgeTo[e]], lMinX, lMaxX, lMinZ, lMaxZ, perimeter);
+                        Vector3 cA = cornerTops[edgeFrom[e]];
+                        Vector3 cB = cornerTops[edgeTo[e]];
+                        float edgeDx = cB.x - cA.x;
+                        float edgeDz = cB.z - cA.z;
+                        float edgeDist = Mathf.Sqrt(edgeDx * edgeDx + edgeDz * edgeDz);
+                        if (edgeDist < 0.1f) continue;
+                        Vector3 dir = new Vector3(edgeDx / edgeDist, 0f, edgeDz / edgeDist);
+                        float beamY = (cA.y + cB.y) * 0.5f;
+                        Quaternion beamRot = Quaternion.Euler(0f, Mathf.Atan2(-dir.z, dir.x) * Mathf.Rad2Deg, 0f);
+                        int nFull = Mathf.FloorToInt(edgeDist / HORIZ_LEN);
+                        float remainder = edgeDist - nFull * HORIZ_LEN;
+                        for (int b = 0; b < nFull; b++)
+                        {
+                            float centerDist = b * HORIZ_LEN + HORIZ_HALF - BEAM_JOINT_OVERLAP * 0.5f;
+                            float t = Mathf.Clamp01(centerDist / edgeDist);
+                            Vector2 localCenter = Vector2.Lerp(localEdgeA, localEdgeB, t);
+                            if (IsInsideAnyHearthOpening(localCenter.x, localCenter.y, deckOpenings)) continue;
+                            Vector3 center = cA + dir * (b * HORIZ_LEN + HORIZ_HALF - BEAM_JOINT_OVERLAP * 0.5f);
+                            center.y = beamY;
+                            SpawnScaffoldPole(horizPrefab, center, beamRot, player);
+                            placed++;
+                            if (placed % 10 == 0) yield return new WaitForSeconds(PLACE_DELAY);
+                        }
+                        if (remainder > 0.05f)
+                        {
+                            float centerDist = edgeDist - (HORIZ_HALF - BEAM_JOINT_OVERLAP * 0.5f);
+                            float t = Mathf.Clamp01(centerDist / edgeDist);
+                            Vector2 localCenter = Vector2.Lerp(localEdgeA, localEdgeB, t);
+                            if (IsInsideAnyHearthOpening(localCenter.x, localCenter.y, deckOpenings)) continue;
+                            Vector3 center = cB - dir * (HORIZ_HALF - BEAM_JOINT_OVERLAP * 0.5f);
+                            center.y = beamY;
+                            SpawnScaffoldPole(horizPrefab, center, beamRot, player);
+                            placed++;
+                            if (placed % 10 == 0) yield return new WaitForSeconds(PLACE_DELAY);
+                        }
+                    }
+                }
+                else
+                {
+                    // FlexiWall arcs: one 2m beam per pair of 1m arc segments, tangent-oriented.
+                    foreach (var chain in fwArcChains)
+                    {
+                        for (int ci = 0; ci + 1 < chain.Count; ci += 2)
+                        {
+                            var sA = chain[ci];
+                            var sB = chain[ci + 1];
+                            float localCX = (sA.Lx + sB.Lx) * 0.5f;
+                            float localCZ = (sA.Lz + sB.Lz) * 0.5f;
+                            if (IsInsideAnyHearthOpening(localCX, localCZ, deckOpenings)) continue;
+                            float tanRad = sA.YawDeg * Mathf.Deg2Rad;
+                            Vector2 worldTan = PieceMap.TransformLocalXZ(
+                                Mathf.Cos(tanRad), Mathf.Sin(tanRad), rotationDeg);
+                            Quaternion fwBeamRot = Quaternion.Euler(0f,
+                                Mathf.Atan2(-worldTan.y, worldTan.x) * Mathf.Rad2Deg, 0f);
+                            Vector3 fwBeamCenter = PieceMap.TransformPlanPoint(
+                                origin, localCX, localCZ, levelTopY, rotationDeg);
+                            SpawnScaffoldPole(horizPrefab, fwBeamCenter, fwBeamRot, player);
+                            placed++;
+                            if (placed % 10 == 0) yield return new WaitForSeconds(PLACE_DELAY);
+                        }
+                    }
+                }
+
+                // ── Fill ring beam gaps between adjacent arc endpoints ────────
+                // Each FlexiWall arc ends where the next begins (doorway, junction).
+                // The ring beam loop above only covers arc interiors, so connect
+                // endpoint pairs from different arcs that are close but not coincident.
+                if (useFwScaffolding && fwArcChains.Count > 1)
+                {
+                    var arcEndptLocals = new List<Vector2>(fwArcChains.Count * 2);
+                    for (int fi = 0; fi < fwArcChains.Count; fi++)
+                    {
+                        var ch = fwArcChains[fi];
+                        arcEndptLocals.Add(new Vector2(ch[0].Lx, ch[0].Lz));
+                        arcEndptLocals.Add(new Vector2(ch[ch.Count - 1].Lx, ch[ch.Count - 1].Lz));
+                    }
+                    for (int ai = 0; ai < arcEndptLocals.Count; ai++)
+                    {
+                        for (int aj = ai + 1; aj < arcEndptLocals.Count; aj++)
+                        {
+                            if ((ai / 2) == (aj / 2)) continue; // same arc
+                            var localA = arcEndptLocals[ai];
+                            var localB = arcEndptLocals[aj];
+                            float gapDist = Vector2.Distance(localA, localB);
+                            if (gapDist < 0.1f || gapDist > POLE_SPACING) continue;
+                            Vector3 worldA = PieceMap.TransformPlanPoint(
+                                origin, localA.x, localA.y, levelTopY, rotationDeg);
+                            Vector3 worldB = PieceMap.TransformPlanPoint(
+                                origin, localB.x, localB.y, levelTopY, rotationDeg);
+                            placed += PlaceScaffoldBeamSpan(
+                                localA, localB, worldA, worldB,
+                                horizPrefab, vertPrefab, player,
+                                doorCenters, supportFurnitureExclusions,
+                                occupiedPoleLocals, deckOpenings);
+                            if (placed % 10 == 0) yield return new WaitForSeconds(PLACE_DELAY);
+                        }
+                    }
+                }
+
+                // ── FlexiWall star spokes: each arc pole → center pole ────────
+                if (useFwScaffolding)
+                {
+                    var centerLocal  = new Vector2(localCenterX, localCenterZ);
+                    Vector3 centerTopPos = PieceMap.TransformPlanPoint(
+                        origin, localCenterX, localCenterZ, levelTopY, rotationDeg);
+                    foreach (var fwLocal in fwPoleLocals)
+                    {
+                        Vector3 spokeEndPos = PieceMap.TransformPlanPoint(
+                            origin, fwLocal.x, fwLocal.y, levelTopY, rotationDeg);
+                        placed += PlaceScaffoldBeamSpan(
+                            fwLocal, centerLocal, spokeEndPos, centerTopPos,
+                            horizPrefab, vertPrefab, player,
+                            doorCenters, supportFurnitureExclusions, occupiedPoleLocals, deckOpenings);
                         if (placed % 10 == 0) yield return new WaitForSeconds(PLACE_DELAY);
                     }
                 }
 
                 // ── Place transverse beams (West to East) for this level ─────
-                if (useTransverseScaffoldingBeams)
+                if (!useFwScaffolding && useTransverseScaffoldingBeams)
                 {
                     placed += PlaceTransverseBeams(
                         poleParams, width, depth, lMinX, lMaxX, lMinZ, lMaxZ, perimeter,
@@ -4757,7 +4882,7 @@ namespace ValheimFloorPlan
                 }
 
                 // ── Place longitudinal beams (South to North) for this level ─
-                if (useLongitudinalScaffoldingBeams)
+                if (!useFwScaffolding && useLongitudinalScaffoldingBeams)
                 {
                     placed += PlaceLongitudinalBeams(
                         poleParams, width, depth, lMinX, lMaxX, lMinZ, lMaxZ, perimeter,
@@ -4768,6 +4893,31 @@ namespace ValheimFloorPlan
                 if (ValheimFloorPlanPlugin.ScaffoldingFloors)
                 {
                     bool isTopmostLevel = level == scaffoldLevels - 1;
+
+                    // For FlexiWall plans: find the actual arc extents along the
+                    // gable ridge centreline (x ≈ localCenterX) so that ridge-tip
+                    // apex support columns land on the ring beams, not on the
+                    // bounding-box edge which may be outside the arc.
+                    float fwRidgeSouthZ = -1f, fwRidgeNorthZ = -1f;
+                    if (useFwScaffolding)
+                    {
+                        const float BAND = 2f; // ±2m from centreline
+                        float bestS = float.MaxValue, bestN = float.MinValue;
+                        foreach (var chain in fwArcChains)
+                        {
+                            foreach (var seg in chain)
+                            {
+                                if (Mathf.Abs(seg.Lx - localCenterX) < BAND)
+                                {
+                                    if (seg.Lz < bestS) bestS = seg.Lz;
+                                    if (seg.Lz > bestN) bestN = seg.Lz;
+                                }
+                            }
+                        }
+                        if (bestS < float.MaxValue) fwRidgeSouthZ = bestS;
+                        if (bestN > float.MinValue) fwRidgeNorthZ = bestN;
+                    }
+
                     placed += PlaceScaffoldLevelFloorDeck(
                         minCol, maxColExclusive, minRow, maxRowExclusive,
                         origin, rotationDeg,
@@ -4775,7 +4925,9 @@ namespace ValheimFloorPlan
                         floor2Prefab, floor1Prefab, roofTopPrefab,
                         topLowerRoofPrefab, topLowerSupportPrefab, vertPrefab, horizPrefab,
                         levelTopY,
-                        isTopmostLevel, deckOpenings, player);
+                        isTopmostLevel, deckOpenings, player,
+                        fwRidgeSouthZ, fwRidgeNorthZ,
+                        fwArcPolygon);
                 }
 
                 if (hearthOpenings.Count > 0 && chimneyWall2Prefab != null)
@@ -4823,7 +4975,9 @@ namespace ValheimFloorPlan
             GameObject? topLowerRoofPrefab, GameObject? topLowerSupportPrefab, GameObject? gableApexPolePrefab, GameObject? gableApexRidgeBeamPrefab,
             float gableApexPoleBaseY,
             bool useRoofTop,
-            List<HearthOpening> hearthOpenings, Player player)
+            List<HearthOpening> hearthOpenings, Player player,
+            float ridgeSouthEdgeZ = -1f, float ridgeNorthEdgeZ = -1f,
+            List<Vector2>? arcPolygon = null)
         {
             bool useFlatRidgeTop =
                 useRoofTop &&
@@ -4840,17 +4994,10 @@ namespace ValheimFloorPlan
                 if (ValheimFloorPlanPlugin.UseGableFloorUnderlay())
                 {
                     placed += PlaceScaffoldFlatDeckTiles(
-                        minCol,
-                        maxColExclusive,
-                        minRow,
-                        maxRowExclusive,
-                        origin,
-                        rotationDeg,
-                        deckY,
-                        floor2Prefab,
-                        floor1Prefab,
-                        hearthOpenings,
-                        player);
+                        minCol, maxColExclusive, minRow, maxRowExclusive,
+                        origin, rotationDeg, deckY,
+                        floor2Prefab, floor1Prefab,
+                        hearthOpenings, player, arcPolygon);
                 }
 
                 placed += PlaceTopScaffoldGableRoof(
@@ -4867,38 +5014,27 @@ namespace ValheimFloorPlan
                     gableApexRidgeBeamPrefab,
                     gableApexPoleBaseY,
                     hearthOpenings,
-                    player);
+                    player,
+                    ridgeSouthEdgeZ,
+                    ridgeNorthEdgeZ,
+                    arcPolygon);
                     return placed;
             }
 
             if (useFlatRidgeTop)
             {
                 return PlaceTopScaffoldFlatRidgeRoof(
-                    minCol,
-                    maxColExclusive,
-                    minRow,
-                    maxRowExclusive,
-                    origin,
-                    rotationDeg,
-                    deckY,
-                    roofTopPrefab!,
-                    floor1Prefab,
-                    hearthOpenings,
-                    player);
+                    minCol, maxColExclusive, minRow, maxRowExclusive,
+                    origin, rotationDeg, deckY,
+                    roofTopPrefab!, floor1Prefab,
+                    hearthOpenings, player, arcPolygon);
             }
 
             return PlaceScaffoldFlatDeckTiles(
-                minCol,
-                maxColExclusive,
-                minRow,
-                maxRowExclusive,
-                origin,
-                rotationDeg,
-                deckY,
-                floor2Prefab,
-                floor1Prefab,
-                hearthOpenings,
-                player);
+                minCol, maxColExclusive, minRow, maxRowExclusive,
+                origin, rotationDeg, deckY,
+                floor2Prefab, floor1Prefab,
+                hearthOpenings, player, arcPolygon);
         }
 
         private int PlaceScaffoldFlatDeckTiles(
@@ -4912,7 +5048,8 @@ namespace ValheimFloorPlan
             GameObject floor2Prefab,
             GameObject floor1Prefab,
             List<HearthOpening> hearthOpenings,
-            Player player)
+            Player player,
+            List<Vector2>? arcPolygon = null)
         {
             int placed = 0;
             Quaternion deckRot = Quaternion.Euler(0f, rotationDeg, 0f);
@@ -4931,14 +5068,16 @@ namespace ValheimFloorPlan
 
                     if (tileClear)
                     {
-                        float dx = (col + 1f) * PieceMap.CELL_SIZE;
-                        float dz = (row + 1f) * PieceMap.CELL_SIZE;
-                        Vector3 deckPos = PieceMap.TransformPlanPoint(origin, dx, dz, deckY, rotationDeg);
+                        float cx2 = (col + 1f) * PieceMap.CELL_SIZE;
+                        float cz2 = (row + 1f) * PieceMap.CELL_SIZE;
+                        if (arcPolygon != null && !IsInsideArcPolygon(cx2, cz2, arcPolygon)) goto fallback1x1;
+                        Vector3 deckPos = PieceMap.TransformPlanPoint(origin, cx2, cz2, deckY, rotationDeg);
                         SpawnRegisteredPiece(floor2Prefab, deckPos, deckRot, player);
                         placed++;
                         continue;
                     }
 
+                    fallback1x1:
                     int rowMax = Mathf.Min(row + 2, maxRowExclusive);
                     int colMax = Mathf.Min(col + 2, maxColExclusive);
                     for (int rr = row; rr < rowMax; rr++)
@@ -4947,10 +5086,11 @@ namespace ValheimFloorPlan
                         {
                             if (IsBlockedByHearthOpening(cc, rr, hearthOpenings))
                                 continue;
-
-                            float dx = (cc + 0.5f) * PieceMap.CELL_SIZE;
-                            float dz = (rr + 0.5f) * PieceMap.CELL_SIZE;
-                            Vector3 deckPos = PieceMap.TransformPlanPoint(origin, dx, dz, deckY, rotationDeg);
+                            float cx1 = (cc + 0.5f) * PieceMap.CELL_SIZE;
+                            float cz1 = (rr + 0.5f) * PieceMap.CELL_SIZE;
+                            if (arcPolygon != null && !IsInsideOrNearArcPolygon(cx1, cz1, 0.5f, arcPolygon))
+                                continue;
+                            Vector3 deckPos = PieceMap.TransformPlanPoint(origin, cx1, cz1, deckY, rotationDeg);
                             SpawnRegisteredPiece(floor1Prefab, deckPos, deckRot, player);
                             placed++;
                         }
@@ -4973,12 +5113,11 @@ namespace ValheimFloorPlan
             GameObject ridgeRoofPrefab,
             GameObject fallbackFloor1Prefab,
             List<HearthOpening> hearthOpenings,
-            Player player)
+            Player player,
+            List<Vector2>? arcPolygon = null)
         {
             int placed = 0;
 
-            // Flat ridge mode intentionally places one ridge cap per 2x2 tile.
-            // This prevents double-density overlap and keeps long edges touching.
             bool longEdgeAlongX = (maxColExclusive - minCol) >= (maxRowExclusive - minRow);
             Quaternion ridgeRot = Quaternion.Euler(0f, longEdgeAlongX ? rotationDeg : rotationDeg + 90f, 0f);
             Quaternion floorRot = Quaternion.Euler(0f, rotationDeg, 0f);
@@ -4997,14 +5136,16 @@ namespace ValheimFloorPlan
 
                     if (tileClear)
                     {
-                        float dx = (col + 1f) * PieceMap.CELL_SIZE;
-                        float dz = (row + 1f) * PieceMap.CELL_SIZE;
-                        Vector3 roofPos = PieceMap.TransformPlanPoint(origin, dx, dz, deckY, rotationDeg);
+                        float cx2 = (col + 1f) * PieceMap.CELL_SIZE;
+                        float cz2 = (row + 1f) * PieceMap.CELL_SIZE;
+                        if (arcPolygon != null && !IsInsideArcPolygon(cx2, cz2, arcPolygon)) goto fallback1x1r;
+                        Vector3 roofPos = PieceMap.TransformPlanPoint(origin, cx2, cz2, deckY, rotationDeg);
                         SpawnRegisteredPiece(ridgeRoofPrefab, roofPos, ridgeRot, player);
                         placed++;
                         continue;
                     }
 
+                    fallback1x1r:
                     int rowMax = Mathf.Min(row + 2, maxRowExclusive);
                     int colMax = Mathf.Min(col + 2, maxColExclusive);
                     for (int rr = row; rr < rowMax; rr++)
@@ -5013,10 +5154,11 @@ namespace ValheimFloorPlan
                         {
                             if (IsBlockedByHearthOpening(cc, rr, hearthOpenings))
                                 continue;
-
-                            float dx = (cc + 0.5f) * PieceMap.CELL_SIZE;
-                            float dz = (rr + 0.5f) * PieceMap.CELL_SIZE;
-                            Vector3 floorPos = PieceMap.TransformPlanPoint(origin, dx, dz, deckY, rotationDeg);
+                            float cx1 = (cc + 0.5f) * PieceMap.CELL_SIZE;
+                            float cz1 = (rr + 0.5f) * PieceMap.CELL_SIZE;
+                            if (arcPolygon != null && !IsInsideOrNearArcPolygon(cx1, cz1, 0.5f, arcPolygon))
+                                continue;
+                            Vector3 floorPos = PieceMap.TransformPlanPoint(origin, cx1, cz1, deckY, rotationDeg);
                             SpawnRegisteredPiece(fallbackFloor1Prefab, floorPos, floorRot, player);
                             placed++;
                         }
@@ -5041,7 +5183,10 @@ namespace ValheimFloorPlan
             GameObject? apexRidgeBeamPrefab,
             float apexPoleBaseY,
             List<HearthOpening> hearthOpenings,
-            Player player)
+            Player player,
+            float ridgeSouthEdgeZ = -1f,
+            float ridgeNorthEdgeZ = -1f,
+            List<Vector2>? arcPolygon = null)
         {
             int placed = 0;
             // Keep gable apex ridge aligned to the plan's north-south axis.
@@ -5108,8 +5253,9 @@ namespace ValheimFloorPlan
             else
             {
                 float centerX = (minCol + maxColExclusive) * 0.5f;
-                float southEdgeZ = minRow;
-                float northEdgeZ = maxRowExclusive;
+                // Use arc-snapped edge if provided; otherwise fall back to bounding box edge.
+                float southEdgeZ = (ridgeSouthEdgeZ >= 0f) ? ridgeSouthEdgeZ : minRow;
+                float northEdgeZ = (ridgeNorthEdgeZ >= 0f) ? ridgeNorthEdgeZ : maxRowExclusive;
                 float centerZ = (minRow + maxRowExclusive) * 0.5f;
                 float westEdgeX = minCol;
                 float eastEdgeX = maxColExclusive;
@@ -5121,40 +5267,67 @@ namespace ValheimFloorPlan
                     int stripDepth = Mathf.Min(2, maxRowExclusive - row);
                     float localZ = row + stripDepth * 0.5f;
 
-                    placed += PlaceSlopedRoofRun(
-                        new Vector2(westEdgeX, localZ),
-                        new Vector2(centerX, localZ),
-                        roofBaseY,
-                        ridgeY,
-                        270f,
-                        SLOPED_SEGMENT_LENGTH,
-                        supportPrefab,
-                        roofPrefab,
-                        origin,
-                        rotationDeg,
-                        hearthOpenings,
-                        player);
-                    placed += PlaceSlopedRoofRun(
-                        new Vector2(eastEdgeX, localZ),
-                        new Vector2(centerX, localZ),
-                        roofBaseY,
-                        ridgeY,
-                        90f,
-                        SLOPED_SEGMENT_LENGTH,
-                        supportPrefab,
-                        roofPrefab,
-                        origin,
-                        rotationDeg,
-                        hearthOpenings,
-                        player);
+                    // For FlexiWall layouts, find the actual arc boundary at this Z so
+                    // sloped runs start from the arc edge rather than the bounding box.
+                    float runWestX = westEdgeX, runEastX = eastEdgeX;
+                    bool hasWestRun = true, hasEastRun = true;
+                    if (arcPolygon != null)
+                    {
+                        float bx;
+                        hasWestRun = TryGetArcBoundaryX(localZ, arcPolygon, findMin: true,  out bx) && bx < centerX;
+                        if (hasWestRun) runWestX = bx;
+                        hasEastRun = TryGetArcBoundaryX(localZ, arcPolygon, findMin: false, out bx) && bx > centerX;
+                        if (hasEastRun) runEastX = bx;
+                        // Skip strips shorter than one segment — stubs near the apex look wrong.
+                        if (hasWestRun && centerX - runWestX < SLOPED_SEGMENT_LENGTH) hasWestRun = false;
+                        if (hasEastRun && runEastX - centerX < SLOPED_SEGMENT_LENGTH) hasEastRun = false;
+                    }
+
+                    // Compute the correct Y at the arc boundary by projecting it onto the full
+                    // gable slope, so every strip shares the nominal pitch angle.
+                    float westStartY = roofBaseY, eastStartY = roofBaseY;
+                    if (arcPolygon != null)
+                    {
+                        if (hasWestRun)
+                            westStartY = Mathf.Lerp(roofBaseY, ridgeY,
+                                Mathf.Clamp01((runWestX - westEdgeX) / halfSpan));
+                        if (hasEastRun)
+                            eastStartY = Mathf.Lerp(roofBaseY, ridgeY,
+                                Mathf.Clamp01((eastEdgeX - runEastX) / halfSpan));
+                    }
+
+                    if (hasWestRun)
+                    {
+                        // Support column at arc boundary if the run starts above deck level.
+                        if (westStartY > roofBaseY + 0.1f)
+                            placed += PlaceGableApexSupportColumnIfClear(
+                                runWestX, localZ, roofBaseY, westStartY,
+                                origin, rotationDeg, apexPolePrefab, hearthOpenings, player);
+                        placed += PlaceSlopedRoofRun(
+                            new Vector2(runWestX, localZ), new Vector2(centerX, localZ),
+                            westStartY, ridgeY, 270f, SLOPED_SEGMENT_LENGTH,
+                            supportPrefab, roofPrefab, origin, rotationDeg, hearthOpenings, player);
+                    }
+
+                    if (hasEastRun)
+                    {
+                        if (eastStartY > roofBaseY + 0.1f)
+                            placed += PlaceGableApexSupportColumnIfClear(
+                                runEastX, localZ, roofBaseY, eastStartY,
+                                origin, rotationDeg, apexPolePrefab, hearthOpenings, player);
+                        placed += PlaceSlopedRoofRun(
+                            new Vector2(runEastX, localZ), new Vector2(centerX, localZ),
+                            eastStartY, ridgeY, 90f, SLOPED_SEGMENT_LENGTH,
+                            supportPrefab, roofPrefab, origin, rotationDeg, hearthOpenings, player);
+                    }
                 }
 
                 placed += PlaceGableApexSupportColumnIfClear(centerX, southEdgeZ, apexPoleBaseY, ridgeY, origin, rotationDeg, apexPolePrefab, hearthOpenings, player);
                 placed += PlaceGableApexSupportColumnIfClear(centerX, northEdgeZ, apexPoleBaseY, ridgeY, origin, rotationDeg, apexPolePrefab, hearthOpenings, player);
                 placed += PlaceGableApexSupportColumnIfClear(centerX, centerZ, apexPoleBaseY, ridgeY, origin, rotationDeg, apexPolePrefab, hearthOpenings, player);
                 placed += PlaceGableApexRidgePoleSpan(
-                    new Vector2(centerX, minRow),
-                    new Vector2(centerX, maxRowExclusive),
+                    new Vector2(centerX, southEdgeZ),
+                    new Vector2(centerX, northEdgeZ),
                     ridgeY,
                     origin,
                     rotationDeg,
@@ -6555,6 +6728,105 @@ namespace ValheimFloorPlan
         private GameObject SpawnScaffoldPole(GameObject prefab, Vector3 pos, Quaternion rot, Player player)
         {
             return SpawnRegisteredPiece(prefab, pos, rot, player);
+        }
+
+        // ── FlexiWall arc polygon helpers ─────────────────────────────────────
+
+        /// <summary>
+        /// Concatenates FlexiWall arc chains into a single ordered perimeter polygon
+        /// by greedily connecting each chain's nearest free endpoint.
+        /// Returns local-space (Lx, Lz) points as Vector2 (x = local X, y = local Z).
+        /// </summary>
+        private static List<Vector2> BuildArcPerimeterPolygon(List<List<FlexiWallSegment>> chains)
+        {
+            if (chains.Count == 0) return new List<Vector2>();
+
+            var remaining = new List<List<FlexiWallSegment>>(chains);
+            var ordered   = new List<FlexiWallSegment>(chains.Count * 20);
+            foreach (var seg in remaining[0]) ordered.Add(seg);
+            remaining.RemoveAt(0);
+
+            while (remaining.Count > 0)
+            {
+                var last = ordered[ordered.Count - 1];
+                float lx = last.Lx, lz = last.Lz;
+                int bestIdx = 0; bool bestReverse = false; float bestDist = float.MaxValue;
+                for (int i = 0; i < remaining.Count; i++)
+                {
+                    var ch = remaining[i];
+                    float dS = Mathf.Sqrt((ch[0].Lx-lx)*(ch[0].Lx-lx)+(ch[0].Lz-lz)*(ch[0].Lz-lz));
+                    float dE = Mathf.Sqrt((ch[ch.Count-1].Lx-lx)*(ch[ch.Count-1].Lx-lx)+(ch[ch.Count-1].Lz-lz)*(ch[ch.Count-1].Lz-lz));
+                    if (dS < bestDist) { bestDist = dS; bestIdx = i; bestReverse = false; }
+                    if (dE < bestDist) { bestDist = dE; bestIdx = i; bestReverse = true;  }
+                }
+                var next = remaining[bestIdx];
+                remaining.RemoveAt(bestIdx);
+                if (bestReverse) { for (int i = next.Count-1; i >= 0; i--) ordered.Add(next[i]); }
+                else             { foreach (var seg in next) ordered.Add(seg); }
+            }
+
+            var poly = new List<Vector2>(ordered.Count);
+            foreach (var seg in ordered) poly.Add(new Vector2(seg.Lx, seg.Lz));
+            return poly;
+        }
+
+        /// <summary>
+        /// Ray-cast point-in-polygon test for local plan coords.
+        /// polygon.y holds local Z (Lz).  Returns false if polygon is null or too small.
+        /// </summary>
+        private static bool IsInsideArcPolygon(float localX, float localZ, List<Vector2> polygon)
+        {
+            if (polygon == null || polygon.Count < 3) return false;
+            int n = polygon.Count;
+            bool inside = false;
+            for (int i = 0, j = n - 1; i < n; j = i++)
+            {
+                float xi = polygon[i].x, zi = polygon[i].y;
+                float xj = polygon[j].x, zj = polygon[j].y;
+                if (((zi > localZ) != (zj > localZ)) &&
+                    localX < (xj - xi) * (localZ - zi) / (zj - zi) + xi)
+                    inside = !inside;
+            }
+            return inside;
+        }
+
+        /// <summary>
+        /// Returns true if the point is inside the arc polygon OR within <paramref name="margin"/>
+        /// of it (by probing center + 4 cardinal offsets). Used for edge floor tiles that may
+        /// sit just outside the chord-approximated polygon boundary.
+        /// </summary>
+        private static bool IsInsideOrNearArcPolygon(float localX, float localZ, float margin, List<Vector2> polygon)
+        {
+            return IsInsideArcPolygon(localX,        localZ,        polygon)
+                || IsInsideArcPolygon(localX - margin, localZ,        polygon)
+                || IsInsideArcPolygon(localX + margin, localZ,        polygon)
+                || IsInsideArcPolygon(localX,        localZ - margin, polygon)
+                || IsInsideArcPolygon(localX,        localZ + margin, polygon);
+        }
+
+        /// <summary>
+        /// Finds the leftmost (findMin=true) or rightmost (findMin=false) X where the
+        /// horizontal line at <paramref name="localZ"/> crosses the arc polygon.
+        /// Returns false when the line misses the polygon entirely.
+        /// </summary>
+        private static bool TryGetArcBoundaryX(float localZ, List<Vector2> polygon, bool findMin, out float boundaryX)
+        {
+            boundaryX = findMin ? float.MaxValue : float.MinValue;
+            bool found = false;
+            int n = polygon.Count;
+            for (int i = 0, j = n - 1; i < n; j = i++)
+            {
+                float zi = polygon[i].y, zj = polygon[j].y;
+                if ((zi > localZ) != (zj > localZ))
+                {
+                    float xi = polygon[i].x, xj = polygon[j].x;
+                    float x = xi + (localZ - zi) / (zj - zi) * (xj - xi);
+                    if (!found) { boundaryX = x; found = true; }
+                    else if (findMin && x < boundaryX) boundaryX = x;
+                    else if (!findMin && x > boundaryX) boundaryX = x;
+                }
+            }
+            return found;
         }
     }
 }
