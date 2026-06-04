@@ -4,7 +4,7 @@ Build complete multi-level structures in Valheim from pre-designed floor plans.
 
 Anyone who has spent time building in Valheim knows the real effort starts before the first wall goes up — clearing uneven ground, wrestling with terrain spikes, and nudging pieces into alignment one agonising centimetre at a time. **Valheim Floor Plan** takes all of that away. Design your layout in the included browser-based Designer, save it as a `.vfp` plan file, and the mod handles the rest: it levels and blends the terrain, captures a snapshot for instant undo, and places the entire foundation in seconds.
 
-The Designer supports up to three in-memory level layouts with quick switching, per-level overlay rendering, and cross-level clash hints so you can plan multi-storey builds before committing a single piece. Orientation-sensitive tools — including Beds, Workbenches, and Staircases — show directional arrows so what you see in the Designer matches exactly what gets built in-game.
+The Designer supports up to three in-memory level layouts with quick switching, per-level overlay rendering, and cross-level clash hints so you can plan multi-storey builds before committing a single piece. Orientation-sensitive tools — including Beds, Workbenches, and Staircases — show directional arrows so what you see in the Designer matches exactly what gets built in-game. The **FlexiWall** tool lets you draw curved stone walls of any shape — arcs, sweeping curves, and full circles — that are not constrained to the rectangular grid.
 
 Once you're happy with the design, press the build hotkey, position the preview in-world, and confirm. The mod levels the terrain, places every piece in the right order, and handles scaffold framing for upper floors automatically. For multi-level builds, additional red floating rectangles appear in the preview at each upper-floor height so you can see the full vertical footprint before committing. If something is off, undo restores both pieces and terrain in one keypress — or use the keep-terrain undo (`Ctrl+F9`) to remove pieces while leaving the leveled ground intact.
 
@@ -81,6 +81,35 @@ This package includes two components:
 **IMPORTANT:** Terrain can only be restored within the **current session** — if you leave the area or reload, the terrain snapshot is lost. Building pieces can be undone across sessions because they are tagged as built by Valheim Floor Plan.
 
 **Tip — keep the leveled terrain:** if you want to remove your build but keep the flat ground (e.g. to iterate on a design), use **Ctrl+F9** (`UndoKeepTerrainHotkey`) instead of F9. Pieces are removed as normal, but the terrain snapshot is discarded rather than restored.
+
+## FlexiWall Tool
+
+The FlexiWall tool draws curved or straight walls along any path in the Designer. Walls are built in-game as stacked stone pieces following the arc, with the same brick-bond row offset as regular walls.
+
+### Drawing a FlexiWall
+
+1. Select the **FlexiWall** tool from the piece selector.
+2. Click a **start cell** — a green dot appears to confirm the start position.
+3. Click an **end cell** — a straight wall preview appears between the two cells.
+4. Drag the **midpoint handle** (white circle) to bend the wall into a curve. The arc updates live as you drag.
+
+To remove a placed FlexiWall, switch to the FlexiWall tool and right-click the midpoint handle.
+
+### Endpoint snapping
+
+FlexiWall endpoints snap to the cell-edge boundary that is tangential to the arc at that point, rather than to the cell centre. This means two FlexiWalls that share a cell boundary will meet at exactly the same world coordinate — no gap in the build.
+
+Green and red dots on placed walls show the exact snapped start and end positions so you can see where each wall begins and ends.
+
+### Closing a circle
+
+To build a complete ring, place the start and end cells adjacent to each other (one cell apart), then drag the midpoint handle to the opposite side of the circle. The Designer will draw a closed ring and the builder will produce a full circle of wall pieces.
+
+For very large circles, or if you want separate arcs with a doorway gap, you can use two FlexiWalls end-to-end.
+
+### FlexiWalls in multi-level builds
+
+FlexiWalls work in Level 1, Level 2, and Level 3 plan files. Upper-level FlexiWalls are placed at the correct scaffold-deck height alongside other upper-level pieces. The footprint validation and terrain levelling area both include FlexiWall extent, so a plan containing only FlexiWalls (no regular grid pieces) still produces a correct build preview and levelled pad.
 
 ## Preset Bundle Workflow (In Game)
 
@@ -256,6 +285,8 @@ The `samples/` folder contains ready-to-use `.vfp` examples:
 - `samples/Workbenches_16x20.vfp`
 - `samples/Workbenches_and_Staircase_16x20.vfp`
 - `samples/Workbenches_and_Staircase_ALT_16x20.vfp`
+- `samples/RoundHouse.vfp` — FlexiWall arc walls forming a round house layout
+- `samples/Circle.vfp` — single closed FlexiWall ring
 
 ## Tips
 
@@ -269,6 +300,8 @@ The `samples/` folder contains ready-to-use `.vfp` examples:
 - **Use Ctrl+F9 to keep your leveled ground.** If you want to remove the build and try again without re-leveling, press `Ctrl+F9` instead of `F9` to start undo. Pieces are removed but the leveled terrain stays. This is especially useful when iterating on a design in the same spot.
 - **The preview shows all floor levels.** When `FloorPlanLevels` is 2 or 3, floating red bands appear during preview at the height of each upper floor. Use them to check clearance and surroundings before confirming.
 - **Adjust the undo radius before confirming.** During the undo confirmation window, `+`/`-` resizes the search circle and arrow keys reposition it. This is useful when two builds are close together and you only want to remove one.
+- **FlexiWalls meet cleanly at shared cell boundaries.** When two FlexiWalls share a cell boundary, their endpoints snap to the same edge midpoint, so there is no gap at the join. Use the green and red endpoint dots in the Designer to confirm the snap positions before saving.
+- **Use adjacent cells for a full circle.** Select start and end cells that are one cell apart, then drag the midpoint handle to the far side of the ring. The Designer preview and the in-game build will both produce a closed circle.
 - **Multi-level plans must nest.** Level 2 and Level 3 footprints must fit within the Level 1 footprint. If a level file is rejected at build time, check that all its pieces fall inside the Level 1 grid boundary.
 - **Scaffolding settings are forced on for multi-level builds.** When `FloorPlanLevels > 1`, `RoofScaffolding`, `ScaffoldingFloors`, `TransverseScaffoldingBeams`, and `LongitudinalScaffoldingBeams` are all automatically enabled. You do not need to set them manually.
 

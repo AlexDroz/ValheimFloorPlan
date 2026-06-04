@@ -80,7 +80,8 @@ namespace ValheimFloorPlan
             { "Bed",      new PieceDef("bed",                    2, 4, 0f, 180) },
             { "Staircase", new PieceDef("wood_floor_1x1",        4, 4, 0f,   0) },
             { "Workbench", new PieceDef("piece_workbench",       4, 4, 0f,   0) },
-            { "Wall",     new PieceDef("stone_wall_2x1",         2, 1, 0.5f, 0) }, // 1 m tall → centre +0.5 m
+            { "Wall",      new PieceDef("stone_wall_2x1",         2, 1, 0.5f, 0) }, // 1 m tall → centre +0.5 m
+            { "FlexiWall", new PieceDef("stone_wall_1x1",         1, 1, 0.5f, 0) }, // 1x1 stone; wood variant resolved at build time
             { "Doorway",  new PieceDef("wood_door",               2, 1, 1f,   0) },
             { "Pillar",   new PieceDef("stone_pillar",            1, 1, 1f,   0) }, // 2 m tall → centre +1 m
             { "Hearth",   new PieceDef("hearth",                  4, 3, 0f,   0) },

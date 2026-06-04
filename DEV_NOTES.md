@@ -88,6 +88,37 @@ z = origin.z + dx * sin(rotation) + dz * cos(rotation)
 - For `WallPillarMaterial=Wood`: `Wall -> wood_wall_half`, `Pillar -> wood_pole_log`, with outward alignment shift for perimeter pieces.
 - `wallFace=inner` rotates wood walls by 180 degrees only for interior walls (perimeter walls are forced outward).
 
+## FlexiWall Placement Details
+
+FlexiWall segments are computed by `ComputeFlexiWallSegments` (straight or arc path) and placed in a stacked loop in `FloorPlanBuilder.cs`.
+
+### Brick-Bond Row Offset
+
+Every other row is shifted -0.5m along the wall tangent to create a brick-bond pattern. **Rows are counted 1-indexed from the ground** (s=0 = row 1):
+
+- **1-indexed odd rows** (s=0, 2, 4... → `s % 2 == 0`): no shift — standard position.
+- **1-indexed even rows** (s=1, 3, 5... → `s % 2 != 0`): shifted -0.5m along the tangent for all segments except segment 0 (the start anchor).
+
+```
+Row 1 (s=0):  [seg0]  [seg1]  [seg2]  ...  [segN-1]      ← normal positions
+Row 2 (s=1):  [seg0]   [s1]    [s2]   ...  [sN-1]  [cap]  ← shifted -0.5m + cap
+Row 3 (s=2):  [seg0]  [seg1]  [seg2]  ...  [segN-1]      ← normal
+...
+```
+
+### Wall-End Closing Brick
+
+On shifted rows, the last segment's brick is pulled back 0.5m, leaving a gap at the wall end. A closing brick is placed to fill it:
+
+- Cap loop: `for (int s = 1; s < fwStackCount; s += 2)` — matches the shifted rows only.
+- Cap position: **`segCenter`** (no extra tangent offset beyond the last segment center).
+
+This makes the cap's right edge (`segCenter + 0.5m`) flush with the unshifted rows' right edge, so the wall end is flat on both row types.
+
+**Common mistake:** placing the cap at `segCenter + 0.5f` overshoots the wall end by 0.5m, causing shifted rows to extend further than unshifted rows and producing a ragged staircase-like end. The cap must be at `segCenter + 0f`.
+
+**Other common mistake:** using `s % 2 == 0` for the shift condition puts the offset on 1-indexed *odd* rows (ground, row 3, etc.) instead of even rows — visually swaps which rows have the brick-bond offset.
+
 ## Coordinate System
 - Local `col`/`row` offsets are converted through `PieceMap.TransformPlanPoint` (mirrored X transform + rotation).
 - In local plan space, `row` increases toward `+Z` before transform.
@@ -441,4 +472,4 @@ Side View (vertical progression)
 - Yard strategy options and tradeoffs are tracked in `YARD_STRATEGY_NOTES.md`.
 
 ## Last Verified
-- 2026-05-28
+- 2026-06-04

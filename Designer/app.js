@@ -32,6 +32,7 @@ const state = {
   activeLayoutIndex: 0,
   layouts: [createEmptyLayout(), createEmptyLayout(), createEmptyLayout()],
   overlayEnabled: [false, false, false],
+  flexiWall: { phase: "idle", col1: 0, row1: 0, dragging: false, dragIndex: -1, dragMoved: false, dragJustEnded: false },
 };
 
 const pieceColors = {
@@ -42,6 +43,7 @@ const pieceColors = {
   Workbench: "#8d5a32",
   Reserve: "#f59e0b",
   Hearth: "#8a4b3a",
+  FlexiWall: "#8b8f99",
   Wall: "#8b8f99",
   Doorway: "#3aa65a",
   Pillar: "#2db6ab",
@@ -280,7 +282,7 @@ function getOverlapInfo() {
   const topOverlappingPieceIndexes = new Set();
   const nonFloor = state.pieces
     .map((p, i) => ({ p, i }))
-    .filter(({ p }) => !isFloorType(p.type));
+    .filter(({ p }) => !isFloorType(p.type) && p.type !== "FlexiWall");
   for (let a = 0; a < nonFloor.length - 1; a += 1) {
     for (let b = a + 1; b < nonFloor.length; b += 1) {
       if (obbOverlap(getPieceObb(nonFloor[a].p), getPieceObb(nonFloor[b].p))) {
@@ -303,8 +305,7 @@ function getVisibleLayerIndexes() {
 }
 
 function shouldCountToolOverlap(pieceType) {
-  // Treat non-floor pieces as tools/structure candidates for cross-layer clash hints.
-  return !isFloorType(pieceType);
+  return !isFloorType(pieceType) && pieceType !== "FlexiWall";
 }
 
 function extendsUpwardToHigherLevels(pieceType) {
@@ -376,6 +377,7 @@ function pieceLayerOrder(type) {
       return 2;
     case "Hearth":
       return 2;
+    case "FlexiWall":
     case "Wall":
       return 3;
     case "Doorway":
@@ -409,6 +411,7 @@ function lightenHexColor(hex, amount = 0.55) {
 }
 
 function pieceOccupiesCell(piece, col, row) {
+  if (piece.type === "FlexiWall") return false;
   const { w, h } = effectiveSize(piece.type, piece.rot);
   return col >= piece.col && col < piece.col + w && row >= piece.row && row < piece.row + h;
 }
@@ -661,6 +664,275 @@ function withPieceRotation(x, y, w, h, rotation, callback) {
   }
 }
 
+const ARC_HANDLE_RADIUS_PX = 9;
+
+function circumcircleFromThreePoints(x1, y1, x2, y2, x3, y3) {
+  const ax = x2 - x1, ay = y2 - y1;
+  const bx = x3 - x1, by = y3 - y1;
+  const D = 2 * (ax * by - ay * bx);
+  if (Math.abs(D) < 1e-10) return null;
+  const ux = (by * (ax * ax + ay * ay) - ay * (bx * bx + by * by)) / D;
+  const uy = (ax * (bx * bx + by * by) - bx * (ax * ax + ay * ay)) / D;
+  return { cx: x1 + ux, cy: y1 + uy, r: Math.sqrt(ux * ux + uy * uy) };
+}
+
+// Tangent direction of the FlexiWall arc at one of its endpoint cells.
+// col/row: the cell whose tangent we want.  otherCol/otherRow: the other endpoint cell.
+// mx/my: arc midpoint (grid float coords).  isEnd: true if col/row is the END of the arc.
+// Returns {x, y} (not normalised) in the direction the arc is travelling at that endpoint.
+function flexiWallEdgeTangent(col, row, otherCol, otherRow, mx, my, isEnd) {
+  const thisCX = col + 0.5,  thisCY = row + 0.5;
+  const otherCX = otherCol + 0.5, otherCY = otherRow + 0.5;
+  const startX = isEnd ? otherCX : thisCX, startY = isEnd ? otherCY : thisCY;
+  const endX   = isEnd ? thisCX  : otherCX, endY   = isEnd ? thisCY  : otherCY;
+  const circ = circumcircleFromThreePoints(startX, startY, mx, my, endX, endY);
+  if (!circ) {
+    return { x: endX - startX, y: endY - startY };
+  }
+  const rx = thisCX - circ.cx, ry = thisCY - circ.cy;
+  // Determine traversal direction (CCW vs CW) from start→mx cross start→end
+  const crossZ = (mx - startX) * (endY - startY) - (my - startY) * (endX - startX);
+  return crossZ >= 0 ? { x: -ry, y: rx } : { x: ry, y: -rx };
+}
+
+// Snap an endpoint position to the midpoint of the cell edge the arc enters/exits through.
+// tan: forward tangent direction at this endpoint.  isEnd: arc arrives here (true) or departs (false).
+function snapToTangentEdge(col, row, tan, isEnd) {
+  // START snaps to the BACK edge (opposite of tangent — where the arc came from).
+  // END snaps to the FRONT edge (same as tangent — where the arc exits to).
+  // Adjacent cells sharing the same boundary therefore produce identical coordinates.
+  const dx = isEnd ? tan.x : -tan.x;
+  const dy = isEnd ? tan.y : -tan.y;
+  if (Math.abs(dx) >= Math.abs(dy)) {
+    return dx > 0 ? { x: col + 1, y: row + 0.5 } : { x: col, y: row + 0.5 };
+  } else {
+    return dy > 0 ? { x: col + 0.5, y: row + 1 } : { x: col + 0.5, y: row };
+  }
+}
+
+// Recompute snapped x1,y1,x2,y2 for a FlexiWall piece (requires col1/row1/col2/row2/mx/my).
+// Coincident endpoints (adjacent cells, near-complete circle) are allowed — drawArcBand handles them.
+function applyFlexiWallSnap(p) {
+  const t1 = flexiWallEdgeTangent(p.col1, p.row1, p.col2, p.row2, p.mx, p.my, false);
+  const t2 = flexiWallEdgeTangent(p.col2, p.row2, p.col1, p.row1, p.mx, p.my, true);
+  const s1 = snapToTangentEdge(p.col1, p.row1, t1, false);
+  const s2 = snapToTangentEdge(p.col2, p.row2, t2, true);
+  p.x1 = s1.x; p.y1 = s1.y;
+  p.x2 = s2.x; p.y2 = s2.y;
+}
+
+// Derive the cell col/row for a FlexiWall endpoint from its (possibly snapped) coordinate.
+// otherX/otherY: the OTHER endpoint's position (used to disambiguate edge midpoints).
+// isEnd: whether this is the END point of the arc.
+function deriveFlexiWallCell(px, py, otherX, otherY, isEnd) {
+  const xFrac = px - Math.floor(px);
+  const yFrac = py - Math.floor(py);
+  // Old format: cell centre (.5, .5)
+  if (Math.abs(xFrac - 0.5) < 0.01 && Math.abs(yFrac - 0.5) < 0.01)
+    return { col: Math.floor(px), row: Math.floor(py) };
+  let col = Math.floor(px), row = Math.floor(py);
+  if (Math.abs(xFrac) < 0.01 || Math.abs(xFrac - 1) < 0.01) {
+    // Vertical edge: x is an integer.
+    // END front-snaps: right edge (x=col+1) if arc heads right → col = xi-1.
+    // START back-snaps: left edge (x=col) if arc heads right → col = xi.
+    const xi = Math.round(px);
+    col = isEnd ? (otherX < px ? xi - 1 : xi) : (otherX > px ? xi : xi - 1);
+  }
+  if (Math.abs(yFrac) < 0.01 || Math.abs(yFrac - 1) < 0.01) {
+    // Horizontal edge: y is an integer.
+    const yi = Math.round(py);
+    row = isEnd ? (otherY < py ? yi - 1 : yi) : (otherY > py ? yi : yi - 1);
+  }
+  return { col, row };
+}
+
+function drawArcBand(x1, y1, x2, y2, mx, my, originX, originY, cell) {
+  const HALF = 0.5;
+  const gx = g => originX + g * cell;
+  const gy = g => originY + g * cell;
+
+  // Coincident endpoints: adjacent-cell near-complete circle. Draw a full ring.
+  // Centre = midpoint of the boundary point and the midpoint handle (opposite point on circle).
+  if (Math.abs(x1 - x2) < 0.02 && Math.abs(y1 - y2) < 0.02) {
+    const cx = (x1 + mx) / 2, cy = (y1 + my) / 2;
+    const r = Math.sqrt((x1 - cx) ** 2 + (y1 - cy) ** 2);
+    if (r < 0.01) return;
+    const innerR = Math.max(0.5 * cell, (r - HALF) * cell);
+    const outerR = (r + HALF) * cell;
+    ctx.beginPath();
+    ctx.arc(gx(cx), gy(cy), outerR, 0, 2 * Math.PI);
+    ctx.arc(gx(cx), gy(cy), innerR, 0, 2 * Math.PI, true);
+    ctx.closePath();
+    return;
+  }
+
+  const circ = circumcircleFromThreePoints(x1, y1, mx, my, x2, y2);
+
+  if (!circ) {
+    const dx = x2 - x1, dy = y2 - y1;
+    const len = Math.sqrt(dx * dx + dy * dy);
+    if (len < 1e-10) return;
+    const nx = (-dy / len) * HALF, ny = (dx / len) * HALF;
+    ctx.beginPath();
+    ctx.moveTo(gx(x1 + nx), gy(y1 + ny));
+    ctx.lineTo(gx(x2 + nx), gy(y2 + ny));
+    ctx.lineTo(gx(x2 - nx), gy(y2 - ny));
+    ctx.lineTo(gx(x1 - nx), gy(y1 - ny));
+    ctx.closePath();
+    return;
+  }
+
+  const { cx, cy, r } = circ;
+  const cxPx = gx(cx), cyPx = gy(cy);
+  const startA = Math.atan2(y1 - cy, x1 - cx);
+  const endA   = Math.atan2(y2 - cy, x2 - cx);
+  const midA   = Math.atan2(my - cy, mx - cx);
+  const norm   = a => ((a % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI);
+  const s = norm(startA), e = norm(endA), m = norm(midA);
+  const cwSpan = ((e - s) + 2 * Math.PI) % (2 * Math.PI);
+  const mFromS = ((m - s) + 2 * Math.PI) % (2 * Math.PI);
+  const anticlockwise = mFromS > cwSpan;
+  const innerR = Math.max(0.5 * cell, (r - HALF) * cell);
+  const outerR = (r + HALF) * cell;
+
+  ctx.beginPath();
+  ctx.arc(cxPx, cyPx, outerR, startA, endA, anticlockwise);
+  ctx.arc(cxPx, cyPx, innerR, endA, startA, !anticlockwise);
+  ctx.closePath();
+}
+
+function canvasEventToGridFloat(ev) {
+  const rect = canvas.getBoundingClientRect();
+  const scaleX = canvas.width / rect.width;
+  const scaleY = canvas.height / rect.height;
+  const { cell, originX, originY } = gridLayout();
+  return {
+    x: ((ev.clientX - rect.left) * scaleX - originX) / cell,
+    y: ((ev.clientY - rect.top)  * scaleY - originY) / cell,
+  };
+}
+
+function flexiWallHandleHit(ev) {
+  const aw = state.flexiWall;
+  const rect = canvas.getBoundingClientRect();
+  const scaleX = canvas.width / rect.width;
+  const scaleY = canvas.height / rect.height;
+  const px = (ev.clientX - rect.left) * scaleX;
+  const py = (ev.clientY - rect.top)  * scaleY;
+  const { cell, originX, originY } = gridLayout();
+  const dx = px - (originX + aw.mx * cell);
+  const dy = py - (originY + aw.my * cell);
+  return Math.sqrt(dx * dx + dy * dy) <= ARC_HANDLE_RADIUS_PX;
+}
+
+function findPlacedFlexiWallAtHandle(ev) {
+  const rect = canvas.getBoundingClientRect();
+  const scaleX = canvas.width / rect.width;
+  const scaleY = canvas.height / rect.height;
+  const px = (ev.clientX - rect.left) * scaleX;
+  const py = (ev.clientY - rect.top)  * scaleY;
+  const { cell, originX, originY } = gridLayout();
+  for (let i = state.pieces.length - 1; i >= 0; i--) {
+    const p = state.pieces[i];
+    if (p.type !== "FlexiWall") continue;
+    const dx = px - (originX + p.mx * cell);
+    const dy = py - (originY + p.my * cell);
+    if (Math.sqrt(dx * dx + dy * dy) <= ARC_HANDLE_RADIUS_PX) return i;
+  }
+  return -1;
+}
+
+function cancelFlexiWall() {
+  state.flexiWall.phase = "idle";
+  state.flexiWall.dragging = false;
+  state.flexiWall.dragIndex = -1;
+}
+
+function drawFlexiWallPieces(originX, originY, cell) {
+  const showHandles = state.currentPiece === "FlexiWall";
+  const gx = g => originX + g * cell;
+  const gy = g => originY + g * cell;
+  for (const p of state.pieces) {
+    if (p.type !== "FlexiWall") continue;
+    ctx.fillStyle = pieceColors.FlexiWall;
+    ctx.globalAlpha = 0.75;
+    drawArcBand(p.x1, p.y1, p.x2, p.y2, p.mx, p.my, originX, originY, cell);
+    ctx.fill();
+    ctx.strokeStyle = "rgba(0,0,0,0.35)";
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+    if (showHandles) {
+      ctx.fillStyle = "#ffffff";
+      ctx.strokeStyle = pieceColors.FlexiWall;
+      ctx.lineWidth = 1.5;
+      ctx.globalAlpha = 0.7;
+      ctx.beginPath();
+      ctx.arc(gx(p.mx), gy(p.my), ARC_HANDLE_RADIUS_PX, 0, 2 * Math.PI);
+      ctx.fill();
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+      // Start endpoint marker (green) and end endpoint marker (red) at actual snapped positions
+      ctx.globalAlpha = 0.85;
+      ctx.fillStyle = "#22c55e";
+      ctx.beginPath();
+      ctx.arc(gx(p.x1), gy(p.y1), 4, 0, 2 * Math.PI);
+      ctx.fill();
+      ctx.fillStyle = "#ef4444";
+      ctx.beginPath();
+      ctx.arc(gx(p.x2), gy(p.y2), 4, 0, 2 * Math.PI);
+      ctx.fill();
+      ctx.globalAlpha = 1;
+    }
+  }
+}
+
+function drawFlexiWallPreview(originX, originY, cell) {
+  const aw = state.flexiWall;
+  const gx = g => originX + g * cell;
+  const gy = g => originY + g * cell;
+  const color = pieceColors.FlexiWall;
+
+  if (aw.phase === "idle") {
+    if (state.hover.col < 0) return;
+    ctx.fillStyle = color;
+    ctx.globalAlpha = 0.55;
+    ctx.beginPath();
+    ctx.arc(gx(state.hover.col + 0.5), gy(state.hover.row + 0.5), 5, 0, 2 * Math.PI);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+    return;
+  }
+
+  if (aw.phase === "placing-end") {
+    // Always show the start cell indicator so the first click gives immediate feedback.
+    ctx.fillStyle = "#22c55e";
+    ctx.globalAlpha = 0.85;
+    ctx.beginPath();
+    ctx.arc(gx(aw.col1 + 0.5), gy(aw.row1 + 0.5), 5, 0, 2 * Math.PI);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+
+    if (state.hover.col < 0) return;
+    const col2 = state.hover.col, row2 = state.hover.row;
+    const pmx = (aw.col1 + 0.5 + col2 + 0.5) / 2, pmy = (aw.row1 + 0.5 + row2 + 0.5) / 2;
+    const tmp = { col1: aw.col1, row1: aw.row1, col2, row2, mx: pmx, my: pmy };
+    applyFlexiWallSnap(tmp);
+    const smx = (tmp.x1 + tmp.x2) / 2, smy = (tmp.y1 + tmp.y2) / 2;
+    ctx.fillStyle = color;
+    ctx.globalAlpha = 0.35;
+    drawArcBand(tmp.x1, tmp.y1, tmp.x2, tmp.y2, smx, smy, originX, originY, cell);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.arc(gx(tmp.x1), gy(tmp.y1), 5, 0, 2 * Math.PI);
+    ctx.fill();
+    return;
+  }
+
+}
+
 function draw() {
   const { cell, gridW, gridH, originX, originY } = gridLayout();
   const { topOverlappingPieceIndexes } = getOverlapInfo();
@@ -698,6 +970,7 @@ function draw() {
 
   for (const entry of orderedPieces) {
     const p = entry.piece;
+    if (p.type === "FlexiWall") continue;
     const { w, h } = effectiveSize(p.type, p.rot);
     const x = originX + p.col * cell;
     const y = originY + p.row * cell;
@@ -736,6 +1009,7 @@ function draw() {
     const strokeColor = levelOverlayStrokeColors[levelIndex] || "#ffffff";
     for (const entry of overlayPieces) {
       const p = entry.piece;
+      if (p.type === "FlexiWall") continue;
       const { w, h } = effectiveSize(p.type, p.rot);
       const x = originX + p.col * cell;
       const y = originY + p.row * cell;
@@ -783,7 +1057,7 @@ function draw() {
   }
   ctx.setLineDash([]);
 
-  if (state.hover.col >= 0 && state.hover.row >= 0) {
+  if (state.currentPiece !== "FlexiWall" && state.hover.col >= 0 && state.hover.row >= 0) {
     const { w, h } = effectiveSize(state.currentPiece, state.rotation);
     const x = originX + state.hover.col * cell;
     const y = originY + state.hover.row * cell;
@@ -798,10 +1072,8 @@ function draw() {
     const isOrthogonal = Math.abs(normalizedRotation - nearestOrth) < ROTATION_EPSILON;
 
     if (isOrthogonal) {
-      // Keep snapped tools aligned to their occupied grid footprint.
       ctx.fillRect(x, y, wPx, hPx);
     } else {
-      // For non-orth rotations (Workbench), rotate the preview rectangle.
       const cx = x + wPx * 0.5;
       const cy = y + hPx * 0.5;
       ctx.save();
@@ -814,6 +1086,8 @@ function draw() {
     drawPieceOrientation(state.currentPiece, state.rotation, x, y, wPx, hPx, true);
   }
 
+  drawFlexiWallPieces(originX, originY, cell);
+  drawFlexiWallPreview(originX, originY, cell);
   drawGridCenterLines(originX, originY, gridW, gridH);
 }
 
@@ -845,6 +1119,19 @@ function parseVfp(text) {
       if (!Number.isInteger(col) || !Number.isInteger(row)) continue;
       next.pieces.push({ col, row, type, rot });
     }
+
+    if (line.startsWith("flexiwall,") || line.startsWith("arcwall,")) {
+      const parts = line.split(",");
+      if (parts.length < 7) continue;
+      const [, x1, y1, x2, y2, mx, my] = parts.map(Number);
+      if ([x1, y1, x2, y2, mx, my].some(v => !Number.isFinite(v))) continue;
+      const c1 = deriveFlexiWallCell(x1, y1, x2, y2, false);
+      const c2 = deriveFlexiWallCell(x2, y2, x1, y1, true);
+      const p = { type: "FlexiWall", col1: c1.col, row1: c1.row, col2: c2.col, row2: c2.row,
+                  x1, y1, x2, y2, mx, my };
+      applyFlexiWallSnap(p);
+      next.pieces.push(p);
+    }
   }
 
   return next;
@@ -853,7 +1140,12 @@ function parseVfp(text) {
 function serializeVfp() {
   const lines = [`cols=${state.cols}`, `rows=${state.rows}`];
   for (const p of state.pieces) {
-    lines.push(`piece,${p.col},${p.row},${p.type},${p.rot || 0}`);
+    if (p.type === "FlexiWall") {
+      const fmt = v => Math.round(v * 1000) / 1000;
+      lines.push(`flexiwall,${fmt(p.x1)},${fmt(p.y1)},${fmt(p.x2)},${fmt(p.y2)},${fmt(p.mx)},${fmt(p.my)}`);
+    } else {
+      lines.push(`piece,${p.col},${p.row},${p.type},${p.rot || 0}`);
+    }
   }
   return `${lines.join("\n")}\n`;
 }
@@ -1014,6 +1306,22 @@ function addAt(col, row) {
 
 canvas.addEventListener("mousemove", (ev) => {
   state.isCanvasHovered = true;
+  if (state.currentPiece === "FlexiWall") {
+    const aw = state.flexiWall;
+    if (aw.dragging && aw.dragIndex >= 0) {
+      const { x, y } = canvasEventToGridFloat(ev);
+      const p = state.pieces[aw.dragIndex];
+      p.mx = x; p.my = y;
+      if (p.col1 !== undefined) applyFlexiWallSnap(p);
+      aw.dragMoved = true;
+    } else {
+      const { col, row } = canvasEventToGridCell(ev);
+      state.hover.col = (col >= 0 && col < state.cols) ? col : -1;
+      state.hover.row = (row >= 0 && row < state.rows) ? row : -1;
+    }
+    draw();
+    return;
+  }
   const { col, row } = canvasEventToGridCell(ev);
   if (col >= 0 && col < state.cols && row >= 0 && row < state.rows) {
     state.hover.col = col;
@@ -1036,7 +1344,64 @@ canvas.addEventListener("mouseenter", () => {
   state.isCanvasHovered = true;
 });
 
-canvas.addEventListener("click", () => {
+canvas.addEventListener("mousedown", (ev) => {
+  if (state.currentPiece !== "FlexiWall") return;
+  const aw = state.flexiWall;
+  if (aw.phase === "idle") {
+    const idx = findPlacedFlexiWallAtHandle(ev);
+    if (idx >= 0) {
+      aw.dragging = true;
+      aw.dragIndex = idx;
+      aw.dragMoved = false;
+      ev.preventDefault();
+    }
+  }
+});
+
+canvas.addEventListener("mouseup", () => {
+  if (state.currentPiece !== "FlexiWall") return;
+  const aw = state.flexiWall;
+  if (aw.dragging) {
+    const moved = aw.dragMoved;
+    aw.dragging = false;
+    aw.dragIndex = -1;
+    aw.dragMoved = false;
+    if (moved) {
+      aw.dragJustEnded = true;
+      markDirty(true);
+    }
+  }
+});
+
+canvas.addEventListener("click", (ev) => {
+  if (state.currentPiece === "FlexiWall") {
+    const aw = state.flexiWall;
+    if (aw.dragJustEnded) {
+      aw.dragJustEnded = false;
+      return;
+    }
+    if (aw.phase === "idle") {
+      if (state.hover.col < 0) return;
+      aw.col1 = state.hover.col;
+      aw.row1 = state.hover.row;
+      aw.phase = "placing-end";
+    } else if (aw.phase === "placing-end") {
+      if (state.hover.col < 0) return;
+      const col2 = state.hover.col, row2 = state.hover.row;
+      if (aw.col1 === col2 && aw.row1 === row2) return;
+      const pmx = (aw.col1 + 0.5 + col2 + 0.5) / 2, pmy = (aw.row1 + 0.5 + row2 + 0.5) / 2;
+      const newPiece = { type: "FlexiWall", col1: aw.col1, row1: aw.row1, col2, row2,
+                         x1: 0, y1: 0, x2: 0, y2: 0, mx: pmx, my: pmy };
+      applyFlexiWallSnap(newPiece);
+      newPiece.mx = (newPiece.x1 + newPiece.x2) / 2;
+      newPiece.my = (newPiece.y1 + newPiece.y2) / 2;
+      state.pieces.push(newPiece);
+      markDirty(true);
+      aw.phase = "idle";
+    }
+    draw();
+    return;
+  }
   if (state.hover.col < 0 || state.hover.row < 0) return;
   addAt(state.hover.col, state.hover.row);
   draw();
@@ -1044,6 +1409,17 @@ canvas.addEventListener("click", () => {
 
 canvas.addEventListener("contextmenu", (ev) => {
   ev.preventDefault();
+  if (state.currentPiece === "FlexiWall") {
+    const idx = findPlacedFlexiWallAtHandle(ev);
+    if (idx >= 0) {
+      state.pieces.splice(idx, 1);
+      markDirty(true);
+    } else {
+      cancelFlexiWall();
+    }
+    draw();
+    return;
+  }
   const { col, row } = canvasEventToGridCell(ev);
   if (col < 0 || col >= state.cols || row < 0 || row >= state.rows) return;
   removeTopMostAt(col, row);
@@ -1242,6 +1618,7 @@ for (const cb of overlayCheckboxes) {
 for (const radio of pieceTypeRadios) {
   radio.addEventListener("change", () => {
     if (!radio.checked) return;
+    if (state.currentPiece === "FlexiWall") cancelFlexiWall();
     state.currentPiece = radio.value;
     syncRotationControlsForCurrentTool();
     draw();
@@ -1261,6 +1638,12 @@ canvas.addEventListener("wheel", (ev) => {
 }, { passive: false });
 
 window.addEventListener("keydown", (ev) => {
+  if (ev.key === "Escape" && state.currentPiece === "FlexiWall") {
+    cancelFlexiWall();
+    draw();
+    return;
+  }
+
   if (ev.altKey && !ev.shiftKey && !ev.ctrlKey && !ev.metaKey) {
     if (ev.key === "1" || ev.key === "2" || ev.key === "3") {
       ev.preventDefault();

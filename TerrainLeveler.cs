@@ -879,6 +879,18 @@ namespace ValheimFloorPlan
                 if (p.Row + effH > maxRow) maxRow = p.Row + effH;
             }
 
+            foreach (var fw in plan.FlexiWalls)
+            {
+                int fwMinCol = Mathf.FloorToInt(Mathf.Min(fw.X1, Mathf.Min(fw.X2, fw.Mx)));
+                int fwMaxCol = Mathf.CeilToInt( Mathf.Max(fw.X1, Mathf.Max(fw.X2, fw.Mx)));
+                int fwMinRow = Mathf.FloorToInt(Mathf.Min(fw.Y1, Mathf.Min(fw.Y2, fw.My)));
+                int fwMaxRow = Mathf.CeilToInt( Mathf.Max(fw.Y1, Mathf.Max(fw.Y2, fw.My)));
+                if (fwMinCol < minCol) minCol = fwMinCol;
+                if (fwMaxCol > maxCol) maxCol = fwMaxCol;
+                if (fwMinRow < minRow) minRow = fwMinRow;
+                if (fwMaxRow > maxRow) maxRow = fwMaxRow;
+            }
+
             if (minCol == int.MaxValue)
             {
                 minCol = 0;

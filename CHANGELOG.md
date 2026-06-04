@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.0.4
+
+- **New FlexiWall tool in the Designer:** draw curved or straight walls of any shape — arcs, circles, sweeping curves — that are not constrained to the rectangular grid. Select the tool, click a start cell, click an end cell, then drag the midpoint handle to bend the arc into shape. Endpoints snap automatically to the correct cell-edge boundary so adjacent FlexiWalls meet without gaps.
+- **Full circle support:** placing start and end in adjacent cells and dragging the midpoint to the opposite side of the circle produces a closed ring wall — both in the Designer preview and the in-game build.
+- **FlexiWall on upper levels:** FlexiWalls defined in Level 2 / Level 3 plan files are now built at the correct scaffold-deck height alongside other upper-level pieces.
+- **Brick-bond stacking:** built FlexiWalls use the same alternating-row offset pattern as straight walls, stacked to `ExternalWallHeight` (per level), so curved walls visually match the rest of the structure.
+- **Preview and terrain footprint now include FlexiWalls:** the in-world build preview rectangle, terrain levelling, terrain snapshot, and multi-level footprint validation all correctly account for FlexiWall extent even when no regular grid pieces are present.
+- **New sample plans:** `RoundHouse.vfp` and `Circle.vfp` demonstrate FlexiWall-only layouts.
+
 ## 2.0.3
 
 - **New `FloorPlanDirectory` config option:** Set this to a folder path and the `FloorPlanFile`, `FloorPlanFileLevel2`, and `FloorPlanFileLevel3` fields can then be bare filenames instead of full paths. Preset bundles are also read from and written to this folder when set. Existing deployments with full paths in the file fields continue to work unchanged — full absolute paths are always used as-is regardless of this setting.

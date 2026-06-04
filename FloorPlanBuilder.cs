@@ -2116,6 +2116,68 @@ namespace ValheimFloorPlan
                     Player.m_localPlayer!);
             }
 
+            // ---- FlexiWall pieces (upper level) ------------------------------------
+            var ulFwDef = PieceMap.GetDef("FlexiWall");
+            if (ulFwDef != null && upperPlan.FlexiWalls.Count > 0)
+            {
+                const float UL_FLEXI_WALL_WIDTH = 1f;
+                string ulFwPrefabName = ResolvePrefabName("FlexiWall", ulFwDef.Prefab, useWoodStructure);
+                var ulFwPrefab = ZNetScene.instance?.GetPrefab(ulFwPrefabName);
+                if (ulFwPrefab != null)
+                {
+                    int   ulFwStackCount = configuredExternalWallHeight;
+                    float ulFwStepY      = GetStackStepY("FlexiWall");
+                    float ulFwBaseY      = levelDeckY + ulFwDef.YOffset;
+
+                    foreach (var fw in upperPlan.FlexiWalls)
+                    {
+                        var segments = ComputeFlexiWallSegments(fw, UL_FLEXI_WALL_WIDTH);
+                        for (int segIdx = 0; segIdx < segments.Count; segIdx++)
+                        {
+                            var seg = segments[segIdx];
+                            Vector3 segCenter = PieceMap.TransformPlanPoint(
+                                origin, seg.Lx, seg.Lz, origin.y, rotationDeg);
+                            float ulFwYaw = PieceMap.TransformLocalYaw(
+                                -seg.YawDeg + ulFwDef.RotationOffset, rotationDeg);
+                            var ulFwRot = Quaternion.Euler(0f, ulFwYaw, 0f);
+
+                            float tanRad    = seg.YawDeg * Mathf.Deg2Rad;
+                            Vector2 worldTan = PieceMap.TransformLocalXZ(
+                                Mathf.Cos(tanRad), Mathf.Sin(tanRad), rotationDeg);
+
+                            for (int s = 0; s < ulFwStackCount; s++)
+                            {
+                                float brickShift = (segIdx > 0 && s % 2 != 0) ? -0.5f : 0f;
+                                var fwPos = new Vector3(
+                                    segCenter.x + worldTan.x * brickShift,
+                                    ulFwBaseY   + ulFwStepY  * s,
+                                    segCenter.z + worldTan.y * brickShift);
+                                SpawnRegisteredPiece(ulFwPrefab, fwPos, ulFwRot, Player.m_localPlayer!);
+                                placed++;
+                                if (placed % 10 == 0)
+                                    yield return new WaitForSeconds(PLACE_DELAY);
+                            }
+
+                            if (segIdx == segments.Count - 1)
+                            {
+                                for (int s = 1; s < ulFwStackCount; s += 2)
+                                {
+                                    var extraPos = new Vector3(
+                                        segCenter.x,
+                                        ulFwBaseY + ulFwStepY * s,
+                                        segCenter.z);
+                                    SpawnRegisteredPiece(ulFwPrefab, extraPos, ulFwRot, Player.m_localPlayer!);
+                                    placed++;
+                                    if (placed % 10 == 0)
+                                        yield return new WaitForSeconds(PLACE_DELAY);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            // ---- end FlexiWall (upper level) ---------------------------------------
+
             var summaryParts = new List<string>();
             if (skippedPerimeterRule > 0)
                 summaryParts.Add($"{skippedPerimeterRule} perimeter/internal-only");
@@ -3207,6 +3269,83 @@ namespace ValheimFloorPlan
                 }
             }
 
+            // ---- FlexiWall pieces -----------------------------------------------
+            var fwDef = PieceMap.GetDef("FlexiWall");
+            if (fwDef != null && plan.FlexiWalls.Count > 0)
+            {
+                const float FLEXI_WALL_WIDTH = 1f;
+                string fwPrefabName = ResolvePrefabName("FlexiWall", fwDef.Prefab, useWoodStructure);
+                var fwPrefab = ZNetScene.instance?.GetPrefab(fwPrefabName);
+                if (fwPrefab != null)
+                {
+                    int fwStackCount = configuredExternalWallHeight;
+                    float fwStepY    = GetStackStepY("FlexiWall");
+
+                    foreach (var fw in plan.FlexiWalls)
+                    {
+                        var segments = ComputeFlexiWallSegments(fw, FLEXI_WALL_WIDTH);
+                        for (int segIdx = 0; segIdx < segments.Count; segIdx++)
+                        {
+                            var seg = segments[segIdx];
+                            Vector3 segCenter = PieceMap.TransformPlanPoint(
+                                origin, seg.Lx, seg.Lz, origin.y, rotationDeg);
+                            float fwTerrainY = TerrainLeveler.TargetLevelY;
+                            if (Physics.Raycast(
+                                    new Vector3(segCenter.x, TerrainLeveler.TargetLevelY + 300f, segCenter.z),
+                                    Vector3.down, out var fwHit, 600f, 1 << 11))
+                                fwTerrainY = fwHit.point.y;
+
+                            float fwY      = fwTerrainY + fwDef.YOffset;
+                            float fwYaw    = PieceMap.TransformLocalYaw(-seg.YawDeg + fwDef.RotationOffset, rotationDeg);
+                            var   fwRot    = Quaternion.Euler(0f, fwYaw, 0f);
+
+                            // World-space tangent for brick-bond row offset.
+                            float tanRad = seg.YawDeg * Mathf.Deg2Rad;
+                            Vector2 worldTan = PieceMap.TransformLocalXZ(
+                                Mathf.Cos(tanRad), Mathf.Sin(tanRad), rotationDeg);
+
+                            for (int s = 0; s < fwStackCount; s++)
+                            {
+                                // First segment anchors the left edge; alternating rows shift the rest -0.5m.
+                                float brickShift = (segIdx > 0 && s % 2 != 0) ? -0.5f : 0f;
+                                var fwPos = new Vector3(
+                                    segCenter.x + worldTan.x * brickShift,
+                                    fwY + fwStepY * s,
+                                    segCenter.z + worldTan.y * brickShift);
+                                if (placed == 0)
+                                {
+                                    firstPos = fwPos;
+                                    ValheimFloorPlanPlugin.Log.LogInfo(
+                                        $"First piece (FlexiWall): prefab={fwPrefabName} pos={fwPos}");
+                                }
+                                SpawnRegisteredPiece(fwPrefab, fwPos, fwRot, player);
+                                placed++;
+                                if (placed % 10 == 0)
+                                    yield return new WaitForSeconds(PLACE_DELAY);
+                            }
+
+                            // On the last segment, fill the right-edge gap left by the -0.5m shift
+                            // on alternating rows by placing one extra closing brick.
+                            if (segIdx == segments.Count - 1)
+                            {
+                                for (int s = 1; s < fwStackCount; s += 2)
+                                {
+                                    var extraPos = new Vector3(
+                                        segCenter.x,
+                                        fwY + fwStepY * s,
+                                        segCenter.z);
+                                    SpawnRegisteredPiece(fwPrefab, extraPos, fwRot, player);
+                                    placed++;
+                                    if (placed % 10 == 0)
+                                        yield return new WaitForSeconds(PLACE_DELAY);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            // ---- end FlexiWall --------------------------------------------------
+
             ValheimFloorPlanPlugin.Log.LogInfo($"Floor plan complete: {placed} placed, {skipped} skipped.");
             ValheimFloorPlanPlugin.Log.LogInfo($"First piece was at: {firstPos}  — player was at: {origin}");
             ShowBuildProgress($"Placing pieces... done ({placed}/{totalPieces})");
@@ -4030,16 +4169,120 @@ namespace ValheimFloorPlan
         {
             if (!useWoodStructure) return defaultPrefab;
 
-            if (type == "Wall") return "wood_wall_half";
-            if (type == "Pillar") return "wood_pole_log";
+            if (type == "Wall")      return "wood_wall_half";
+            if (type == "FlexiWall") return "wood_wall_quarter";
+            if (type == "Pillar")    return "wood_pole_log";
             return defaultPrefab;
         }
 
         private static float GetStackStepY(string type)
         {
-            if (type == "Wall") return 1f;
+            if (type == "Wall" || type == "FlexiWall") return 1f;
             if (type == "Pillar") return 2f;
             return 0f;
+        }
+
+        private struct FlexiWallSegment
+        {
+            public float Lx;
+            public float Lz;
+            public float YawDeg;
+            public FlexiWallSegment(float lx, float lz, float yawDeg)
+            { Lx = lx; Lz = lz; YawDeg = yawDeg; }
+        }
+
+        // Returns one FlexiWallSegment per wall piece along a FlexiWall path.
+        // Coordinates are in plan-local grid units (same space as col/row * CELL_SIZE).
+        // YawDeg is the local yaw of the wall's 2m length axis (0 = along local X).
+        private static List<FlexiWallSegment> ComputeFlexiWallSegments(
+            FlexiWallPiece fw, float segWidth)
+        {
+            var result = new List<FlexiWallSegment>();
+            float dx = fw.X2 - fw.X1;
+            float dz = fw.Y2 - fw.Y1;
+            float lineLen = Mathf.Sqrt(dx * dx + dz * dz);
+
+            // Full circle: coincident endpoints (adjacent-cell circle).
+            // The midpoint handle is the antipodal point; centre = midpoint of endpoint and handle.
+            if (lineLen < 0.02f)
+            {
+                float fcCx = (fw.X1 + fw.Mx) * 0.5f;
+                float fcCz = (fw.Y1 + fw.My) * 0.5f;
+                float fcR  = Mathf.Sqrt((fw.X1 - fcCx) * (fw.X1 - fcCx) + (fw.Y1 - fcCz) * (fw.Y1 - fcCz));
+                if (fcR < 0.01f) return result;
+                float fcTau   = Mathf.PI * 2f;
+                float fcStart = Mathf.Atan2(fw.Y1 - fcCz, fw.X1 - fcCx);
+                int   fcN     = Mathf.Max(1, Mathf.RoundToInt(fcR * fcTau / segWidth));
+                for (int i = 0; i < fcN; i++)
+                {
+                    float t     = (i + 0.5f) / fcN;
+                    float theta = fcStart + t * fcTau;
+                    result.Add(new FlexiWallSegment(
+                        fcCx + fcR * Mathf.Cos(theta),
+                        fcCz + fcR * Mathf.Sin(theta),
+                        Mathf.Atan2(Mathf.Cos(theta), -Mathf.Sin(theta)) * Mathf.Rad2Deg));
+                }
+                return result;
+            }
+
+            // Height of midpoint above the chord: near-zero → treat as straight
+            float cross = (fw.Mx - fw.X1) * dz - (fw.My - fw.Y1) * dx;
+            bool isStraight = Mathf.Abs(cross) / lineLen < 0.05f;
+
+            if (isStraight)
+            {
+                int n = Mathf.Max(1, Mathf.RoundToInt(lineLen / segWidth));
+                float tx  = dx / lineLen;
+                float tz  = dz / lineLen;
+                float yaw = Mathf.Atan2(tz, tx) * Mathf.Rad2Deg;
+                for (int i = 0; i < n; i++)
+                {
+                    float t = (i + 0.5f) / n;
+                    result.Add(new FlexiWallSegment(fw.X1 + t * dx, fw.Y1 + t * dz, yaw));
+                }
+                return result;
+            }
+
+            // Circumcircle through (X1,Y1), (Mx,My), (X2,Y2)
+            float ax = fw.X1, az = fw.Y1;
+            float bx = fw.Mx, bz = fw.My;
+            float cx = fw.X2, cz = fw.Y2;
+            float D  = 2f * (ax * (bz - cz) + bx * (cz - az) + cx * (az - bz));
+            if (Mathf.Abs(D) < 1e-6f) return result;
+            float a2 = ax * ax + az * az;
+            float b2 = bx * bx + bz * bz;
+            float c2 = cx * cx + cz * cz;
+            float ccx = (a2 * (bz - cz) + b2 * (cz - az) + c2 * (az - bz)) / D;
+            float ccz = (a2 * (cx - bx) + b2 * (ax - cx) + c2 * (bx - ax)) / D;
+            float R   = Mathf.Sqrt((ax - ccx) * (ax - ccx) + (az - ccz) * (az - ccz));
+
+            float angleStart = Mathf.Atan2(az - ccz, ax - ccx);
+            float angleEnd   = Mathf.Atan2(cz - ccz, cx - ccx);
+            float angleMid   = Mathf.Atan2(bz - ccz, bx - ccx);
+
+            // Determine direction (CCW = positive angular travel) by checking whether
+            // the midpoint falls between start and end going counter-clockwise.
+            float tau    = Mathf.PI * 2f;
+            float endOff = ((angleEnd - angleStart) % tau + tau) % tau;
+            float midOff = ((angleMid - angleStart) % tau + tau) % tau;
+            bool  ccw    = midOff < endOff;
+
+            float totalAngle = ccw ? endOff : -(tau - endOff);
+            float arcLen     = R * Mathf.Abs(totalAngle);
+            int   n2         = Mathf.Max(1, Mathf.RoundToInt(arcLen / segWidth));
+
+            for (int i = 0; i < n2; i++)
+            {
+                float t     = (i + 0.5f) / n2;
+                float theta = angleStart + t * totalAngle;
+                float lx    = ccx + R * Mathf.Cos(theta);
+                float lz    = ccz + R * Mathf.Sin(theta);
+                // Tangent is perpendicular to the radius; sign depends on travel direction.
+                float tanX  = ccw ? -Mathf.Sin(theta) :  Mathf.Sin(theta);
+                float tanZ  = ccw ?  Mathf.Cos(theta) : -Mathf.Cos(theta);
+                result.Add(new FlexiWallSegment(lx, lz, Mathf.Atan2(tanZ, tanX) * Mathf.Rad2Deg));
+            }
+            return result;
         }
 
         private static bool IsOnPlanOuterPerimeter(
@@ -4147,6 +4390,24 @@ namespace ValheimFloorPlan
                 if (p.Col + effW > maxColExclusive) maxColExclusive = p.Col + effW;
                 if (p.Row < minRow) minRow = p.Row;
                 if (p.Row + effH > maxRowExclusive) maxRowExclusive = p.Row + effH;
+            }
+
+            // Include FlexiWall control points so plans with only (or mostly) FlexiWalls
+            // compute the same footprint as plans with equivalent regular pieces.
+            foreach (var fw in plan.FlexiWalls)
+            {
+                float xMin = Mathf.Min(fw.X1, Mathf.Min(fw.X2, fw.Mx));
+                float xMax = Mathf.Max(fw.X1, Mathf.Max(fw.X2, fw.Mx));
+                float yMin = Mathf.Min(fw.Y1, Mathf.Min(fw.Y2, fw.My));
+                float yMax = Mathf.Max(fw.Y1, Mathf.Max(fw.Y2, fw.My));
+                int fwMinCol = Mathf.FloorToInt(xMin);
+                int fwMaxCol = Mathf.CeilToInt(xMax);
+                int fwMinRow = Mathf.FloorToInt(yMin);
+                int fwMaxRow = Mathf.CeilToInt(yMax);
+                if (fwMinCol < minCol) minCol = fwMinCol;
+                if (fwMaxCol > maxColExclusive) maxColExclusive = fwMaxCol;
+                if (fwMinRow < minRow) minRow = fwMinRow;
+                if (fwMaxRow > maxRowExclusive) maxRowExclusive = fwMaxRow;
             }
 
             if (minCol == int.MaxValue)
