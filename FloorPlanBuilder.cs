@@ -1870,12 +1870,10 @@ namespace ValheimFloorPlan
                         rotationDeg,
                         levelDeckY + 0.50f,
                         staircaseTargetTopY + 0.75f);
-                    RemoveInterferingUpperRoofPieces(
-                        staircaseOpenings,
-                        origin,
-                        rotationDeg,
-                        staircaseTargetTopY - 0.25f,
-                        staircaseTargetTopY + 6f);
+                    // Do NOT remove roof pieces for staircase shafts — the gable (or flat)
+                    // roof spans the full footprint and should not be punched through above
+                    // a staircase. Only hearth/chimney shafts need a clear vertical channel
+                    // through the roof.
 
                     continue;
                 }
@@ -4656,8 +4654,11 @@ namespace ValheimFloorPlan
                 if (segs.Count == 0) continue;
                 fwArcChains.Add(segs);
 
-                // First pole at arc start
-                fwPoleLocals.Add(new Vector2(segs[0].Lx, segs[0].Lz));
+                // First pole at arc start — skip if a previous arc already placed one here
+                // (happens when two FlexiWall pieces share an endpoint).
+                var startPt = new Vector2(segs[0].Lx, segs[0].Lz);
+                if (!IsNearAnyPole(startPt, fwPoleLocals, POLE_SPACING * 0.35f))
+                    fwPoleLocals.Add(startPt);
                 float accumulated = 0f;
                 for (int si = 1; si < segs.Count; si++)
                 {
@@ -4794,21 +4795,29 @@ namespace ValheimFloorPlan
                 }
                 else
                 {
-                    // FlexiWall arcs: one 2m beam per pair of 1m arc segments, tangent-oriented.
+                    // FlexiWall arcs: one 2m beam per 2-segment span, chord-direction oriented.
+                    // Using the chord from chain[ci] to chain[ci+2] guarantees zero gap between
+                    // consecutive beams. nextJoint = min(ci+2, last) covers the final segment
+                    // even for even-count chains (otherwise the last ~1m before the arc endpoint
+                    // is uncovered, leaving a visible gap at doorways/junctions).
                     foreach (var chain in fwArcChains)
                     {
-                        for (int ci = 0; ci + 1 < chain.Count; ci += 2)
+                        for (int ci = 0; ci < chain.Count - 1; ci += 2)
                         {
+                            int nextJoint = Mathf.Min(ci + 2, chain.Count - 1);
                             var sA = chain[ci];
-                            var sB = chain[ci + 1];
-                            float localCX = (sA.Lx + sB.Lx) * 0.5f;
-                            float localCZ = (sA.Lz + sB.Lz) * 0.5f;
+                            var sC = chain[nextJoint];
+                            float localCX = (sA.Lx + sC.Lx) * 0.5f;
+                            float localCZ = (sA.Lz + sC.Lz) * 0.5f;
                             if (IsInsideAnyHearthOpening(localCX, localCZ, deckOpenings)) continue;
-                            float tanRad = sA.YawDeg * Mathf.Deg2Rad;
-                            Vector2 worldTan = PieceMap.TransformLocalXZ(
-                                Mathf.Cos(tanRad), Mathf.Sin(tanRad), rotationDeg);
+                            float chDX = sC.Lx - sA.Lx;
+                            float chDZ = sC.Lz - sA.Lz;
+                            float chLen = Mathf.Sqrt(chDX * chDX + chDZ * chDZ);
+                            if (chLen < 0.01f) continue;
+                            Vector2 worldCh = PieceMap.TransformLocalXZ(
+                                chDX / chLen, chDZ / chLen, rotationDeg);
                             Quaternion fwBeamRot = Quaternion.Euler(0f,
-                                Mathf.Atan2(-worldTan.y, worldTan.x) * Mathf.Rad2Deg, 0f);
+                                Mathf.Atan2(-worldCh.y, worldCh.x) * Mathf.Rad2Deg, 0f);
                             Vector3 fwBeamCenter = PieceMap.TransformPlanPoint(
                                 origin, localCX, localCZ, levelTopY, rotationDeg);
                             SpawnScaffoldPole(horizPrefab, fwBeamCenter, fwBeamRot, player);
@@ -4839,7 +4848,10 @@ namespace ValheimFloorPlan
                             var localA = arcEndptLocals[ai];
                             var localB = arcEndptLocals[aj];
                             float gapDist = Vector2.Distance(localA, localB);
-                            if (gapDist < 0.1f || gapDist > POLE_SPACING) continue;
+                            // 0.5m lower bound: smaller gaps are handled by Valheim's snap system
+                            // or by ring beams that already overshoot their endpoints; attempting
+                            // to fill them with PlaceScaffoldBeamSpan produces mis-centred beams.
+                            if (gapDist < 0.5f || gapDist > POLE_SPACING) continue;
                             Vector3 worldA = PieceMap.TransformPlanPoint(
                                 origin, localA.x, localA.y, levelTopY, rotationDeg);
                             Vector3 worldB = PieceMap.TransformPlanPoint(
@@ -4993,6 +5005,7 @@ namespace ValheimFloorPlan
                 int placed = 0;
                 if (ValheimFloorPlanPlugin.UseGableFloorUnderlay())
                 {
+                    // Floor underlay respects staircase openings (no deck tiles over shaft).
                     placed += PlaceScaffoldFlatDeckTiles(
                         minCol, maxColExclusive, minRow, maxRowExclusive,
                         origin, rotationDeg, deckY,
@@ -5000,6 +5013,8 @@ namespace ValheimFloorPlan
                         hearthOpenings, player, arcPolygon);
                 }
 
+                // Gable roof panels are never blocked by deck openings — the roof always
+                // covers the full footprint regardless of what openings exist below.
                 placed += PlaceTopScaffoldGableRoof(
                     minCol,
                     maxColExclusive,
@@ -5013,7 +5028,7 @@ namespace ValheimFloorPlan
                     gableApexPolePrefab,
                     gableApexRidgeBeamPrefab,
                     gableApexPoleBaseY,
-                    hearthOpenings,
+                    new List<HearthOpening>(),
                     player,
                     ridgeSouthEdgeZ,
                     ridgeNorthEdgeZ,
@@ -5278,6 +5293,7 @@ namespace ValheimFloorPlan
                         if (hasWestRun) runWestX = bx;
                         hasEastRun = TryGetArcBoundaryX(localZ, arcPolygon, findMin: false, out bx) && bx > centerX;
                         if (hasEastRun) runEastX = bx;
+
                         // Skip strips shorter than one segment — stubs near the apex look wrong.
                         if (hasWestRun && centerX - runWestX < SLOPED_SEGMENT_LENGTH) hasWestRun = false;
                         if (hasEastRun && runEastX - centerX < SLOPED_SEGMENT_LENGTH) hasEastRun = false;
@@ -5298,11 +5314,18 @@ namespace ValheimFloorPlan
 
                     if (hasWestRun)
                     {
-                        // Support column at arc boundary if the run starts above deck level.
-                        if (westStartY > roofBaseY + 0.1f)
-                            placed += PlaceGableApexSupportColumnIfClear(
-                                runWestX, localZ, roofBaseY, westStartY,
-                                origin, rotationDeg, apexPolePrefab, hearthOpenings, player);
+                        // Eave support at arc boundary — bypass hearth/shaft check because
+                        // this is a perimeter column, not an interior one.
+                        if (westStartY > apexPoleBaseY + 0.1f && apexPolePrefab != null)
+                        {
+                            // Root from apexPoleBaseY (ring-beam level) so the pole bottom snap
+                            // aligns with the horizontal ring beams and gets structural support.
+                            float colH = westStartY - apexPoleBaseY;
+                            Vector3 colPos = PieceMap.TransformPlanPoint(origin, runWestX, localZ,
+                                apexPoleBaseY + colH * 0.5f, rotationDeg);
+                            placed += SpawnScaffoldColumn(apexPolePrefab, colPos,
+                                Quaternion.Euler(0f, rotationDeg, 0f), player, colH, 2f);
+                        }
                         placed += PlaceSlopedRoofRun(
                             new Vector2(runWestX, localZ), new Vector2(centerX, localZ),
                             westStartY, ridgeY, 270f, SLOPED_SEGMENT_LENGTH,
@@ -5311,10 +5334,14 @@ namespace ValheimFloorPlan
 
                     if (hasEastRun)
                     {
-                        if (eastStartY > roofBaseY + 0.1f)
-                            placed += PlaceGableApexSupportColumnIfClear(
-                                runEastX, localZ, roofBaseY, eastStartY,
-                                origin, rotationDeg, apexPolePrefab, hearthOpenings, player);
+                        if (eastStartY > apexPoleBaseY + 0.1f && apexPolePrefab != null)
+                        {
+                            float colH = eastStartY - apexPoleBaseY;
+                            Vector3 colPos = PieceMap.TransformPlanPoint(origin, runEastX, localZ,
+                                apexPoleBaseY + colH * 0.5f, rotationDeg);
+                            placed += SpawnScaffoldColumn(apexPolePrefab, colPos,
+                                Quaternion.Euler(0f, rotationDeg, 0f), player, colH, 2f);
+                        }
                         placed += PlaceSlopedRoofRun(
                             new Vector2(runEastX, localZ), new Vector2(centerX, localZ),
                             eastStartY, ridgeY, 90f, SLOPED_SEGMENT_LENGTH,
@@ -5422,20 +5449,23 @@ namespace ValheimFloorPlan
                 return 0;
 
             float extensionHeight = apexY - baseY;
-            Vector3 centerPos = PieceMap.TransformPlanPoint(
-                origin,
-                localX,
-                localZ,
-                baseY + extensionHeight * 0.5f,
-                rotationDeg);
-
-            return SpawnScaffoldColumn(
-                polePrefab,
-                centerPos,
-                Quaternion.Euler(0f, rotationDeg, 0f),
-                player,
-                extensionHeight,
-                POLE_SEGMENT_HEIGHT);
+            // Overlap consecutive segments (same value used for horizontal ring beams) so
+            // Valheim's snap system always connects adjacent pieces and the top segment
+            // naturally penetrates the ridge beam without requiring exact height matching.
+            const float POLE_OVERLAP = 0.08f;
+            float step = POLE_SEGMENT_HEIGHT - POLE_OVERLAP;   // 1.92 m between centres
+            int segCount = Mathf.Max(1, Mathf.CeilToInt(extensionHeight / step));
+            Quaternion rot = Quaternion.Euler(0f, rotationDeg, 0f);
+            float firstCentreY = baseY + POLE_SEGMENT_HEIGHT * 0.5f;
+            int placed = 0;
+            for (int i = 0; i < segCount; i++)
+            {
+                Vector3 segPos = PieceMap.TransformPlanPoint(
+                    origin, localX, localZ, firstCentreY + i * step, rotationDeg);
+                SpawnScaffoldPole(polePrefab, segPos, rot, player);
+                placed++;
+            }
+            return placed;
         }
 
         private int PlaceSlopedRoofRun(
@@ -6027,7 +6057,8 @@ namespace ValheimFloorPlan
                     piece.Col,
                     piece.Row,
                     piece.Col + effW,
-                    piece.Row + effH));
+                    piece.Row + effH,
+                    sourceType: "Staircase"));
             }
 
             return openings;

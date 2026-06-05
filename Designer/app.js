@@ -724,7 +724,8 @@ function applyFlexiWallSnap(p) {
 // Derive the cell col/row for a FlexiWall endpoint from its (possibly snapped) coordinate.
 // otherX/otherY: the OTHER endpoint's position (used to disambiguate edge midpoints).
 // isEnd: whether this is the END point of the arc.
-function deriveFlexiWallCell(px, py, otherX, otherY, isEnd) {
+// mx/my: arc midpoint, used as tiebreaker when both endpoints share the same edge coordinate.
+function deriveFlexiWallCell(px, py, otherX, otherY, isEnd, mx, my) {
   const xFrac = px - Math.floor(px);
   const yFrac = py - Math.floor(py);
   // Old format: cell centre (.5, .5)
@@ -733,15 +734,23 @@ function deriveFlexiWallCell(px, py, otherX, otherY, isEnd) {
   let col = Math.floor(px), row = Math.floor(py);
   if (Math.abs(xFrac) < 0.01 || Math.abs(xFrac - 1) < 0.01) {
     // Vertical edge: x is an integer.
-    // END front-snaps: right edge (x=col+1) if arc heads right → col = xi-1.
-    // START back-snaps: left edge (x=col) if arc heads right → col = xi.
     const xi = Math.round(px);
-    col = isEnd ? (otherX < px ? xi - 1 : xi) : (otherX > px ? xi : xi - 1);
+    if (otherX === px && mx !== undefined) {
+      // Both endpoints on same vertical edge — use arc midpoint to decide which side.
+      col = mx < px ? xi - 1 : xi;
+    } else {
+      col = isEnd ? (otherX < px ? xi - 1 : xi) : (otherX > px ? xi : xi - 1);
+    }
   }
   if (Math.abs(yFrac) < 0.01 || Math.abs(yFrac - 1) < 0.01) {
     // Horizontal edge: y is an integer.
     const yi = Math.round(py);
-    row = isEnd ? (otherY < py ? yi - 1 : yi) : (otherY > py ? yi : yi - 1);
+    if (otherY === py && my !== undefined) {
+      // Both endpoints on same horizontal edge — use arc midpoint to decide which side.
+      row = my < py ? yi - 1 : yi;
+    } else {
+      row = isEnd ? (otherY < py ? yi - 1 : yi) : (otherY > py ? yi : yi - 1);
+    }
   }
   return { col, row };
 }
@@ -1125,8 +1134,8 @@ function parseVfp(text) {
       if (parts.length < 7) continue;
       const [, x1, y1, x2, y2, mx, my] = parts.map(Number);
       if ([x1, y1, x2, y2, mx, my].some(v => !Number.isFinite(v))) continue;
-      const c1 = deriveFlexiWallCell(x1, y1, x2, y2, false);
-      const c2 = deriveFlexiWallCell(x2, y2, x1, y1, true);
+      const c1 = deriveFlexiWallCell(x1, y1, x2, y2, false, mx, my);
+      const c2 = deriveFlexiWallCell(x2, y2, x1, y1, true, mx, my);
       const p = { type: "FlexiWall", col1: c1.col, row1: c1.row, col2: c2.col, row2: c2.row,
                   x1, y1, x2, y2, mx, my };
       applyFlexiWallSnap(p);
