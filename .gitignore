@@ -2,6 +2,8 @@
 bin/
 obj/
 artifacts/
+Designer/node_modules/*
+*_test.*
 
 # VS Code local settings (optional — remove this block if you want to share launch configs)
 .vscode/

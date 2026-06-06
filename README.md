@@ -6,6 +6,8 @@ Anyone who has spent time building in Valheim knows the real effort starts befor
 
 The Designer supports up to three in-memory level layouts with quick switching, per-level overlay rendering, and cross-level clash hints so you can plan multi-storey builds before committing a single piece. Orientation-sensitive tools — including Beds, Workbenches, and Staircases — show directional arrows so what you see in the Designer matches exactly what gets built in-game. The **FlexiWall** tool lets you draw curved stone walls of any shape — arcs, sweeping curves, and full circles — that are not constrained to the rectangular grid.
 
+Excel-style row/column reference labels run along all four edges of the grid to help with precise placement, and furniture pieces (`Bed`, `Staircase`, `Hearth`, `Workbench`) show a small centre handle once placed — drag it to move the piece, click it to select it, then rotate in place with the arrow keys or mouse wheel. Right-click and `Escape` simply cancel whatever's active (tool, selection, or in-progress draw) without deleting anything; to remove a piece, hover it and press `Delete`/`Backspace`.
+
 Once you're happy with the design, press the build hotkey, position the preview in-world, and confirm. The mod levels the terrain, places every piece in the right order, and handles scaffold framing for upper floors automatically. For multi-level builds, additional red floating rectangles appear in the preview at each upper-floor height so you can see the full vertical footprint before committing. If something is off, undo restores both pieces and terrain in one keypress — or use the keep-terrain undo (`Ctrl+F9`) to remove pieces while leaving the leveled ground intact.
 
 This package includes two components:
@@ -93,7 +95,7 @@ The FlexiWall tool draws curved or straight walls along any path in the Designer
 3. Click an **end cell** — a straight wall preview appears between the two cells.
 4. Drag the **midpoint handle** (white circle) to bend the wall into a curve. The arc updates live as you drag.
 
-To remove a placed FlexiWall, switch to the FlexiWall tool and right-click the midpoint handle.
+To remove a placed FlexiWall, click its midpoint handle to select it (shown with a dashed outline, just like furniture pieces), then press `Delete` or `Backspace` — you don't need the FlexiWall tool active to do this.
 
 ### Endpoint snapping
 
@@ -302,6 +304,13 @@ The `samples/` folder contains ready-to-use `.vfp` examples:
 - **Adjust the undo radius before confirming.** During the undo confirmation window, `+`/`-` resizes the search circle and arrow keys reposition it. This is useful when two builds are close together and you only want to remove one.
 - **FlexiWalls meet cleanly at shared cell boundaries.** When two FlexiWalls share a cell boundary, their endpoints snap to the same edge midpoint, so there is no gap at the join. Use the green and red endpoint dots in the Designer to confirm the snap positions before saving.
 - **Use adjacent cells for a full circle.** Select start and end cells that are one cell apart, then drag the midpoint handle to the far side of the ring. The Designer preview and the in-game build will both produce a closed circle.
+- **Use the row/column labels to place pieces precisely.** The Designer prints numeric reference labels along all four grid edges, using the same 0-based numbering as the underlying `col`/`row` values and `.vfp` file contents — handy for lining up pieces or cross-checking coordinates.
+- **Reposition furniture without deleting it.** `Bed`, `Staircase`, `Hearth`, and `Workbench` pieces show a small handle at their centre once placed (or reloaded from a file). Drag the handle to move the piece, click it to select it, then use the arrow keys or mouse wheel to rotate it in place. Press `Escape` or click elsewhere to deselect.
+- **Right-click and Escape only cancel — they never delete.** Both simply back out of whatever's active (an in-progress FlexiWall draw, a piece selection/drag, or the current tool) without removing any pieces, including FlexiWalls. To delete a piece, hover it and press `Delete` or `Backspace` — this also removes the currently selected piece (furniture or FlexiWall) if one is selected.
+- **Deletion is scoped to the active tool's piece type.** With the `Hearth` tool selected, `Delete`/`Backspace` can only remove `Hearth` pieces — Floors, Walls, and other types under the cursor are left untouched. Switch tools (or select a placed piece via its handle, which switches the tool to match) to delete a different type. With no tool selected, any piece type can be removed.
+- **`Delete`/`Backspace` works as soon as you hover the grid — even right after picking a tool from the menu.** Clicking a tool button no longer "traps" the shortcut; you can select a tool, hover over a placed piece of that type, and delete it immediately without first placing anything.
+- **Hovering shows you exactly what `Delete`/`Backspace` would remove.** The targeted piece — whether it's the top-most match under the cursor or your current selection — is outlined and tinted in red on the canvas, so there's never any guessing about what the next press of the key will do.
+- **FlexiWalls are select-and-delete just like furniture.** Click a placed FlexiWall's midpoint handle to select it (it gets the same dashed yellow outline as a selected furniture piece), then press `Delete`/`Backspace` to remove it. This works with any tool active — you don't need to switch to the FlexiWall tool first. While the FlexiWall tool *is* active, that same handle still drags to reshape the curve as before.
 - **Multi-level plans must nest.** Level 2 and Level 3 footprints must fit within the Level 1 footprint. If a level file is rejected at build time, check that all its pieces fall inside the Level 1 grid boundary.
 - **Scaffolding settings are forced on for multi-level builds.** When `FloorPlanLevels > 1`, `RoofScaffolding`, `ScaffoldingFloors`, `TransverseScaffoldingBeams`, and `LongitudinalScaffoldingBeams` are all automatically enabled. You do not need to set them manually.
 

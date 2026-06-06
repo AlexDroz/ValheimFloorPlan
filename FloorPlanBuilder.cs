@@ -4442,6 +4442,7 @@ namespace ValheimFloorPlan
             const string CHIMNEY_ROOF_PREFAB = "wood_roof";
             const float  HEARTH_ACCESS_CLEARANCE = 3f;
             const float  CHIMNEY_CAP_EXTRA_HEIGHT = 2f;
+            const float  CHIMNEY_APEX_CLEARANCE = 1f;
             const float  POLE_SEGMENT_HEIGHT = 2f;
             const float  POLE_SPACING   = 4f;
             const float  HORIZ_LEN      = 2f;
@@ -4962,16 +4963,44 @@ namespace ValheimFloorPlan
 
             if (hearthOpenings.Count > 0 && chimneyWall2Prefab != null)
             {
+                // For a Gable roof the apex can sit well above a flat cap height —
+                // make sure the chimney clears the ridge, not just its own levels.
+                float topDeckY = GetDeckYForScaffoldLevel(scaffoldLevels - 1);
+                float roofApexY = topDeckY;
+                if (ValheimFloorPlanPlugin.RoofScaffoldingType == ValheimFloorPlanPlugin.RoofScaffoldingTypeOption.Gable)
+                {
+                    float halfSpan = 0.5f * Mathf.Min(width, depth);
+                    roofApexY = topDeckY + Mathf.Tan(26f * Mathf.Deg2Rad) * halfSpan;
+                }
+
+                float chimneyTopY = Mathf.Max(
+                    currentLevelBaseY + CHIMNEY_CAP_EXTRA_HEIGHT,
+                    roofApexY + CHIMNEY_APEX_CLEARANCE);
+
                 placed += PlaceHearthChimneyTop(
                     hearthOpenings,
                     origin,
                     rotationDeg,
                     currentLevelBaseY,
-                    currentLevelBaseY + CHIMNEY_CAP_EXTRA_HEIGHT,
+                    chimneyTopY,
                     chimneyWall2Prefab,
                     chimneyWall1Prefab,
                     chimneyRoofPrefab,
                     player);
+
+                RemoveInterferingUpperDeckPieces(
+                    hearthOpenings,
+                    origin,
+                    rotationDeg,
+                    chimneyStartY,
+                    chimneyTopY + 0.75f);
+
+                RemoveInterferingUpperRoofPieces(
+                    hearthOpenings,
+                    origin,
+                    rotationDeg,
+                    currentLevelBaseY,
+                    roofApexY + 0.6f);
             }
 
             PruneGroundFloorScaffoldVerticals(doorCenters, centerWorld, origin, rotationDeg);

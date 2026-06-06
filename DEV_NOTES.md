@@ -283,6 +283,7 @@ Flat Ridge Top (top view, conceptual)
 	- `PlaceGableApexSupportColumnIfClear` adds support columns at ridge-aligned key points.
 	- `PlaceGableApexRidgePoleSpan` lays a ridge beam chain along the apex.
 - All roof/support/apex placements are opening-aware and skip blocked hearth/stair shaft regions.
+- **The gable roof panels themselves are never opening-aware (fixed in 2.0.4).** `PlaceTopScaffoldGableRoof` is always called with an empty opening list (`new List<HearthOpening>()`), so the sloped roof surface always covers the full footprint regardless of what staircase/hearth openings exist in the deck below it. Earlier versions passed the real opening list straight through, which let stair/hearth openings punch gaps or skip tiles in the roof surface itself — see `PlaceScaffoldLevelFloorDeck` around the `// Gable roof panels are never blocked by deck openings...` comment for the call site. Only the floor underlay beneath the roof (when `RoofWithFloorUnderlay` is selected) still respects openings.
 
 ```
 Gable Top (cross-section, conceptual)
@@ -309,6 +310,15 @@ Gable Top (cross-section, conceptual)
 - After all scaffold levels, `PlaceHearthChimneyTop` extends the stack an additional cap height (`CHIMNEY_CAP_EXTRA_HEIGHT`) and then applies `PlaceHearthChimneyRoofCap` orientation logic based on opening aspect ratio.
 - Result: hearth shafts stay open through floors/beams, while the chimney shell continues upward through higher levels and receives a top cap above the last scaffold deck.
 
+#### Chimney Height Vs. Roof Apex (fixed in 2.0.4)
+- A flat-roof assumption is not enough once `RoofScaffoldingType=Gable` — the gable ridge can sit well above the top deck, and a chimney sized only against deck height could end up capped *inside* the sloped roof surface.
+- Both the ground-floor hearth path (`BuildScaffoldingForGroundHearths`, ~`FloorPlanBuilder.cs:2277`) and the upper-level scaffold path (`PlaceRoofScaffolding`, ~`FloorPlanBuilder.cs:4969`) compute a `roofApexY`:
+	- Defaults to `topDeckY` for `Flat` roofs.
+	- For `Gable` roofs: `roofApexY = topDeckY + tan(26°) * halfSpan`, where `halfSpan` is half of the shorter footprint dimension (mirrors the slope math in `PlaceTopScaffoldGableRoof`).
+- The final chimney top is then `max(levelBaseY + CHIMNEY_CAP_EXTRA_HEIGHT, roofApexY + CHIMNEY_APEX_CLEARANCE)` — i.e. tall enough for a normal cap, but never shorter than "clears the actual ridge plus clearance".
+- Once the chimney height is known, `RemoveInterferingUpperRoofPieces` and `RemoveInterferingUpperDeckPieces` are run against `[chimneyBaseY .. roofApexY + 0.6f]` (roof) and `[chimneyStartY .. chimneyTopY + 0.75f]` (deck) so any roof/deck tiles the gable surface placed across the hearth opening are cleared away — this is what makes the chimney "punch through" a roof that, per the rule above, was deliberately built as a solid, opening-agnostic surface.
+- **Why this matters:** before this fix, chimneys were sized against `topDeckY`/flat-cap heights only, so on a Gable roof the stack could terminate below or right at the sloped surface — the chimney looked "blocked" or clipped by the roof, especially for ground-floor hearths under multi-level gable roofs.
+
 ### Staircase Shaft Through Upper Levels
 - Staircase footprint is treated as an opening in scaffold systems via `BuildScaffoldDeckOpenings` (staircase pieces are added to the same opening list used by hearth blocking).
 - This opening list is consumed by:
@@ -329,6 +339,11 @@ Gable Top (cross-section, conceptual)
 	- When scaffold floors are enabled, step Y snaps to each deck height (`levelTop + FLOOR_DECK_LIFT`) so steps land cleanly at each upper floor.
 	- Guard signs are attached on alternating treads (and always the roof/attic step), with floor labels and biome labels stacked as a pair.
 - Result: upper floors do not seal the staircase column; the stair shaft remains punched through and the staircase aligns vertically with all enabled scaffold levels.
+
+#### Staircases Do Not Punch The Roof (fixed in 2.0.4)
+- Unlike hearth chimneys, a staircase shaft only needs to stay open through **decks and beams** — it terminates at the top deck/attic step and never needs a vertical channel through the roof above it.
+- When an upper-level staircase is placed, cleanup calls `RemoveInterferingUpperDeckPieces` and `RemoveInterferingUpperScaffoldBeamPieces` for the shaft volume, but **deliberately does not** call `RemoveInterferingUpperRoofPieces` — see the comment block at `FloorPlanBuilder.cs:1873`: *"Do NOT remove roof pieces for staircase shafts — the gable (or flat) roof spans the full footprint and should not be punched through above a staircase. Only hearth/chimney shafts need a clear vertical channel through the roof."*
+- **Why this matters:** an earlier version removed roof tiles directly above the stair shaft during cleanup, leaving a hole in an otherwise-solid roof even though nothing needed to pass through it. Combined with the Gable-roof full-coverage rule above, the roof now always stays solid over a staircase.
 
 ```
 Top View (local staircase footprint: 4m x 4m)

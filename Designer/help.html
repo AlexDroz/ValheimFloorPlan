@@ -157,7 +157,13 @@
         <li>Select a piece type using the radio buttons.</li>
         <li>Move mouse over the grid to preview placement.</li>
         <li>Use arrow keys or mouse wheel while hovering the grid to rotate placement (22.5 degree steps for Workbenches and 90-degree steps for everything else).</li>
-        <li>Left click to place. Right click to remove the top-most piece at that cell.</li>
+        <li>Left click to place a piece.</li>
+        <li>Press <code>Delete</code> or <code>Backspace</code> while hovering the grid to remove the top-most piece under the cursor (or the selected piece — furniture or FlexiWall — if one is selected). This is deliberate by design — deletion no longer happens from a stray right-click. It works as soon as the grid is hovered, even immediately after clicking a tool button in the menu.</li>
+        <li>Deletion is scoped to the active tool's piece type: with, say, the <code>Hearth</code> tool selected, <code>Delete</code>/<code>Backspace</code> can only remove <code>Hearth</code> pieces — Floors, Walls, and other types underneath the cursor are left alone. This stops you from accidentally clearing the wrong kind of piece while focused on placing or tidying up one type. With no tool selected, any piece type can be removed.</li>
+        <li>As you hover the grid, the piece that <code>Delete</code>/<code>Backspace</code> would remove next is outlined and tinted in red — so you always know exactly what's targeted before pressing the key.</li>
+        <li>Right click (or <code>Escape</code>) always cancels whatever's active — an in-progress FlexiWall draw, a piece selection/drag, or the current tool itself — and never deletes anything, for any piece type including FlexiWalls.</li>
+        <li><code>Bed</code>, <code>Staircase</code>, <code>Hearth</code>, and <code>Workbench</code> pieces show a small handle at their center once placed (or loaded from file): drag the handle to move the piece, or click it to select it, then use arrow keys / mouse wheel to rotate it in place. Press <code>Escape</code> or click elsewhere to deselect.</li>
+        <li>Placed <code>FlexiWall</code>s show a small handle at their midpoint too: click it to select the wall (highlighted with a dashed outline), then press <code>Delete</code>/<code>Backspace</code> to remove it — the same select-then-delete flow as furniture pieces. While the FlexiWall tool is active, the same handle can still be dragged to reshape the curve, as before.</li>
       </ol>
     </div>
 

@@ -21,7 +21,7 @@ const state = {
   cols: 20,
   rows: 20,
   pieces: [],
-  currentPiece: "Floor2x2",
+  currentPiece: null,
   rotation: 0,
   dirty: false,
   fileHandle: null,
@@ -33,6 +33,8 @@ const state = {
   layouts: [createEmptyLayout(), createEmptyLayout(), createEmptyLayout()],
   overlayEnabled: [false, false, false],
   flexiWall: { phase: "idle", col1: 0, row1: 0, dragging: false, dragIndex: -1, dragMoved: false, dragJustEnded: false },
+  selectedPieceIndex: -1,
+  pieceDrag: { active: false, index: -1, moved: false, suppressClick: false },
 };
 
 const pieceColors = {
@@ -267,7 +269,7 @@ function syncRotationControlsForCurrentTool() {
 }
 
 function gridLayout() {
-  const pad = 30;
+  const pad = 34;
   const usableW = canvas.width - pad * 2;
   const usableH = canvas.height - pad * 2;
   const cell = Math.max(8, Math.floor(Math.min(usableW / state.cols, usableH / state.rows)));
@@ -357,8 +359,23 @@ function getCrossLayerOverlapInfo() {
 }
 
 function rotateActivePiece(direction = 1) {
-  const step = getRotationStepForCurrentTool();
   const dir = direction < 0 ? -1 : 1;
+
+  // While a placed piece is selected, rotate that piece in place rather than
+  // the pending-placement tool rotation. FlexiWalls are arcs and have no
+  // rotation of their own — selecting one simply suppresses tool rotation.
+  const selected = getSelectedPiece();
+  if (selected) {
+    if (selected.type !== "FlexiWall") {
+      const step = getRotationStepForPieceType(selected.type);
+      selected.rot = snapAngle((selected.rot || 0) + dir * step, step);
+      markDirty(true);
+      draw();
+    }
+    return;
+  }
+
+  const step = getRotationStepForCurrentTool();
   state.rotation = snapAngle(state.rotation + dir * step, step);
   rotSelect.value = formatAngleLabel(state.rotation);
   draw();
@@ -393,6 +410,59 @@ function pieceLayerOrder(type) {
 
 function isFloorType(type) {
   return type === "Floor2x2" || type === "Floor1x1";
+}
+
+// Furniture-style pieces get a center handle for post-placement select/move/rotate.
+function isHandlePieceType(type) {
+  return type === "Bed" || type === "Staircase" || type === "Hearth" || type === "Workbench";
+}
+
+function getPieceCenterGrid(piece) {
+  const { w, h } = effectiveSize(piece.type, piece.rot);
+  return { cx: piece.col + w / 2, cy: piece.row + h / 2 };
+}
+
+function getSelectedPiece() {
+  const idx = state.selectedPieceIndex;
+  if (idx < 0 || idx >= state.pieces.length) return null;
+  const piece = state.pieces[idx];
+  return (isHandlePieceType(piece.type) || piece.type === "FlexiWall") ? piece : null;
+}
+
+// Mirrors deleteSelectedOrHoveredPiece()'s targeting so the highlight always shows
+// exactly which piece (if any) Delete/Backspace would remove right now.
+function findDeleteTargetIndex() {
+  const typeFilter = state.currentPiece;
+
+  const selected = getSelectedPiece();
+  if (selected) {
+    if (typeFilter !== null && selected.type !== typeFilter) return -1;
+    return state.selectedPieceIndex;
+  }
+
+  if (state.hover.col < 0 || state.hover.row < 0) return -1;
+  return findTopMostPieceIndexAtCell(state.hover.col, state.hover.row, typeFilter);
+}
+
+// Furniture-piece handles only: select-and-drag-to-move. FlexiWall selection uses
+// findPlacedFlexiWallAtHandle() instead — its handle selects (for Delete) but does
+// not engage the generic move-drag, since reshaping a FlexiWall is a tool-specific action.
+function findSelectableHandleAt(ev) {
+  const rect = canvas.getBoundingClientRect();
+  const scaleX = canvas.width / rect.width;
+  const scaleY = canvas.height / rect.height;
+  const px = (ev.clientX - rect.left) * scaleX;
+  const py = (ev.clientY - rect.top) * scaleY;
+  const { cell, originX, originY } = gridLayout();
+  for (let i = state.pieces.length - 1; i >= 0; i--) {
+    const p = state.pieces[i];
+    if (!isHandlePieceType(p.type)) continue;
+    const { cx, cy } = getPieceCenterGrid(p);
+    const dx = px - (originX + cx * cell);
+    const dy = py - (originY + cy * cell);
+    if (Math.sqrt(dx * dx + dy * dy) <= PIECE_HANDLE_RADIUS_PX) return i;
+  }
+  return -1;
 }
 
 function lightenHexColor(hex, amount = 0.55) {
@@ -577,13 +647,14 @@ function drawPieceOrientation(type, rotation, x, y, wPx, hPx, isPreview = false)
   ctx.restore();
 }
 
-function findTopMostPieceIndexAtCell(col, row) {
+function findTopMostPieceIndexAtCell(col, row, typeFilter = null) {
   let bestIndex = -1;
   let bestLayer = -1;
 
   for (let i = 0; i < state.pieces.length; i += 1) {
     const piece = state.pieces[i];
     if (!pieceOccupiesCell(piece, col, row)) continue;
+    if (typeFilter !== null && piece.type !== typeFilter) continue;
 
     const layer = pieceLayerOrder(piece.type);
     if (layer > bestLayer || (layer === bestLayer && i > bestIndex)) {
@@ -626,6 +697,86 @@ function drawGridCenterLines(originX, originY, gridW, gridH) {
   ctx.restore();
 }
 
+// Excel-style reference numbers along the top (columns) and left (rows) edges,
+// using the same 0-based col/row indices the Designer and .vfp format use internally.
+function drawGridReferenceLabels(originX, originY, gridW, gridH, cell, pad) {
+  ctx.save();
+  ctx.fillStyle = "#a89a87";
+  ctx.font = "11px sans-serif";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+
+  // Skip labels when cells are too small to fit a number without overlapping.
+  const stride = cell < 16 ? Math.ceil(16 / cell) : 1;
+
+  for (let c = 0; c < state.cols; c += stride) {
+    const x = originX + c * cell + cell / 2;
+    ctx.fillText(String(c), x, originY - pad / 2);
+    ctx.fillText(String(c), x, originY + gridH + pad / 2);
+  }
+
+  for (let r = 0; r < state.rows; r += stride) {
+    const y = originY + r * cell + cell / 2;
+    ctx.fillText(String(r), originX - pad / 2, y);
+    ctx.fillText(String(r), originX + gridW + pad / 2, y);
+  }
+
+  ctx.restore();
+}
+
+// Center handle on furniture-style pieces (Bed/Staircase/Hearth/Workbench): drag
+// to move the placed piece, click to select it (wheel/arrow keys then rotate it).
+function drawPieceHandles(originX, originY, cell) {
+  for (let i = 0; i < state.pieces.length; i += 1) {
+    const p = state.pieces[i];
+    if (!isHandlePieceType(p.type)) continue;
+
+    const { w, h } = effectiveSize(p.type, p.rot);
+    const { cx, cy } = getPieceCenterGrid(p);
+    const hx = originX + cx * cell;
+    const hy = originY + cy * cell;
+    const isSelected = i === state.selectedPieceIndex;
+    const accent = pieceColors[p.type] || "#333333";
+
+    if (isSelected) {
+      const x = originX + p.col * cell;
+      const y = originY + p.row * cell;
+      ctx.save();
+      ctx.strokeStyle = "#ffe066";
+      ctx.lineWidth = 2.5;
+      ctx.setLineDash([6, 4]);
+      withPieceRotation(x + 1, y + 1, w * cell - 2, h * cell - 2, p.rot, (rx, ry, rw, rh) => {
+        ctx.strokeRect(rx, ry, rw, rh);
+      });
+      ctx.setLineDash([]);
+      ctx.restore();
+    }
+
+    const radius = isSelected ? PIECE_HANDLE_RADIUS_PX + 1.5 : PIECE_HANDLE_RADIUS_PX;
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(hx, hy, radius, 0, 2 * Math.PI);
+    ctx.globalAlpha = isSelected ? 0.95 : 0.65;
+    ctx.fillStyle = isSelected ? "#ffe066" : "#ffffff";
+    ctx.fill();
+    ctx.globalAlpha = 1;
+    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = accent;
+    ctx.stroke();
+
+    // Crosshair glyph hints that the handle drags (move) and rotates the piece.
+    const armLen = radius * 0.55;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(hx - armLen, hy);
+    ctx.lineTo(hx + armLen, hy);
+    ctx.moveTo(hx, hy - armLen);
+    ctx.lineTo(hx, hy + armLen);
+    ctx.stroke();
+    ctx.restore();
+  }
+}
+
 function drawWorkbenchGrid(rotation, x, y, wPx, hPx) {
   const { cell } = gridLayout();
   const cols = Math.round(wPx / cell);
@@ -665,6 +816,7 @@ function withPieceRotation(x, y, w, h, rotation, callback) {
 }
 
 const ARC_HANDLE_RADIUS_PX = 9;
+const PIECE_HANDLE_RADIUS_PX = 8;
 
 function circumcircleFromThreePoints(x1, y1, x2, y2, x3, y3) {
   const ax = x2 - x1, ay = y2 - y1;
@@ -857,12 +1009,76 @@ function cancelFlexiWall() {
   state.flexiWall.dragIndex = -1;
 }
 
+// No piece type selected: nothing previews/places on click until the user
+// picks a tool again. Used by Escape and can be reused for an explicit "deselect" action.
+function clearActiveTool() {
+  if (state.currentPiece === "FlexiWall") cancelFlexiWall();
+  for (const radio of pieceTypeRadios) radio.checked = false;
+  state.currentPiece = null;
+}
+
+// Selecting a placed piece via its handle also switches the active tool to match
+// its type — this keeps the tool radio in sync with what's selected, and for
+// FlexiWall specifically it's what enables the handle's drag-to-reshape behavior
+// (which only runs while state.currentPiece === "FlexiWall").
+function activateToolForPieceType(type) {
+  if (state.currentPiece === type) return;
+  if (state.currentPiece === "FlexiWall") cancelFlexiWall();
+  for (const radio of pieceTypeRadios) radio.checked = (radio.value === type);
+  state.currentPiece = type;
+  syncRotationControlsForCurrentTool();
+}
+
+// Shared "back out of whatever's active" action for Escape and right-click:
+// drops in-progress FlexiWall draws, piece-handle drag/selection, and the
+// active placement tool, then resets the cursor. Intentionally non-destructive —
+// deletion is a deliberate Delete/Backspace press, not an easy-to-fumble click.
+function cancelActiveInteractions() {
+  state.pieceDrag.active = false;
+  state.pieceDrag.index = -1;
+  state.pieceDrag.moved = false;
+  state.pieceDrag.suppressClick = false;
+  state.selectedPieceIndex = -1;
+  if (state.currentPiece !== null) clearActiveTool();
+  canvas.style.cursor = "";
+  draw();
+}
+
+// Deletion is now a deliberate Delete/Backspace press rather than an easy-to-fumble
+// right-click: removes the selected piece if one is active (furniture or FlexiWall),
+// otherwise the topmost piece under the current hover cell (mirrors the old right-click target).
+//
+// Deletion is also scoped to the active tool's piece type — e.g. with the Hearth
+// tool selected, Delete can only remove Hearth pieces, not Floors/Walls/etc. This
+// guards against fat-fingering the wrong piece type's removal while focused on one
+// kind of piece. With no tool selected, any piece type can be removed (unscoped).
+function deleteSelectedOrHoveredPiece() {
+  const typeFilter = state.currentPiece;
+
+  const selected = getSelectedPiece();
+  if (selected) {
+    if (typeFilter !== null && selected.type !== typeFilter) return;
+    state.pieces.splice(state.selectedPieceIndex, 1);
+    state.selectedPieceIndex = -1;
+    markDirty(true);
+    draw();
+    return;
+  }
+
+  if (state.hover.col < 0 || state.hover.row < 0) return;
+  removeTopMostAt(state.hover.col, state.hover.row, typeFilter);
+  draw();
+}
+
 function drawFlexiWallPieces(originX, originY, cell) {
-  const showHandles = state.currentPiece === "FlexiWall";
+  const toolActive = state.currentPiece === "FlexiWall";
   const gx = g => originX + g * cell;
   const gy = g => originY + g * cell;
-  for (const p of state.pieces) {
+  for (let i = 0; i < state.pieces.length; i += 1) {
+    const p = state.pieces[i];
     if (p.type !== "FlexiWall") continue;
+    const isSelected = i === state.selectedPieceIndex;
+
     ctx.fillStyle = pieceColors.FlexiWall;
     ctx.globalAlpha = 0.75;
     drawArcBand(p.x1, p.y1, p.x2, p.y2, p.mx, p.my, originX, originY, cell);
@@ -871,17 +1087,39 @@ function drawFlexiWallPieces(originX, originY, cell) {
     ctx.lineWidth = 1;
     ctx.stroke();
     ctx.globalAlpha = 1;
-    if (showHandles) {
-      ctx.fillStyle = "#ffffff";
-      ctx.strokeStyle = pieceColors.FlexiWall;
-      ctx.lineWidth = 1.5;
-      ctx.globalAlpha = 0.7;
-      ctx.beginPath();
-      ctx.arc(gx(p.mx), gy(p.my), ARC_HANDLE_RADIUS_PX, 0, 2 * Math.PI);
-      ctx.fill();
+
+    // Selected outline (consistent with the furniture-piece selection highlight):
+    // a dashed yellow trace along the same arc-band path used to fill the wall.
+    if (isSelected) {
+      ctx.save();
+      ctx.strokeStyle = "#ffe066";
+      ctx.lineWidth = 2.5;
+      ctx.setLineDash([6, 4]);
+      drawArcBand(p.x1, p.y1, p.x2, p.y2, p.mx, p.my, originX, originY, cell);
       ctx.stroke();
-      ctx.globalAlpha = 1;
-      // Start endpoint marker (green) and end endpoint marker (red) at actual snapped positions
+      ctx.setLineDash([]);
+      ctx.restore();
+    }
+
+    // Center/midpoint handle: always shown so a placed FlexiWall can be selected
+    // (then removed with Delete/Backspace) the same way furniture pieces are —
+    // not just while the FlexiWall tool is active. Selected handles are larger
+    // and yellow-filled, matching drawPieceHandles().
+    const handleRadius = isSelected ? ARC_HANDLE_RADIUS_PX + 1.5 : ARC_HANDLE_RADIUS_PX;
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(gx(p.mx), gy(p.my), handleRadius, 0, 2 * Math.PI);
+    ctx.globalAlpha = isSelected ? 0.95 : 0.65;
+    ctx.fillStyle = isSelected ? "#ffe066" : "#ffffff";
+    ctx.fill();
+    ctx.globalAlpha = 1;
+    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = pieceColors.FlexiWall;
+    ctx.stroke();
+    ctx.restore();
+
+    // Tool-specific reshape UI: snapped endpoint markers, only while actively drawing/editing.
+    if (toolActive) {
       ctx.globalAlpha = 0.85;
       ctx.fillStyle = "#22c55e";
       ctx.beginPath();
@@ -943,7 +1181,12 @@ function drawFlexiWallPreview(originX, originY, cell) {
 }
 
 function draw() {
-  const { cell, gridW, gridH, originX, originY } = gridLayout();
+  // Drop a stale selection (e.g. after loading a file, clearing, or switching levels).
+  if (state.selectedPieceIndex >= 0 && !getSelectedPiece()) {
+    state.selectedPieceIndex = -1;
+  }
+
+  const { cell, gridW, gridH, originX, originY, pad } = gridLayout();
   const { topOverlappingPieceIndexes } = getOverlapInfo();
   const crossLayerOverlapMarks = getCrossLayerOverlapInfo();
   const activeCrossLayerOverlapMarks = crossLayerOverlapMarks.get(state.activeLayoutIndex) || new Set();
@@ -1066,7 +1309,32 @@ function draw() {
   }
   ctx.setLineDash([]);
 
-  if (state.currentPiece !== "FlexiWall" && state.hover.col >= 0 && state.hover.row >= 0) {
+  // Highlight whichever placed piece Delete/Backspace would remove right now, so the
+  // scoped-deletion target is obvious before the user commits to pressing the key.
+  const deleteTargetIndex = findDeleteTargetIndex();
+  if (deleteTargetIndex >= 0) {
+    const target = state.pieces[deleteTargetIndex];
+    ctx.save();
+    ctx.fillStyle = "rgba(255, 59, 48, 0.24)";
+    ctx.strokeStyle = "#ff3b30";
+    ctx.lineWidth = 3;
+    if (target.type === "FlexiWall") {
+      drawArcBand(target.x1, target.y1, target.x2, target.y2, target.mx, target.my, originX, originY, cell);
+      ctx.fill();
+      ctx.stroke();
+    } else {
+      const { w, h } = effectiveSize(target.type, target.rot);
+      const tx = originX + target.col * cell;
+      const ty = originY + target.row * cell;
+      withPieceRotation(tx + 1, ty + 1, w * cell - 2, h * cell - 2, target.rot, (rx, ry, rw, rh) => {
+        ctx.fillRect(rx, ry, rw, rh);
+        ctx.strokeRect(rx, ry, rw, rh);
+      });
+    }
+    ctx.restore();
+  }
+
+  if (state.currentPiece && state.currentPiece !== "FlexiWall" && state.hover.col >= 0 && state.hover.row >= 0) {
     const { w, h } = effectiveSize(state.currentPiece, state.rotation);
     const x = originX + state.hover.col * cell;
     const y = originY + state.hover.row * cell;
@@ -1097,7 +1365,9 @@ function draw() {
 
   drawFlexiWallPieces(originX, originY, cell);
   drawFlexiWallPreview(originX, originY, cell);
+  drawPieceHandles(originX, originY, cell);
   drawGridCenterLines(originX, originY, gridW, gridH);
+  drawGridReferenceLabels(originX, originY, gridW, gridH, cell, pad);
 }
 
 function parseVfp(text) {
@@ -1298,14 +1568,15 @@ function clearGrid() {
   draw();
 }
 
-function removeTopMostAt(col, row) {
-  const idx = findTopMostPieceIndexAtCell(col, row);
+function removeTopMostAt(col, row, typeFilter = null) {
+  const idx = findTopMostPieceIndexAtCell(col, row, typeFilter);
   if (idx < 0) return;
   state.pieces.splice(idx, 1);
   markDirty(true);
 }
 
 function addAt(col, row) {
+  if (!state.currentPiece) return;
   const { w, h } = effectiveSize(state.currentPiece, state.rotation);
   if (col < 0 || row < 0) return;
   if (col + w > state.cols || row + h > state.rows) return;
@@ -1315,6 +1586,31 @@ function addAt(col, row) {
 
 canvas.addEventListener("mousemove", (ev) => {
   state.isCanvasHovered = true;
+
+  if (state.pieceDrag.active && state.pieceDrag.index >= 0) {
+    const piece = state.pieces[state.pieceDrag.index];
+    const { x, y } = canvasEventToGridFloat(ev);
+    const { w, h } = effectiveSize(piece.type, piece.rot);
+    const newCol = Math.max(0, Math.min(state.cols - w, Math.round(x - w / 2)));
+    const newRow = Math.max(0, Math.min(state.rows - h, Math.round(y - h / 2)));
+    if (newCol !== piece.col || newRow !== piece.row) {
+      piece.col = newCol;
+      piece.row = newRow;
+      state.pieceDrag.moved = true;
+    }
+    canvas.style.cursor = "move";
+    draw();
+    return;
+  }
+
+  if (state.currentPiece !== "FlexiWall" && findSelectableHandleAt(ev) >= 0) {
+    canvas.style.cursor = "move";
+  } else if (state.currentPiece !== "FlexiWall" && findPlacedFlexiWallAtHandle(ev) >= 0) {
+    canvas.style.cursor = "pointer";
+  } else {
+    canvas.style.cursor = "";
+  }
+
   if (state.currentPiece === "FlexiWall") {
     const aw = state.flexiWall;
     if (aw.dragging && aw.dragIndex >= 0) {
@@ -1346,6 +1642,7 @@ canvas.addEventListener("mouseleave", () => {
   state.isCanvasHovered = false;
   state.hover.col = -1;
   state.hover.row = -1;
+  canvas.style.cursor = "";
   draw();
 });
 
@@ -1354,20 +1651,65 @@ canvas.addEventListener("mouseenter", () => {
 });
 
 canvas.addEventListener("mousedown", (ev) => {
-  if (state.currentPiece !== "FlexiWall") return;
-  const aw = state.flexiWall;
-  if (aw.phase === "idle") {
-    const idx = findPlacedFlexiWallAtHandle(ev);
-    if (idx >= 0) {
-      aw.dragging = true;
-      aw.dragIndex = idx;
-      aw.dragMoved = false;
-      ev.preventDefault();
+  if (state.currentPiece === "FlexiWall") {
+    const aw = state.flexiWall;
+    if (aw.phase === "idle") {
+      const idx = findPlacedFlexiWallAtHandle(ev);
+      if (idx >= 0) {
+        aw.dragging = true;
+        aw.dragIndex = idx;
+        aw.dragMoved = false;
+        ev.preventDefault();
+      }
     }
+    return;
+  }
+
+  const handleIdx = findSelectableHandleAt(ev);
+  if (handleIdx >= 0) {
+    state.selectedPieceIndex = handleIdx;
+    activateToolForPieceType(state.pieces[handleIdx].type);
+    state.pieceDrag.active = true;
+    state.pieceDrag.index = handleIdx;
+    state.pieceDrag.moved = false;
+    state.pieceDrag.suppressClick = true;
+    ev.preventDefault();
+    draw();
+    return;
+  }
+
+  // FlexiWall pieces are selectable via their center handle too — consistent with
+  // furniture pieces — so they can be highlighted and removed with Delete/Backspace.
+  // Selecting also activates the FlexiWall tool (matching the radio to the selected
+  // piece, like furniture above), which is what enables the same handle's
+  // drag-to-reshape behavior on a subsequent interaction.
+  const flexiIdx = findPlacedFlexiWallAtHandle(ev);
+  if (flexiIdx >= 0) {
+    state.selectedPieceIndex = flexiIdx;
+    activateToolForPieceType("FlexiWall");
+    state.pieceDrag.suppressClick = true;
+    ev.preventDefault();
+    draw();
+    return;
+  }
+
+  if (state.selectedPieceIndex >= 0) {
+    state.selectedPieceIndex = -1;
+    draw();
   }
 });
 
 canvas.addEventListener("mouseup", () => {
+  if (state.pieceDrag.active) {
+    const moved = state.pieceDrag.moved;
+    state.pieceDrag.active = false;
+    state.pieceDrag.index = -1;
+    state.pieceDrag.moved = false;
+    if (moved) markDirty(true);
+    draw();
+    return;
+  }
+
   if (state.currentPiece !== "FlexiWall") return;
   const aw = state.flexiWall;
   if (aw.dragging) {
@@ -1383,6 +1725,11 @@ canvas.addEventListener("mouseup", () => {
 });
 
 canvas.addEventListener("click", (ev) => {
+  if (state.pieceDrag.suppressClick) {
+    state.pieceDrag.suppressClick = false;
+    return;
+  }
+
   if (state.currentPiece === "FlexiWall") {
     const aw = state.flexiWall;
     if (aw.dragJustEnded) {
@@ -1418,21 +1765,12 @@ canvas.addEventListener("click", (ev) => {
 
 canvas.addEventListener("contextmenu", (ev) => {
   ev.preventDefault();
-  if (state.currentPiece === "FlexiWall") {
-    const idx = findPlacedFlexiWallAtHandle(ev);
-    if (idx >= 0) {
-      state.pieces.splice(idx, 1);
-      markDirty(true);
-    } else {
-      cancelFlexiWall();
-    }
-    draw();
-    return;
-  }
-  const { col, row } = canvasEventToGridCell(ev);
-  if (col < 0 || col >= state.cols || row < 0 || row >= state.rows) return;
-  removeTopMostAt(col, row);
-  draw();
+
+  // Right-click is now always the same as Escape — it only backs out of whatever's
+  // active (FlexiWall draw, selection/drag, or the current tool) and never deletes,
+  // for both regular pieces and FlexiWalls. Use Delete/Backspace to remove a
+  // selected piece (FlexiWalls included — click their center handle to select one).
+  cancelActiveInteractions();
 });
 
 function cmdShell() {
@@ -1647,9 +1985,16 @@ canvas.addEventListener("wheel", (ev) => {
 }, { passive: false });
 
 window.addEventListener("keydown", (ev) => {
-  if (ev.key === "Escape" && state.currentPiece === "FlexiWall") {
-    cancelFlexiWall();
-    draw();
+  if (ev.key === "Escape") {
+    cancelActiveInteractions();
+    return;
+  }
+
+  // Canvas-hover takes precedence here too: delete the hovered/selected piece even if a
+  // tool radio still holds keyboard focus (the normal state right after picking a tool).
+  if ((ev.key === "Delete" || ev.key === "Backspace") && state.isCanvasHovered) {
+    ev.preventDefault();
+    deleteSelectedOrHoveredPiece();
     return;
   }
 

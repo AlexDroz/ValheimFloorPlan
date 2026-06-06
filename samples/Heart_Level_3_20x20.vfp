@@ -97,10 +97,3 @@ piece,5,1,Floor1x1,90
 piece,8,1,Floor1x1,90
 piece,11,1,Floor1x1,90
 piece,14,1,Floor1x1,90
-piece,0,8,Floor1x1,90
-piece,0,9,Floor1x1,90
-piece,8,4,Hearth,180
-piece,3,12,Workbench,90
-piece,13,12,Workbench,270
-piece,14,7,Workbench,270
-piece,2,7,Staircase,90
