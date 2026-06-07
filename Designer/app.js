@@ -27,7 +27,7 @@ const state = {
   fileHandle: null,
   lastPickerHandle: null,
   fileName: "",
-  hover: { col: -1, row: -1 },
+  hover: { col: -1, row: -1, flexiWallIndex: -1 },
   isCanvasHovered: false,
   activeLayoutIndex: 0,
   layouts: [createEmptyLayout(), createEmptyLayout(), createEmptyLayout()],
@@ -185,6 +185,7 @@ function switchLayout(layoutIndex) {
   loadLayoutIntoState(layoutIndex);
   state.hover.col = -1;
   state.hover.row = -1;
+  state.hover.flexiWallIndex = -1;
   updateLevelButtons();
   markDirty(state.dirty);
   draw();
@@ -439,6 +440,9 @@ function findDeleteTargetIndex() {
     if (typeFilter !== null && selected.type !== typeFilter) return -1;
     return state.selectedPieceIndex;
   }
+
+  const fwi = state.hover.flexiWallIndex;
+  if (fwi >= 0 && (typeFilter === null || typeFilter === "FlexiWall")) return fwi;
 
   if (state.hover.col < 0 || state.hover.row < 0) return -1;
   return findTopMostPieceIndexAtCell(state.hover.col, state.hover.row, typeFilter);
@@ -874,35 +878,52 @@ function applyFlexiWallSnap(p) {
 }
 
 // Derive the cell col/row for a FlexiWall endpoint from its (possibly snapped) coordinate.
-// otherX/otherY: the OTHER endpoint's position (used to disambiguate edge midpoints).
-// isEnd: whether this is the END point of the arc.
-// mx/my: arc midpoint, used as tiebreaker when both endpoints share the same edge coordinate.
+// Uses the arc tangent at the edge point to determine which side of the edge the cell lies on.
+// The "other endpoint + midpoint" heuristic used previously failed for arcs > 180° because
+// the tangent there points AWAY from the other endpoint, flipping the cell by one row/col.
 function deriveFlexiWallCell(px, py, otherX, otherY, isEnd, mx, my) {
   const xFrac = px - Math.floor(px);
   const yFrac = py - Math.floor(py);
   // Old format: cell centre (.5, .5)
   if (Math.abs(xFrac - 0.5) < 0.01 && Math.abs(yFrac - 0.5) < 0.01)
     return { col: Math.floor(px), row: Math.floor(py) };
+
+  // Compute the "inward" tangent — the direction pointing INTO this cell at the edge.
+  // For START: the arc departs the cell in the forward direction, so inward = forward.
+  // For END:   the arc arrives into outside, so inward = reverse of forward.
+  //
+  // crossZ uses (start→mx→end) order where start/end are the two EDGE points:
+  //   START: arc goes (px,py) → mx → (otherX,otherY), so start=px.
+  //   END:   arc goes (otherX,otherY) → mx → (px,py), so start=otherX.
+  let tanX, tanY;
+  const circ = (mx !== undefined && my !== undefined)
+    ? circumcircleFromThreePoints(px, py, mx, my, otherX, otherY)
+    : null;
+  if (circ) {
+    const rx = px - circ.cx, ry = py - circ.cy;
+    const crossZ = isEnd
+      ? (mx - otherX) * (py - otherY) - (my - otherY) * (px - otherX)
+      : (mx - px)    * (otherY - py)  - (my - py)    * (otherX - px);
+    // Forward tangent (direction of arc travel at this point).
+    const fwX = crossZ < 0 ? ry  : -ry;
+    const fwY = crossZ < 0 ? -rx :  rx;
+    // Inward = forward for START, reversed for END.
+    tanX = isEnd ? -fwX : fwX;
+    tanY = isEnd ? -fwY : fwY;
+  } else {
+    // Straight wall (collinear points) or no midpoint available.
+    tanX = isEnd ? px - otherX : otherX - px;
+    tanY = isEnd ? py - otherY : otherY - py;
+  }
+
   let col = Math.floor(px), row = Math.floor(py);
   if (Math.abs(xFrac) < 0.01 || Math.abs(xFrac - 1) < 0.01) {
-    // Vertical edge: x is an integer.
     const xi = Math.round(px);
-    if (otherX === px && mx !== undefined) {
-      // Both endpoints on same vertical edge — use arc midpoint to decide which side.
-      col = mx < px ? xi - 1 : xi;
-    } else {
-      col = isEnd ? (otherX < px ? xi - 1 : xi) : (otherX > px ? xi : xi - 1);
-    }
+    col = tanX >= 0 ? xi : xi - 1;
   }
   if (Math.abs(yFrac) < 0.01 || Math.abs(yFrac - 1) < 0.01) {
-    // Horizontal edge: y is an integer.
     const yi = Math.round(py);
-    if (otherY === py && my !== undefined) {
-      // Both endpoints on same horizontal edge — use arc midpoint to decide which side.
-      row = my < py ? yi - 1 : yi;
-    } else {
-      row = isEnd ? (otherY < py ? yi - 1 : yi) : (otherY > py ? yi : yi - 1);
-    }
+    row = tanY >= 0 ? yi : yi - 1;
   }
   return { col, row };
 }
@@ -1065,6 +1086,15 @@ function deleteSelectedOrHoveredPiece() {
     return;
   }
 
+  const fwi = state.hover.flexiWallIndex;
+  if (fwi >= 0 && (typeFilter === null || typeFilter === "FlexiWall")) {
+    state.pieces.splice(fwi, 1);
+    state.hover.flexiWallIndex = -1;
+    markDirty(true);
+    draw();
+    return;
+  }
+
   if (state.hover.col < 0 || state.hover.row < 0) return;
   removeTopMostAt(state.hover.col, state.hover.row, typeFilter);
   draw();
@@ -1078,6 +1108,7 @@ function drawFlexiWallPieces(originX, originY, cell) {
     const p = state.pieces[i];
     if (p.type !== "FlexiWall") continue;
     const isSelected = i === state.selectedPieceIndex;
+    const isHovered = !isSelected && i === state.hover.flexiWallIndex;
 
     ctx.fillStyle = pieceColors.FlexiWall;
     ctx.globalAlpha = 0.75;
@@ -1087,6 +1118,17 @@ function drawFlexiWallPieces(originX, originY, cell) {
     ctx.lineWidth = 1;
     ctx.stroke();
     ctx.globalAlpha = 1;
+
+    if (isHovered) {
+      ctx.save();
+      ctx.fillStyle = "rgba(255,255,255,0.22)";
+      ctx.strokeStyle = "rgba(255,255,255,0.7)";
+      ctx.lineWidth = 2;
+      drawArcBand(p.x1, p.y1, p.x2, p.y2, p.mx, p.my, originX, originY, cell);
+      ctx.fill();
+      ctx.stroke();
+      ctx.restore();
+    }
 
     // Selected outline (consistent with the furniture-piece selection highlight):
     // a dashed yellow trace along the same arc-band path used to fill the wall.
@@ -1134,6 +1176,28 @@ function drawFlexiWallPieces(originX, originY, cell) {
   }
 }
 
+// Crosshair + filled circle at pixel position (cx, cy) in the given color.
+// Used for both the idle start-point ghost and the placing-end end-point ghost.
+function drawFlexiEndpointGhost(cx, cy, dotColor, cell) {
+  const arm = cell * 0.38;
+  ctx.save();
+  ctx.globalAlpha = 0.65;
+  ctx.strokeStyle = dotColor;
+  ctx.lineWidth = 2.5;
+  ctx.lineCap = "round";
+  ctx.beginPath();
+  ctx.moveTo(cx - arm, cy); ctx.lineTo(cx + arm, cy);
+  ctx.moveTo(cx, cy - arm); ctx.lineTo(cx, cy + arm);
+  ctx.stroke();
+  ctx.fillStyle = dotColor;
+  ctx.globalAlpha = 0.85;
+  ctx.beginPath();
+  ctx.arc(cx, cy, 6, 0, 2 * Math.PI);
+  ctx.fill();
+  ctx.globalAlpha = 1;
+  ctx.restore();
+}
+
 function drawFlexiWallPreview(originX, originY, cell) {
   const aw = state.flexiWall;
   const gx = g => originX + g * cell;
@@ -1142,23 +1206,25 @@ function drawFlexiWallPreview(originX, originY, cell) {
 
   if (aw.phase === "idle") {
     if (state.hover.col < 0) return;
-    ctx.fillStyle = color;
-    ctx.globalAlpha = 0.55;
-    ctx.beginPath();
-    ctx.arc(gx(state.hover.col + 0.5), gy(state.hover.row + 0.5), 5, 0, 2 * Math.PI);
-    ctx.fill();
-    ctx.globalAlpha = 1;
+    const cx = gx(state.hover.col + 0.5);
+    const cy = gy(state.hover.row + 0.5);
+    drawFlexiEndpointGhost(cx, cy, "#22c55e", cell);
     return;
   }
 
   if (aw.phase === "placing-end") {
-    // Always show the start cell indicator so the first click gives immediate feedback.
+    // Fixed start point: large filled green circle at the snapped grid cell center.
+    ctx.save();
     ctx.fillStyle = "#22c55e";
-    ctx.globalAlpha = 0.85;
+    ctx.globalAlpha = 0.90;
     ctx.beginPath();
-    ctx.arc(gx(aw.col1 + 0.5), gy(aw.row1 + 0.5), 5, 0, 2 * Math.PI);
+    ctx.arc(gx(aw.col1 + 0.5), gy(aw.row1 + 0.5), 7, 0, 2 * Math.PI);
     ctx.fill();
+    ctx.strokeStyle = "rgba(0,0,0,0.35)";
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
     ctx.globalAlpha = 1;
+    ctx.restore();
 
     if (state.hover.col < 0) return;
     const col2 = state.hover.col, row2 = state.hover.row;
@@ -1171,10 +1237,21 @@ function drawFlexiWallPreview(originX, originY, cell) {
     drawArcBand(tmp.x1, tmp.y1, tmp.x2, tmp.y2, smx, smy, originX, originY, cell);
     ctx.fill();
     ctx.globalAlpha = 1;
-    ctx.fillStyle = color;
+
+    // Snapped endpoint markers matching the placed-wall convention (green start, red end).
+    ctx.globalAlpha = 0.85;
+    ctx.fillStyle = "#22c55e";
     ctx.beginPath();
     ctx.arc(gx(tmp.x1), gy(tmp.y1), 5, 0, 2 * Math.PI);
     ctx.fill();
+    ctx.fillStyle = "#ef4444";
+    ctx.beginPath();
+    ctx.arc(gx(tmp.x2), gy(tmp.y2), 5, 0, 2 * Math.PI);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+
+    // Active end-point ghost: crosshair + circle at hover cell, showing where end will snap.
+    drawFlexiEndpointGhost(gx(col2 + 0.5), gy(row2 + 0.5), "#ef4444", cell);
     return;
   }
 
@@ -1603,9 +1680,11 @@ canvas.addEventListener("mousemove", (ev) => {
     return;
   }
 
+  state.hover.flexiWallIndex = findPlacedFlexiWallAtHandle(ev);
+
   if (state.currentPiece !== "FlexiWall" && findSelectableHandleAt(ev) >= 0) {
     canvas.style.cursor = "move";
-  } else if (state.currentPiece !== "FlexiWall" && findPlacedFlexiWallAtHandle(ev) >= 0) {
+  } else if (state.currentPiece !== "FlexiWall" && state.hover.flexiWallIndex >= 0) {
     canvas.style.cursor = "pointer";
   } else {
     canvas.style.cursor = "";
@@ -1642,6 +1721,7 @@ canvas.addEventListener("mouseleave", () => {
   state.isCanvasHovered = false;
   state.hover.col = -1;
   state.hover.row = -1;
+  state.hover.flexiWallIndex = -1;
   canvas.style.cursor = "";
   draw();
 });

@@ -5343,18 +5343,10 @@ namespace ValheimFloorPlan
 
                     if (hasWestRun)
                     {
-                        // Eave support at arc boundary — bypass hearth/shaft check because
-                        // this is a perimeter column, not an interior one.
-                        if (westStartY > apexPoleBaseY + 0.1f && apexPolePrefab != null)
-                        {
-                            // Root from apexPoleBaseY (ring-beam level) so the pole bottom snap
-                            // aligns with the horizontal ring beams and gets structural support.
-                            float colH = westStartY - apexPoleBaseY;
-                            Vector3 colPos = PieceMap.TransformPlanPoint(origin, runWestX, localZ,
-                                apexPoleBaseY + colH * 0.5f, rotationDeg);
-                            placed += SpawnScaffoldColumn(apexPolePrefab, colPos,
-                                Quaternion.Euler(0f, rotationDeg, 0f), player, colH, 2f);
-                        }
+                        if (westStartY > apexPoleBaseY + 0.1f)
+                            placed += PlaceGableApexSupportColumnIfClear(runWestX, localZ,
+                                apexPoleBaseY, westStartY, origin, rotationDeg,
+                                apexPolePrefab, hearthOpenings, player);
                         placed += PlaceSlopedRoofRun(
                             new Vector2(runWestX, localZ), new Vector2(centerX, localZ),
                             westStartY, ridgeY, 270f, SLOPED_SEGMENT_LENGTH,
@@ -5363,14 +5355,10 @@ namespace ValheimFloorPlan
 
                     if (hasEastRun)
                     {
-                        if (eastStartY > apexPoleBaseY + 0.1f && apexPolePrefab != null)
-                        {
-                            float colH = eastStartY - apexPoleBaseY;
-                            Vector3 colPos = PieceMap.TransformPlanPoint(origin, runEastX, localZ,
-                                apexPoleBaseY + colH * 0.5f, rotationDeg);
-                            placed += SpawnScaffoldColumn(apexPolePrefab, colPos,
-                                Quaternion.Euler(0f, rotationDeg, 0f), player, colH, 2f);
-                        }
+                        if (eastStartY > apexPoleBaseY + 0.1f)
+                            placed += PlaceGableApexSupportColumnIfClear(runEastX, localZ,
+                                apexPoleBaseY, eastStartY, origin, rotationDeg,
+                                apexPolePrefab, hearthOpenings, player);
                         placed += PlaceSlopedRoofRun(
                             new Vector2(runEastX, localZ), new Vector2(centerX, localZ),
                             eastStartY, ridgeY, 90f, SLOPED_SEGMENT_LENGTH,
@@ -5743,7 +5731,7 @@ namespace ValheimFloorPlan
                 if (shaftBaseY >= levelTopY - 0.01f)
                     continue;
 
-                int wallLayers = Mathf.Max(1, Mathf.RoundToInt(levelTopY - shaftBaseY));
+                int wallLayers = Mathf.Max(1, Mathf.CeilToInt(levelTopY - shaftBaseY));
                 for (int layer = 0; layer < wallLayers; layer++)
                 {
                     float wallY = shaftBaseY + 0.5f + layer;
@@ -5804,7 +5792,7 @@ namespace ValheimFloorPlan
             Player player)
         {
             int placed = 0;
-            int wallLayers = Mathf.Max(1, Mathf.RoundToInt(chimneyTopY - chimneyBaseY));
+            int wallLayers = Mathf.Max(1, Mathf.CeilToInt(chimneyTopY - chimneyBaseY));
 
             for (int i = 0; i < hearthOpenings.Count; i++)
             {
