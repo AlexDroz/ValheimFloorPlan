@@ -2123,12 +2123,17 @@ namespace ValheimFloorPlan
                 var ulFwPrefab = ZNetScene.instance?.GetPrefab(ulFwPrefabName);
                 if (ulFwPrefab != null)
                 {
-                    int   ulFwStackCount = configuredExternalWallHeight;
-                    float ulFwStepY      = GetStackStepY("FlexiWall");
-                    float ulFwBaseY      = levelDeckY + ulFwDef.YOffset;
+                    int configuredInternalWallHeight = ValheimFloorPlanPlugin.GetInternalWallHeightForLevel(layoutLevelIndex);
+                    float ulFwStepY = GetStackStepY("FlexiWall");
+                    float ulFwBaseY = levelDeckY + ulFwDef.YOffset;
 
                     foreach (var fw in upperPlan.FlexiWalls)
                     {
+                        int ulFwStackCount = IsFlexiWallOnPerimeter(
+                            fw, upperPlan, minCol, maxColExclusive, minRow, maxRowExclusive)
+                            ? configuredExternalWallHeight
+                            : configuredInternalWallHeight;
+
                         var segments = ComputeFlexiWallSegments(fw, UL_FLEXI_WALL_WIDTH);
                         for (int segIdx = 0; segIdx < segments.Count; segIdx++)
                         {
@@ -3276,11 +3281,16 @@ namespace ValheimFloorPlan
                 var fwPrefab = ZNetScene.instance?.GetPrefab(fwPrefabName);
                 if (fwPrefab != null)
                 {
-                    int fwStackCount = configuredExternalWallHeight;
-                    float fwStepY    = GetStackStepY("FlexiWall");
+                    int configuredInternalWallHeight = ValheimFloorPlanPlugin.GetInternalWallHeightForLevel(0);
+                    float fwStepY = GetStackStepY("FlexiWall");
 
                     foreach (var fw in plan.FlexiWalls)
                     {
+                        int fwStackCount = IsFlexiWallOnPerimeter(
+                            fw, plan, minCol, maxColExclusive, minRow, maxRowExclusive)
+                            ? configuredExternalWallHeight
+                            : configuredInternalWallHeight;
+
                         var segments = ComputeFlexiWallSegments(fw, FLEXI_WALL_WIDTH);
                         for (int segIdx = 0; segIdx < segments.Count; segIdx++)
                         {
@@ -4291,6 +4301,72 @@ namespace ValheimFloorPlan
                    (col + effW) >= maxColExclusive || (row + effH) >= maxRowExclusive;
         }
 
+        // A FlexiWall is external (perimeter) if any of its three control points is within
+        // 0.5 units of any plan boundary edge. Interior FlexiWalls have all control points
+        // strictly inside the bounds.
+        // Returns true when fw is an outer-perimeter wall, false when it is an interior divider.
+        //
+        // Primary test — floor asymmetry: sample 1 m perpendicular to the wall on each
+        // side at the arc midpoint.  A perimeter wall has floor on one side and open
+        // space on the other; an interior divider has floor on both sides.
+        //
+        // Fast-exit: if any control point touches the bounding-box edge the wall is
+        // definitely perimeter regardless of floor coverage (handles layouts where the
+        // outermost wall has no floor tiles right at the very edge).
+        private static bool IsFlexiWallOnPerimeter(
+            FlexiWallPiece fw,
+            FloorPlan plan,
+            int minCol, int maxColExclusive, int minRow, int maxRowExclusive)
+        {
+            const float EDGE_TOLERANCE  = 0.5f;
+            const float SAMPLE_DISTANCE = 1.0f;
+
+            // Fast exit: any control point on the outer bounding-box edge.
+            float[] xs = { fw.X1, fw.X2, fw.Mx };
+            float[] ys = { fw.Y1, fw.Y2, fw.My };
+            for (int i = 0; i < 3; i++)
+            {
+                if (xs[i] <= minCol          + EDGE_TOLERANCE) return true;
+                if (xs[i] >= maxColExclusive - EDGE_TOLERANCE) return true;
+                if (ys[i] <= minRow          + EDGE_TOLERANCE) return true;
+                if (ys[i] >= maxRowExclusive - EDGE_TOLERANCE) return true;
+            }
+
+            // Floor-asymmetry test: find the actual tangent at the arc midpoint,
+            // then sample floor coverage 1 m perpendicular on each side.
+            var segs = ComputeFlexiWallSegments(fw, 1f);
+            if (segs.Count == 0) return true;
+
+            var mid = segs[segs.Count / 2];
+            float yawRad = mid.YawDeg * Mathf.Deg2Rad;
+            float tanX = Mathf.Cos(yawRad), tanZ = Mathf.Sin(yawRad);
+            // Perpendicular (90° CCW rotation of tangent in plan XZ).
+            float perpX = -tanZ, perpZ = tanX;
+
+            bool sideA = IsPointOverFloor(mid.Lx + perpX * SAMPLE_DISTANCE,
+                                          mid.Lz + perpZ * SAMPLE_DISTANCE, plan);
+            bool sideB = IsPointOverFloor(mid.Lx - perpX * SAMPLE_DISTANCE,
+                                          mid.Lz - perpZ * SAMPLE_DISTANCE, plan);
+
+            // Interior divider: floor on both sides.  Everything else is perimeter.
+            return !(sideA && sideB);
+        }
+
+        private static bool IsPointOverFloor(float x, float z, FloorPlan plan)
+        {
+            foreach (var p in plan.Pieces)
+            {
+                if (p.Type != "Floor2x2" && p.Type != "Floor1x1") continue;
+                var def = PieceMap.GetDef(p.Type);
+                if (def == null) continue;
+                int effW = def.EffW(p.Rotation);
+                int effH = def.EffH(p.Rotation);
+                if (x >= p.Col && x < p.Col + effW && z >= p.Row && z < p.Row + effH)
+                    return true;
+            }
+            return false;
+        }
+
         private static int GetExteriorWallRotation(
             int col, int row, int effW, int effH,
             int minCol, int maxColExclusive, int minRow, int maxRowExclusive,
@@ -4653,6 +4729,13 @@ namespace ValheimFloorPlan
             {
                 var segs = ComputeFlexiWallSegments(fw, 1f);
                 if (segs.Count == 0) continue;
+
+                // Internal walls don't contribute to the outer arc polygon or to
+                // scaffold poles — including them in fwArcChains would fold them into
+                // the perimeter polygon and punch holes in the floor above them.
+                if (!IsFlexiWallOnPerimeter(fw, plan, minCol, maxColExclusive, minRow, maxRowExclusive))
+                    continue;
+
                 fwArcChains.Add(segs);
 
                 // First pole at arc start — skip if a previous arc already placed one here

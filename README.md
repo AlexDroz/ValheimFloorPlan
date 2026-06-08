@@ -201,6 +201,9 @@ All values below are configurable in that file.
 | `ExternalWallHeightLevel1` | `1` | `1` to `6` | Stacks Level 1 outer-perimeter `Wall`/`Pillar` pieces vertically. Dynamic cap: `ScaffoldingFloorHeight x 2`. |
 | `ExternalWallHeightLevel2` | `1` | `1` to `6` | Stacks Level 2 outer-perimeter `Wall`/`Pillar` pieces vertically. Dynamic cap: `ScaffoldingFloorHeight#2 x 2`. |
 | `ExternalWallHeightLevel3` | `1` | `1` to `6` | Stacks Level 3 outer-perimeter `Wall`/`Pillar` pieces vertically. Dynamic cap: `ScaffoldingFloorHeight#3 x 2`. |
+| `InternalWallHeightLevel1` | `1` | `1` to `6` | Stacks Level 1 interior FlexiWall pieces vertically (walls whose control points do not touch the layout perimeter). |
+| `InternalWallHeightLevel2` | `1` | `1` to `6` | Stacks Level 2 interior FlexiWall pieces vertically. |
+| `InternalWallHeightLevel3` | `1` | `1` to `6` | Stacks Level 3 interior FlexiWall pieces vertically. |
 | `WallPillarMaterial` | `Stone` | `Stone`, `Wood` | Chooses material set used for `Wall` and `Pillar` types. |
 | `StaircaseReachMode` | `ToTheNextLevelOnly` | `ToTheNextLevelOnly`, `AllTheWay` | Controls staircase vertical reach. `ToTheNextLevelOnly` climbs one level at a time. `AllTheWay` climbs toward the highest available scaffold level. |
 | `StaircaseStepRise` | `0.16` | `0.10` to `0.40` | Vertical height in metres between staircase treads. Lower values produce shallower, easier-to-climb steps but increase total tread count. |
@@ -344,20 +347,25 @@ The `samples/` folder contains ready-to-use `.vfp` examples:
 ![Valheim Floor Plan screenshot 17](https://raw.githubusercontent.com/AlexDroz/ValheimFloorPlan/master/images/Ex4.png)
 
 
-## Three Level Floor Plan
+## FlexiWall Showcase
 
-![Valheim Floor Plan screenshot 18](https://raw.githubusercontent.com/AlexDroz/ValheimFloorPlan/master/images/Ex5_0.png)
-![Valheim Floor Plan screenshot 19](https://raw.githubusercontent.com/AlexDroz/ValheimFloorPlan/master/images/Ex5_1.png)
-![Valheim Floor Plan screenshot 20](https://raw.githubusercontent.com/AlexDroz/ValheimFloorPlan/master/images/Ex5_2.png)
-![Valheim Floor Plan screenshot 21](https://raw.githubusercontent.com/AlexDroz/ValheimFloorPlan/master/images/Ex5_3.png)
-![Valheim Floor Plan screenshot 22](https://raw.githubusercontent.com/AlexDroz/ValheimFloorPlan/master/images/Ex5_4.png)
-![Valheim Floor Plan screenshot 23](https://raw.githubusercontent.com/AlexDroz/ValheimFloorPlan/master/images/Ex5_5.png)
-![Valheim Floor Plan screenshot 24](https://raw.githubusercontent.com/AlexDroz/ValheimFloorPlan/master/images/Ex5_6.png)
+Round houses, multi-arc layouts, and multi-level curved stone builds using the FlexiWall tool.
 
-## Starbase
-![Valheim Floor Plan screenshot 25](https://raw.githubusercontent.com/AlexDroz/ValheimFloorPlan/master/images/Ex6_1.png)
-![Valheim Floor Plan screenshot 26](https://raw.githubusercontent.com/AlexDroz/ValheimFloorPlan/master/images/Ex6_2.png)
-![Valheim Floor Plan screenshot 26](https://raw.githubusercontent.com/AlexDroz/ValheimFloorPlan/master/images/Ex6_3.png)
+![Config settings for a FlexiWall round house build](https://raw.githubusercontent.com/AlexDroz/ValheimFloorPlan/master/images/Ex7_1.png)
+![Designer: round house layout with a single FlexiWall circle](https://raw.githubusercontent.com/AlexDroz/ValheimFloorPlan/master/images/Ex7_2a.png)
+![In-game: completed single-level round house exterior](https://raw.githubusercontent.com/AlexDroz/ValheimFloorPlan/master/images/Ex7_2b.png)
+![In-game: round house interior](https://raw.githubusercontent.com/AlexDroz/ValheimFloorPlan/master/images/Ex7_3.png)
+![In-game: round house extended to two levels](https://raw.githubusercontent.com/AlexDroz/ValheimFloorPlan/master/images/Ex7_5.png)
+![Designer: shamrock layout with three overlapping FlexiWall arcs](https://raw.githubusercontent.com/AlexDroz/ValheimFloorPlan/master/images/Ex7_6a.png)
+![In-game: aerial view of the completed shamrock build](https://raw.githubusercontent.com/AlexDroz/ValheimFloorPlan/master/images/Ex7_6b.png)
+![Designer: large circle FlexiWall layout on a 20x20 grid](https://raw.githubusercontent.com/AlexDroz/ValheimFloorPlan/master/images/Ex7_7a.png)
+![In-game: roof scaffolding placed over the circular footprint](https://raw.githubusercontent.com/AlexDroz/ValheimFloorPlan/master/images/Ex7_7b.png)
+![In-game: level 2 roof pieces being placed on the round house](https://raw.githubusercontent.com/AlexDroz/ValheimFloorPlan/master/images/Ex7_8.png)
+![Designer: cosy home rectangular layout with beds, staircase, hearth, and workbenches](https://raw.githubusercontent.com/AlexDroz/ValheimFloorPlan/master/images/Ex7_9a.png)
+![In-game: multi-level rectangular build under construction with scaffolding](https://raw.githubusercontent.com/AlexDroz/ValheimFloorPlan/master/images/Ex7_9b.png)
+![In-game: clash signpost showing undo/clash detail signs](https://raw.githubusercontent.com/AlexDroz/ValheimFloorPlan/master/images/Ex7_9c.png)
+![Designer: rounded-corner square layout with FlexiWall arcs at each corner](https://raw.githubusercontent.com/AlexDroz/ValheimFloorPlan/master/images/Ex7_10a.png)
+![In-game: completed two-level curved stone building](https://raw.githubusercontent.com/AlexDroz/ValheimFloorPlan/master/images/Ex7_10b.png)
 
 ## Package contents include:
 

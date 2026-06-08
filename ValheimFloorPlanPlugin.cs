@@ -39,7 +39,7 @@ namespace ValheimFloorPlan
 
         public const string PluginGUID = "com.alexdroz.valheimfloorplan";
         public const string PluginName = "ValheimFloorPlan";
-        public const string PluginVersion = "2.0.3";
+        public const string PluginVersion = "2.1.0";
 
         internal static ManualLogSource Log = null!;
         internal static ValheimFloorPlanPlugin Instance { get; private set; } = null!;
@@ -56,6 +56,9 @@ namespace ValheimFloorPlan
         internal static int ExternalWallHeightLevel1 { get; private set; } = 1;
         internal static int ExternalWallHeightLevel2 { get; private set; } = 1;
         internal static int ExternalWallHeightLevel3 { get; private set; } = 1;
+        internal static int InternalWallHeightLevel1 { get; private set; } = 1;
+        internal static int InternalWallHeightLevel2 { get; private set; } = 1;
+        internal static int InternalWallHeightLevel3 { get; private set; } = 1;
         internal static StructuralMaterial WallPillarMaterial { get; private set; } = StructuralMaterial.Stone;
         internal static StaircaseReachModeOption StaircaseReachMode { get; private set; } = StaircaseReachModeOption.ToTheNextLevelOnly;
         internal static float StaircaseStepRise { get; private set; } = 0.16f;
@@ -118,6 +121,9 @@ namespace ValheimFloorPlan
         private ConfigEntry<int> _externalWallHeightLevel1 = null!;
         private ConfigEntry<int> _externalWallHeightLevel2 = null!;
         private ConfigEntry<int> _externalWallHeightLevel3 = null!;
+        private ConfigEntry<int> _internalWallHeightLevel1 = null!;
+        private ConfigEntry<int> _internalWallHeightLevel2 = null!;
+        private ConfigEntry<int> _internalWallHeightLevel3 = null!;
         private ConfigEntry<string> _wallPillarMaterial = null!;
         private ConfigEntry<string> _staircaseReachMode = null!;
         private ConfigEntry<float> _staircaseStepRise = null!;
@@ -181,6 +187,9 @@ namespace ValheimFloorPlan
             public int ExternalWallHeightLevel1 = 1;
             public int ExternalWallHeightLevel2 = 1;
             public int ExternalWallHeightLevel3 = 1;
+            public int InternalWallHeightLevel1 = 1;
+            public int InternalWallHeightLevel2 = 1;
+            public int InternalWallHeightLevel3 = 1;
             public string WallPillarMaterial = "Stone";
             public bool DisableWelcomePost;
             public string StaircaseReachMode = "ToTheNextLevelOnly";
@@ -394,6 +403,30 @@ namespace ValheimFloorPlan
                     new AcceptableValueRange<int>(1, 6)));
             _externalWallHeightLevel3.SettingChanged += (_, _) => ApplyScaffoldingRules();
             ExternalWallHeightLevel3 = Mathf.Clamp(_externalWallHeightLevel3.Value, 1, 6);
+
+            _internalWallHeightLevel1 = Config.Bind(
+                "Building", "InternalWallHeightLevel1", 1,
+                new ConfigDescription(
+                    "How many levels high internal (non-perimeter) FlexiWall pieces should be stacked for Level 1.",
+                    new AcceptableValueRange<int>(1, 6)));
+            _internalWallHeightLevel1.SettingChanged += (_, _) => InternalWallHeightLevel1 = Mathf.Clamp(_internalWallHeightLevel1.Value, 1, 6);
+            InternalWallHeightLevel1 = Mathf.Clamp(_internalWallHeightLevel1.Value, 1, 6);
+
+            _internalWallHeightLevel2 = Config.Bind(
+                "Building", "InternalWallHeightLevel2", 1,
+                new ConfigDescription(
+                    "How many levels high internal (non-perimeter) FlexiWall pieces should be stacked for Level 2.",
+                    new AcceptableValueRange<int>(1, 6)));
+            _internalWallHeightLevel2.SettingChanged += (_, _) => InternalWallHeightLevel2 = Mathf.Clamp(_internalWallHeightLevel2.Value, 1, 6);
+            InternalWallHeightLevel2 = Mathf.Clamp(_internalWallHeightLevel2.Value, 1, 6);
+
+            _internalWallHeightLevel3 = Config.Bind(
+                "Building", "InternalWallHeightLevel3", 1,
+                new ConfigDescription(
+                    "How many levels high internal (non-perimeter) FlexiWall pieces should be stacked for Level 3.",
+                    new AcceptableValueRange<int>(1, 6)));
+            _internalWallHeightLevel3.SettingChanged += (_, _) => InternalWallHeightLevel3 = Mathf.Clamp(_internalWallHeightLevel3.Value, 1, 6);
+            InternalWallHeightLevel3 = Mathf.Clamp(_internalWallHeightLevel3.Value, 1, 6);
 
             ApplyScaffoldingRules();
 
@@ -818,6 +851,9 @@ namespace ValheimFloorPlan
                     ExternalWallHeightLevel1 = Mathf.Clamp(_externalWallHeightLevel1.Value, 1, 6),
                     ExternalWallHeightLevel2 = Mathf.Clamp(_externalWallHeightLevel2.Value, 1, 6),
                     ExternalWallHeightLevel3 = Mathf.Clamp(_externalWallHeightLevel3.Value, 1, 6),
+                    InternalWallHeightLevel1 = Mathf.Clamp(_internalWallHeightLevel1.Value, 1, 6),
+                    InternalWallHeightLevel2 = Mathf.Clamp(_internalWallHeightLevel2.Value, 1, 6),
+                    InternalWallHeightLevel3 = Mathf.Clamp(_internalWallHeightLevel3.Value, 1, 6),
                     WallPillarMaterial = (_wallPillarMaterial.Value ?? "Stone").Trim(),
                     DisableWelcomePost = _disableWelcomePost.Value,
                     StaircaseReachMode = (_staircaseReachMode.Value ?? "ToTheNextLevelOnly").Trim(),
@@ -961,6 +997,9 @@ namespace ValheimFloorPlan
                     _externalWallHeightLevel1.Value = Mathf.Clamp(settings.ExternalWallHeightLevel1, 1, 6);
                     _externalWallHeightLevel2.Value = Mathf.Clamp(settings.ExternalWallHeightLevel2, 1, 6);
                     _externalWallHeightLevel3.Value = Mathf.Clamp(settings.ExternalWallHeightLevel3, 1, 6);
+                    _internalWallHeightLevel1.Value = Mathf.Clamp(settings.InternalWallHeightLevel1, 1, 6);
+                    _internalWallHeightLevel2.Value = Mathf.Clamp(settings.InternalWallHeightLevel2, 1, 6);
+                    _internalWallHeightLevel3.Value = Mathf.Clamp(settings.InternalWallHeightLevel3, 1, 6);
                     _wallPillarMaterial.Value = string.IsNullOrWhiteSpace(settings.WallPillarMaterial) ? "Stone" : settings.WallPillarMaterial;
                     _disableWelcomePost.Value = settings.DisableWelcomePost;
                     _staircaseReachMode.Value = string.IsNullOrWhiteSpace(settings.StaircaseReachMode) ? "ToTheNextLevelOnly" : settings.StaircaseReachMode;
@@ -1035,6 +1074,9 @@ namespace ValheimFloorPlan
                 "ExternalWallHeightLevel1=" + s.ExternalWallHeightLevel1.ToString(CultureInfo.InvariantCulture),
                 "ExternalWallHeightLevel2=" + s.ExternalWallHeightLevel2.ToString(CultureInfo.InvariantCulture),
                 "ExternalWallHeightLevel3=" + s.ExternalWallHeightLevel3.ToString(CultureInfo.InvariantCulture),
+                "InternalWallHeightLevel1=" + s.InternalWallHeightLevel1.ToString(CultureInfo.InvariantCulture),
+                "InternalWallHeightLevel2=" + s.InternalWallHeightLevel2.ToString(CultureInfo.InvariantCulture),
+                "InternalWallHeightLevel3=" + s.InternalWallHeightLevel3.ToString(CultureInfo.InvariantCulture),
                 "WallPillarMaterial=" + (s.WallPillarMaterial ?? string.Empty),
                 "DisableWelcomePost=" + s.DisableWelcomePost.ToString(),
                 "StaircaseReachMode=" + (s.StaircaseReachMode ?? string.Empty),
@@ -1098,6 +1140,9 @@ namespace ValheimFloorPlan
             settings.ExternalWallHeightLevel1 = ReadInt(map, "ExternalWallHeightLevel1", settings.ExternalWallHeightLevel1);
             settings.ExternalWallHeightLevel2 = ReadInt(map, "ExternalWallHeightLevel2", settings.ExternalWallHeightLevel2);
             settings.ExternalWallHeightLevel3 = ReadInt(map, "ExternalWallHeightLevel3", settings.ExternalWallHeightLevel3);
+            settings.InternalWallHeightLevel1 = ReadInt(map, "InternalWallHeightLevel1", settings.InternalWallHeightLevel1);
+            settings.InternalWallHeightLevel2 = ReadInt(map, "InternalWallHeightLevel2", settings.InternalWallHeightLevel2);
+            settings.InternalWallHeightLevel3 = ReadInt(map, "InternalWallHeightLevel3", settings.InternalWallHeightLevel3);
             settings.WallPillarMaterial = ReadString(map, "WallPillarMaterial", settings.WallPillarMaterial);
             settings.DisableWelcomePost = ReadBool(map, "DisableWelcomePost", settings.DisableWelcomePost);
             settings.StaircaseReachMode = ReadString(map, "StaircaseReachMode", settings.StaircaseReachMode);
@@ -1436,6 +1481,19 @@ namespace ValheimFloorPlan
                     return ExternalWallHeightLevel2;
                 default:
                     return ExternalWallHeightLevel3;
+            }
+        }
+
+        internal static int GetInternalWallHeightForLevel(int levelIndex)
+        {
+            switch (Mathf.Clamp(levelIndex, 0, 2))
+            {
+                case 0:
+                    return InternalWallHeightLevel1;
+                case 1:
+                    return InternalWallHeightLevel2;
+                default:
+                    return InternalWallHeightLevel3;
             }
         }
 
