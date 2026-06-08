@@ -88,6 +88,13 @@ This package includes two components:
 
 The FlexiWall tool draws curved or straight walls along any path in the Designer. Walls are built in-game as stacked stone pieces following the arc, with the same brick-bond row offset as regular walls.
 
+| Designer layout | In-game result |
+|---|---|
+| ![Shamrock layout in the Designer](https://raw.githubusercontent.com/AlexDroz/ValheimFloorPlan/master/images/Ex7_6a.png) | ![Completed shamrock build in-game](https://raw.githubusercontent.com/AlexDroz/ValheimFloorPlan/master/images/Ex7_6b.png) |
+
+
+**FlexiWall Examples video:** https://youtu.be/N8CvcGpX-BQ
+
 ### Drawing a FlexiWall
 
 1. Select the **FlexiWall** tool from the piece selector.
@@ -272,26 +279,32 @@ All values below are configurable in that file.
 
 ## Sample Plans
 
-The `samples/` folder contains ready-to-use `.vfp` examples:
+The `samples/` folder contains ready-to-use examples.
 
-- `samples/myfloorplan4x4.vfp`
-- `samples/myfloorplan8x8.vfp`
-- `samples/myfloorplan12x12.vfp`
-- `samples/myfloorplan16x16.vfp`
-- `samples/myfloorplan16x20.vfp`
-- `samples/myfloorplan20x20.vfp`
-- `samples/myfloorplan20x20_double.vfp`
-- `samples/myfloorplan24x24.vfp`
-- `samples/myfloorplan28x28.vfp`
-- `samples/StarBase20x20.vfp`
-- `samples/ThreeFloorBuild_Level_1_16x20.vfp`
-- `samples/ThreeFloorBuild_Level_2_16x20.vfp`
-- `samples/ThreeFloorBuild_Level_3_16x20.vfp`
-- `samples/Workbenches_16x20.vfp`
-- `samples/Workbenches_and_Staircase_16x20.vfp`
-- `samples/Workbenches_and_Staircase_ALT_16x20.vfp`
-- `samples/RoundHouse.vfp` — FlexiWall arc walls forming a round house layout
-- `samples/Circle.vfp` — single closed FlexiWall ring
+**Blank starter grids:**
+
+- `samples/myfloorplan4x4.vfp`, `myfloorplan8x8.vfp`, `myfloorplan12x12.vfp`, `myfloorplan16x16.vfp`, `myfloorplan16x20.vfp`, `myfloorplan20x20.vfp`, `myfloorplan20x20_double.vfp`, `myfloorplan24x24.vfp`, `myfloorplan28x28.vfp` — empty grids in common sizes
+
+**Preset bundles (`.vpfset`) — load with `Alt+F8` in-game:**
+
+- `samples/ExampleRoundHouse.vpfset` — three-level FlexiWall round house (20×20); level files: `RoundHouse_Level_1/2/3_20x20.vfp`
+- `samples/ExampleCirclular.vpfset` — three-level circular FlexiWall build (20×20); level files: `Circle_Level_1/2/3_20x20.vfp`
+- `samples/ExampleShamrock.vpfset` — three-level shamrock multi-arc FlexiWall build (20×20); level files: `Shamrock_Level_1/2/3_20x20.vfp`
+- `samples/ExampleShamrockGroundFloorOnly.vpfset` — ground-floor-only shamrock layout
+- `samples/ExampleCosyHouse.vpfset` — cosy home with beds, hearth, and workbenches; level files: `CosyHome_Level_1_20x20.vfp`
+- `samples/ExampleHeart.vpfset` — three-level heart-shaped FlexiWall build (20×20); level files: `Heart_Level_1/2/3_20x20.vfp`
+- `samples/ExampleTurrets.vpfset` — three-level build with FlexiWall turret towers (20×20); level files: `Turrets_level_1/2/3_20x20.vfp`
+- `samples/ExampleThreeFloorBuild.vpfset` — three-level rectangular build (16×20); level files: `ThreeFloorBuild_Level_1/2/3_16x20.vfp`
+
+**Standalone single-level plans:**
+
+- `samples/StarBase20x20.vfp` — star-shaped base layout
+- `samples/RoundHouse.vfp` — single-level FlexiWall round house
+- `samples/Target.vfp` — concentric-ring FlexiWall target layout
+- `samples/Turrets.vfp` — single-level turret layout
+- `samples/Workbenches_16x20.vfp` — 16×20 plan with workbenches
+- `samples/Workbenches_and_Staircase_16x20.vfp` — 16×20 with workbenches and staircase
+- `samples/Workbenches_and_Staircase_ALT_16x20.vfp` — alternate staircase placement
 
 ## Tips
 
