@@ -1,5 +1,7 @@
 {
   "permissions": {
-    "allow": []
+    "allow": [
+      "PowerShell(Rename-Item \"d:\\\\DEV\\\\ValheimMods\\\\ValheimFloorPlan\\\\samples\\\\ExampleCirclular.vpfset\" \"ExampleCircular.vpfset\" -Confirm:$false)"
+    ]
   }
 }

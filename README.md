@@ -8,7 +8,7 @@ The Designer supports up to three in-memory level layouts with quick switching, 
 
 Excel-style row/column reference labels run along all four edges of the grid to help with precise placement, and furniture pieces (`Bed`, `Staircase`, `Hearth`, `Workbench`) show a small centre handle once placed — drag it to move the piece, click it to select it, then rotate in place with the arrow keys or mouse wheel. Right-click and `Escape` simply cancel whatever's active (tool, selection, or in-progress draw) without deleting anything; to remove a piece, hover it and press `Delete`/`Backspace`.
 
-Once you're happy with the design, press the build hotkey, position the preview in-world, and confirm. The mod levels the terrain, places every piece in the right order, and handles scaffold framing for upper floors automatically. For multi-level builds, additional red floating rectangles appear in the preview at each upper-floor height so you can see the full vertical footprint before committing. If something is off, undo restores both pieces and terrain in one keypress — or use the keep-terrain undo (`Ctrl+F9`) to remove pieces while leaving the leveled ground intact.
+Once you're happy with the design, press the build hotkey, position the preview in-world, and confirm. The mod levels the terrain, places every piece in the right order, and handles scaffold framing for upper floors automatically. For multi-level builds, additional red floating rectangles appear in the preview at each upper-floor height so you can see the full vertical footprint before committing. If something is off, undo restores both pieces and terrain in one keypress — or use the keep-terrain undo (`Ctrl+F9`) to remove pieces while leaving the levelled ground intact.
 
 This package includes two components:
 
@@ -24,7 +24,7 @@ This package includes two components:
 
 ## Creating Floor Plans
 
-1. Open the **Designer** to create or edit a plan. It is a local web page installed by Thunderstore Mod Manager. Copy the path below and paste it into your browser address bar to open it :
+1. Open the **Designer** to create or edit a plan. It is a local web page installed by Thunderstore Mod Manager. Copy the path below and paste it into your browser address bar to open it:
 
    ```
    %APPDATA%\Thunderstore Mod Manager\DataFolder\Valheim\profiles\Default\BepInEx\plugins\RetiredCoders-ValheimFloorPlan\ValheimFloorPlan\Designer\index.html
@@ -54,11 +54,11 @@ This package includes two components:
 
    While positioning the plan, watch for these visual markers in the world:
 
-   - **White rectangle** — the inner leveled pad: the exact area of ground that will be raised and flattened to sit your foundation on.
+   - **White rectangle** — the inner levelled pad: the exact area of ground that will be raised and flattened to sit your foundation on.
    - **Green rectangle** — the outer terrain-change boundary: terrain blending extends to this edge, giving a smooth transition rather than a hard cliff.
    - **Red floating rectangle(s)** — upper-floor level bands (multi-level builds only). One red band appears per upper floor at its expected scaffold height, so you can see the full vertical footprint before confirming. Only shown when `FloorPlanLevels` is `2` or `3`.
    - **Tall yellow flagpole** — the exact placement origin point at the centre of the plan. The pole rises 10 m above the terrain surface so it remains visible even when the ground is underwater or underground.
-   - **Orange diamond markers** — terrain edge risk warnings. These appear when the surrounding terrain is uneven enough that the leveled edge may produce visible tears or spikes. Move or rotate the plan until they disappear (or reduce) for the cleanest result. Markers turn **red** when risk is high.
+   - **Orange diamond markers** — terrain edge risk warnings. These appear when the surrounding terrain is uneven enough that the levelled edge may produce visible tears or spikes. Move or rotate the plan until they disappear (or reduce) for the cleanest result. Markers turn **red** when risk is high.
 
    **Note:** A HUD message also reports the current risk level (`LOW` / `MEDIUM` / `HIGH`) along with `step` (the steepest cross-edge height jump) and `relief` (total height range around the footprint) to help you judge whether to nudge the plan before building.
 
@@ -66,7 +66,7 @@ This package includes two components:
    - **Red rings** around every VFP piece within the search radius so you can see exactly what will be removed.
    - **Orange boundary circle** on the ground marking the edge of the search radius.
 
-   Optional mode: press **Ctrl+F9** (configurable via `UndoKeepTerrainHotkey`) to start piece-only undo that keeps the leveled terrain. In this mode the terrain snapshot is discarded instead of restored.
+   Optional mode: press **Ctrl+F9** (configurable via `UndoKeepTerrainHotkey`) to start piece-only undo that keeps the levelled terrain. In this mode the terrain snapshot is discarded instead of restored.
 
    During the confirmation window you can:
 
@@ -82,7 +82,7 @@ This package includes two components:
 
 **IMPORTANT:** Terrain can only be restored within the **current session** — if you leave the area or reload, the terrain snapshot is lost. Building pieces can be undone across sessions because they are tagged as built by Valheim Floor Plan.
 
-**Tip — keep the leveled terrain:** if you want to remove your build but keep the flat ground (e.g. to iterate on a design), use **Ctrl+F9** (`UndoKeepTerrainHotkey`) instead of F9. Pieces are removed as normal, but the terrain snapshot is discarded rather than restored.
+**Tip — keep the levelled terrain:** if you want to remove your build but keep the flat ground (e.g. to iterate on a design), use **Ctrl+F9** (`UndoKeepTerrainHotkey`) instead of F9. Pieces are removed as normal, but the terrain snapshot is discarded rather than restored.
 
 ## FlexiWall Tool
 
@@ -147,7 +147,7 @@ While import selection is active, the HUD shows:
 - Control hints (`Right`, `Left`, `Enter`, `Escape`)
 - Remaining time
 
-If the timer expires, import selection is canceled automatically.
+If the timer expires, import selection is cancelled automatically.
 
 After a successful import, `BundleName` is automatically normalized to the imported preset prefix (timestamp suffix removed).
 
@@ -176,7 +176,7 @@ This helps avoid the "nothing gets built" situation where pieces can block each 
 
 ## Config Options
 
-All values below are configurable in that file.
+All values below are configurable in the BepInEx config file.
 
 ### General
 
@@ -189,7 +189,7 @@ All values below are configurable in that file.
 | `FloorPlanFileLevel3` | *(empty)* | File path or bare filename | Optional Level 3 `.vfp` file. A bare filename is sufficient when `FloorPlanDirectory` is set. If set, its footprint must fit within the Level 1 (`FloorPlanFile`) footprint. |
 | `BuildHotkey` | `F8` | Any valid `KeyboardShortcut` | Starts plan preview/build flow. |
 | `UndoHotkey` | `F9` | Any valid `KeyboardShortcut` | Removes placed VFP-tagged pieces and restores terrain snapshot. |
-| `UndoKeepTerrainHotkey` | `LeftControl + F9` | Any valid `KeyboardShortcut` | Starts piece-only undo mode: removes VFP pieces and discards the current terrain snapshot so leveled terrain remains. |
+| `UndoKeepTerrainHotkey` | `LeftControl + F9` | Any valid `KeyboardShortcut` | Starts piece-only undo mode: removes VFP pieces and discards the current terrain snapshot so levelled terrain remains. |
 | `BundleName` | `MyBuild` | Any valid file-name text | Preset name prefix used when exporting bundles. Export file name format is `<BundleName>-YYYYMMDD-HHMMSS.vpfset`. After import, this is reset to the imported prefix (timestamp removed). |
 | `ExportBundleHotkey` | `LeftControl + F8` | Any valid `KeyboardShortcut` | Exports a preset bundle to `PresetBundles` as `<BundleName>-YYYYMMDD-HHMMSS.vpfset` (layout files + non-key settings). |
 | `ImportBundleHotkey` | `LeftAlt + F8` | Any valid `KeyboardShortcut` | Starts timed bundle import selection mode (`Right/Left` choose, `Enter` import, `Escape` cancel, auto-timeout cancel). |
@@ -211,14 +211,14 @@ All values below are configurable in that file.
 | `StaircaseReachMode` | `ToTheNextLevelOnly` | `ToTheNextLevelOnly`, `AllTheWay` | Controls staircase vertical reach. `ToTheNextLevelOnly` climbs one level at a time. `AllTheWay` climbs toward the highest available scaffold level. |
 | `StaircaseStepRise` | `0.16` | `0.10` to `0.40` | Vertical height in metres between staircase treads. Lower values produce shallower, easier-to-climb steps but increase total tread count. |
 | `StaircaseStepAngleDeg` | `15` | `10` to `30` | Degrees of rotation between staircase treads. Lower values produce a wider, gentler spiral. |
-| `StaircaseStepRadius` | `0.75` | `0.50` to `1.00` | Distance in metres from the center pole to the midpoint of each tread. Keep at or below `1.0` to stay within the 4×4 staircase footprint. |
+| `StaircaseStepRadius` | `0.75` | `0.50` to `1.00` | Distance in metres from the centre pole to the midpoint of each tread. Keep at or below `1.0` to stay within the 4×4 staircase footprint. |
 
 ### Scaffolding
 
 | Option | Default | Allowed values | What it does |
 |---|---|---|---|
 | `RoofScaffolding` | `false` | `true` / `false` | Adds scaffold poles and perimeter beams around the plan during the build. Automatically forced to `true` when `FloorPlanLevels > 1`. |
-| `RoofScaffoldingType` | `Gable` | `Gable`, `Flat` | Controls the topmost scaffold deck shape when `ScaffoldingFloors` is enabled. `Gable` builds a pitched roof layout and extends front-mid/back-mid/center support columns up to the apex. `Flat` tiles the topmost level with ridge roof pieces edge-to-edge (one piece per 2x2 tile area). |
+| `RoofScaffoldingType` | `Gable` | `Gable`, `Flat` | Controls the topmost scaffold deck shape when `ScaffoldingFloors` is enabled. `Gable` builds a pitched roof layout and extends front-mid/back-mid/centre support columns up to the apex. `Flat` tiles the topmost level with ridge roof pieces edge-to-edge (one piece per 2x2 tile area). |
 | `RoofScaffoldingGableFlooring` | `RoofWithFloorUnderlay` | `RoofWithFloorUnderlay`, `RoofOnly` | Gable-only top-surface behavior (used only when `RoofScaffoldingType=Gable`). `RoofWithFloorUnderlay` places floor tiles under the top gable roof. `RoofOnly` places only gable roof pieces. |
 | `ScaffoldingLevels` | `1` | `1` to `3` | Number of stacked scaffolding levels when `RoofScaffolding` is enabled. Each extra level repeats the same scaffold pattern +4m above the previous level. |
 | `ScaffoldingFloorHeight` | `4` | `2`, `4`, `6` | Vertical height in metres between scaffold levels. Must be a multiple of 2m so stacked wood-iron support segments line up correctly. |
@@ -233,18 +233,18 @@ All values below are configurable in that file.
 
 | Option | Default | Allowed values | What it does |
 |---|---|---|---|
-| `BuildOriginForwardOffset` | `0` | `0` to `20` | Extra distance added to the auto-computed player-to-build-center preview offset (meters). Usually not needed. |
-| `MoveStep` | `2.0` | `0.25` to `10.0` | Nudge distance per move key press (meters). |
-| `FineMoveStep` | `0.5` | `0.05` to `5.0` | Nudge distance per move key press while fine-adjust key is held (meters). |
+| `BuildOriginForwardOffset` | `0` | `0` to `20` | Extra distance added to the auto-computed player-to-build-centre preview offset (metres). Usually not needed. |
+| `MoveStep` | `2.0` | `0.25` to `10.0` | Nudge distance per move key press (metres). |
+| `FineMoveStep` | `0.5` | `0.05` to `5.0` | Nudge distance per move key press while fine-adjust key is held (metres). |
 
 ### Preview Keys
 
 | Option | Default | What it does |
 |---|---|---|
-| `MoveForwardKey` | `UpArrow` | Move preview center forward relative to camera. |
-| `MoveBackwardKey` | `DownArrow` | Move preview center backward relative to camera. |
-| `MoveLeftKey` | `LeftArrow` | Move preview center left relative to camera. |
-| `MoveRightKey` | `RightArrow` | Move preview center right relative to camera. |
+| `MoveForwardKey` | `UpArrow` | Move preview centre forward relative to camera. |
+| `MoveBackwardKey` | `DownArrow` | Move preview centre backward relative to camera. |
+| `MoveLeftKey` | `LeftArrow` | Move preview centre left relative to camera. |
+| `MoveRightKey` | `RightArrow` | Move preview centre right relative to camera. |
 | `RotateLeftKey` | `Q` | Rotate preview counter-clockwise. |
 | `RotateRightKey` | `G` | Rotate preview clockwise. |
 | `ConfirmKey` | `E` | Confirm current preview placement and start build. |
@@ -263,12 +263,12 @@ All values below are configurable in that file.
 
 | Option | Default | Allowed values | What it does |
 |---|---|---|---|
-| `TerrainLevelPasses` | `2` | `1` to `5` | Main leveling pass count before spike cleanup. Lower is faster; higher can smooth stubborn terrain. |
-| `TerrainSpikeCleanupPasses` | `2` | `1` to `5` | Post-leveling spike cleanup pass count. |
-| `TerrainStampRadius` | `3.0` | `3.0` to `6.0` | Radius of each terrain stamp disc (meters). Also controls outer terrain blend reach. |
+| `TerrainLevelPasses` | `2` | `1` to `5` | Main levelling pass count before spike cleanup. Lower is faster; higher can smooth stubborn terrain. |
+| `TerrainSpikeCleanupPasses` | `2` | `1` to `5` | Post-levelling spike cleanup pass count. |
+| `TerrainStampRadius` | `3.0` | `3.0` to `6.0` | Radius of each terrain stamp disc (metres). Also controls outer terrain blend reach. |
 | `TerrainHighPointDelta` | `0.0` | `0.0` to `4.0` | Extra height added to sampled highest point (`targetY = highest + delta`). |
 | `TerrainUseStagedRaise` | `false` | `true` / `false` | Experimental staged vertical raise mode instead of single full-height raise. |
-| `TerrainRaiseStepHeight` | `0.5` | `0.15` to `1.5` | Max vertical raise per stage when staged raise is enabled (meters). |
+| `TerrainRaiseStepHeight` | `0.5` | `0.15` to `1.5` | Max vertical raise per stage when staged raise is enabled (metres). |
 | `TerrainMaxRaiseStages` | `1` | `1` to `16` | Hard cap on number of staged raises when staged mode is enabled. |
 | `TerrainSkipSatisfiedCenterStamps` | `true` | `true` / `false` | Skips center stamps where sampled terrain is already at/above target height. |
 
@@ -284,7 +284,7 @@ The `samples/` folder contains ready-to-use examples.
 **Preset bundles (`.vpfset`) — load with `Alt+F8` in-game:**
 
 - `samples/ExampleRoundHouse.vpfset` — three-level FlexiWall round house (20×20); level files: `RoundHouse_Level_1/2/3_20x20.vfp`
-- `samples/ExampleCirclular.vpfset` — three-level circular FlexiWall build (20×20); level files: `Circle_Level_1/2/3_20x20.vfp`
+- `samples/ExampleCircular.vpfset` — three-level circular FlexiWall build (20×20); level files: `Circle_Level_1/2/3_20x20.vfp`
 - `samples/ExampleShamrock.vpfset` — three-level shamrock multi-arc FlexiWall build (20×20); level files: `Shamrock_Level_1/2/3_20x20.vfp`
 - `samples/ExampleShamrockGroundFloorOnly.vpfset` — ground-floor-only shamrock layout
 - `samples/ExampleCosyHouse.vpfset` — cosy home with beds, hearth, and workbenches; level files: `CosyHome_Level_1_20x20.vfp`
@@ -311,7 +311,7 @@ The `samples/` folder contains ready-to-use examples.
 - **Use the overlay in the Designer before building.** Enable L2/L3 overlays to check for piece clashes across levels before saving any of the `.vfp` files. Red dashed outlines flag conflicts, with directional rules for Staircases and Hearths.
 - **Bed orientation matters.** The arrow shown on a Bed in the Designer points toward the head. The in-game placement will match — players sleep with their head toward the arrow.
 - **Undo is session-only for terrain.** The terrain snapshot is held in memory. Move to a different area or reload the world and it is gone. Piece removal still works across sessions because pieces are tagged.
-- **Use Ctrl+F9 to keep your leveled ground.** If you want to remove the build and try again without re-leveling, press `Ctrl+F9` instead of `F9` to start undo. Pieces are removed but the leveled terrain stays. This is especially useful when iterating on a design in the same spot.
+- **Use Ctrl+F9 to keep your levelled ground.** If you want to remove the build and try again without re-levelling, press `Ctrl+F9` instead of `F9` to start undo. Pieces are removed but the levelled terrain stays. This is especially useful when iterating on a design in the same spot.
 - **The preview shows all floor levels.** When `FloorPlanLevels` is 2 or 3, floating red bands appear during preview at the height of each upper floor. Use them to check clearance and surroundings before confirming.
 - **Adjust the undo radius before confirming.** During the undo confirmation window, `+`/`-` resizes the search circle and arrow keys reposition it. This is useful when two builds are close together and you only want to remove one.
 - **FlexiWalls meet cleanly at shared cell boundaries.** When two FlexiWalls share a cell boundary, their endpoints snap to the same edge midpoint, so there is no gap at the join. Use the green and red endpoint dots in the Designer to confirm the snap positions before saving.
