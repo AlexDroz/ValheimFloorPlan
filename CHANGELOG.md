@@ -1,6 +1,6 @@
 # Changelog
 
-## 2.1.1
+## 2.1.2
 
 - **New FlexiWall tool in the Designer:** draw curved or straight walls of any shape — arcs, circles, sweeping curves — that are not constrained to the rectangular grid. Select the tool, click a start cell, click an end cell, then drag the midpoint handle to bend the arc into shape. Endpoints snap automatically to the correct cell-edge boundary so adjacent FlexiWalls meet without gaps.
 - **Full circle support:** placing start and end in adjacent cells and dragging the midpoint to the opposite side of the circle produces a closed ring wall — both in the Designer preview and the in-game build.

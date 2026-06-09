@@ -39,7 +39,7 @@ namespace ValheimFloorPlan
 
         public const string PluginGUID = "com.alexdroz.valheimfloorplan";
         public const string PluginName = "ValheimFloorPlan";
-        public const string PluginVersion = "2.1.1";
+        public const string PluginVersion = "2.1.2";
 
         internal static ManualLogSource Log = null!;
         internal static ValheimFloorPlanPlugin Instance { get; private set; } = null!;

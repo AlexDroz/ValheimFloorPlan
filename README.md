@@ -176,10 +176,6 @@ This helps avoid the "nothing gets built" situation where pieces can block each 
 
 ## Config Options
 
-Config file path:
-
-- `BepInEx/config/com.alexdroz.valheimfloorplan.cfg`
-
 All values below are configurable in that file.
 
 ### General
