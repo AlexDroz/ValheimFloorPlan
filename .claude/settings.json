@@ -1,7 +1,8 @@
 {
   "permissions": {
     "allow": [
-      "PowerShell(Rename-Item \"d:\\\\DEV\\\\ValheimMods\\\\ValheimFloorPlan\\\\samples\\\\ExampleCirclular.vpfset\" \"ExampleCircular.vpfset\" -Confirm:$false)"
+      "PowerShell(Rename-Item \"d:\\\\DEV\\\\ValheimMods\\\\ValheimFloorPlan\\\\samples\\\\ExampleCirclular.vpfset\" \"ExampleCircular.vpfset\" -Confirm:$false)",
+      "Bash(git -C \"d:\\\\DEV\\\\ValheimMods\\\\ValheimFloorPlan\" log -1 --format=\"%H %s\")"
     ]
   }
 }
