@@ -2,7 +2,13 @@
   "permissions": {
     "allow": [
       "PowerShell(Rename-Item \"d:\\\\DEV\\\\ValheimMods\\\\ValheimFloorPlan\\\\samples\\\\ExampleCirclular.vpfset\" \"ExampleCircular.vpfset\" -Confirm:$false)",
-      "Bash(git -C \"d:\\\\DEV\\\\ValheimMods\\\\ValheimFloorPlan\" log -1 --format=\"%H %s\")"
+      "Bash(git -C \"d:\\\\DEV\\\\ValheimMods\\\\ValheimFloorPlan\" log -1 --format=\"%H %s\")",
+      "PowerShell(dotnet build ValheimFloorPlan.sln -v:m -nologo)",
+      "PowerShell(dotnet build ValheimFloorPlan.sln -v:q -nologo)",
+      "PowerShell(if \\($?\\) { \"BUILD OK\" })",
+      "Skill(claude-api)",
+      "Skill(claude-api:*)",
+      "WebSearch"
     ]
   }
 }

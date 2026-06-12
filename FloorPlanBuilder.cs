@@ -2134,7 +2134,7 @@ namespace ValheimFloorPlan
                             ? configuredExternalWallHeight
                             : configuredInternalWallHeight;
 
-                        var segments = ComputeFlexiWallSegments(fw, UL_FLEXI_WALL_WIDTH);
+                        var segments = ComputeFlexiWallSegments(fw, UL_FLEXI_WALL_WIDTH, densifyTightCurve: true);
                         for (int segIdx = 0; segIdx < segments.Count; segIdx++)
                         {
                             var seg = segments[segIdx];
@@ -2281,7 +2281,7 @@ namespace ValheimFloorPlan
 
             float topDeckY = GetDeckYForScaffoldLevel(scaffoldLevels - 1);
             float roofApexY = topDeckY;
-            if (ValheimFloorPlanPlugin.RoofScaffoldingType == ValheimFloorPlanPlugin.RoofScaffoldingTypeOption.Gable)
+            if (ValheimFloorPlanPlugin.RoofStyle == ValheimFloorPlanPlugin.RoofStyleOption.Gable)
             {
                 GetPlanPieceBounds(level1Plan,
                     out int minCol, out int maxColExclusive,
@@ -3291,7 +3291,7 @@ namespace ValheimFloorPlan
                             ? configuredExternalWallHeight
                             : configuredInternalWallHeight;
 
-                        var segments = ComputeFlexiWallSegments(fw, FLEXI_WALL_WIDTH);
+                        var segments = ComputeFlexiWallSegments(fw, FLEXI_WALL_WIDTH, densifyTightCurve: true);
                         for (int segIdx = 0; segIdx < segments.Count; segIdx++)
                         {
                             var seg = segments[segIdx];
@@ -3961,15 +3961,27 @@ namespace ValheimFloorPlan
             return null;
         }
 
+        // With OpenTop=true the topmost scaffold level has no deck,
+        // so the highest deck a staircase can climb to is one level lower.
+        private static int GetTopClimbableFloorIndex(int scaffoldLevels)
+        {
+            bool noRoof = ValheimFloorPlanPlugin.OpenTop;
+            return noRoof ? scaffoldLevels - 2 : scaffoldLevels - 1;
+        }
+
         private static float GetStaircaseTargetRise()
         {
             if (ValheimFloorPlanPlugin.ScaffoldingFloors)
             {
                 int scaffoldLevels = Mathf.Clamp(ValheimFloorPlanPlugin.ScaffoldingLevels, 1, 3);
+                int topFloorIndex = GetTopClimbableFloorIndex(scaffoldLevels);
                 bool allTheWay =
                     ValheimFloorPlanPlugin.StaircaseReachMode ==
                     ValheimFloorPlanPlugin.StaircaseReachModeOption.AllTheWay;
-                int levelsToClimb = allTheWay ? scaffoldLevels : 1;
+                int levelsToClimb = Mathf.Min(allTheWay ? scaffoldLevels : 1, topFloorIndex + 1);
+                if (levelsToClimb <= 0)
+                    return 0f; // No deck to reach (NoRoof single level) — caller skips the stair.
+
                 float totalRise = 0f;
                 for (int level = 0; level < levelsToClimb; level++)
                 {
@@ -3985,14 +3997,15 @@ namespace ValheimFloorPlan
 
         private static float GetUpperLevelStaircaseTargetTopY(float levelDeckY, int floorIndex, int scaffoldLevels)
         {
+            int topFloorIndex = GetTopClimbableFloorIndex(scaffoldLevels);
             bool allTheWay =
                 ValheimFloorPlanPlugin.StaircaseReachMode ==
                 ValheimFloorPlanPlugin.StaircaseReachModeOption.AllTheWay;
             if (allTheWay)
-                return GetDeckYForScaffoldLevel(scaffoldLevels - 1);
+                return topFloorIndex >= 0 ? GetDeckYForScaffoldLevel(topFloorIndex) : levelDeckY;
 
             int nextFloorIndex = floorIndex + 1;
-            if (nextFloorIndex >= scaffoldLevels)
+            if (nextFloorIndex > topFloorIndex)
                 return levelDeckY;
 
             return GetDeckYForScaffoldLevel(nextFloorIndex);
@@ -4202,8 +4215,40 @@ namespace ValheimFloorPlan
         // Returns one FlexiWallSegment per wall piece along a FlexiWall path.
         // Coordinates are in plan-local grid units (same space as col/row * CELL_SIZE).
         // YawDeg is the local yaw of the wall's 2m length axis (0 = along local X).
+        // Tight-curve wall densification: at the default spacing of one piece per
+        // segWidth of arc, the rotation between adjacent pieces is segWidth/R rad,
+        // which grows as the radius tightens and fans the flat panels apart,
+        // opening wedge gaps on the convex face. Below FLEXI_TIGHT_CURVE_RADIUS
+        // the per-piece angle is instead scaled in proportion to the radius
+        // (angle = segWidth * R / (T^2 * density)), so tighter curves use
+        // proportionally more pieces. The density factor scales how many extra
+        // pieces tight curves get (1 = full closing density; 0.5 = half as many),
+        // the min() keeps tight curves from ever going sparser than the default
+        // spacing, and the angle floor bounds the piece count on degenerate,
+        // very small circles.
+        // Scaffold callers must NOT opt in: ring beams pair 2 segments per 2m
+        // beam and rely on segments being ~segWidth apart.
+        private const float FLEXI_TIGHT_CURVE_RADIUS = 4f;
+        private const float FLEXI_TIGHT_CURVE_DENSITY = 0.5f;
+        private const float FLEXI_MIN_SEGMENT_ANGLE_RAD = 12f * Mathf.Deg2Rad;
+
+        private static int FlexiArcSegmentCount(
+            float radius, float totalAngleAbs, float segWidth, bool densifyTightCurve)
+        {
+            float segAngle = segWidth / radius;
+            if (densifyTightCurve && radius < FLEXI_TIGHT_CURVE_RADIUS)
+            {
+                float tightAngle = Mathf.Max(
+                    FLEXI_MIN_SEGMENT_ANGLE_RAD,
+                    segWidth * radius /
+                    (FLEXI_TIGHT_CURVE_RADIUS * FLEXI_TIGHT_CURVE_RADIUS * FLEXI_TIGHT_CURVE_DENSITY));
+                segAngle = Mathf.Min(segAngle, tightAngle);
+            }
+            return Mathf.Max(1, Mathf.RoundToInt(totalAngleAbs / segAngle));
+        }
+
         private static List<FlexiWallSegment> ComputeFlexiWallSegments(
-            FlexiWallPiece fw, float segWidth)
+            FlexiWallPiece fw, float segWidth, bool densifyTightCurve = false)
         {
             var result = new List<FlexiWallSegment>();
             float dx = fw.X2 - fw.X1;
@@ -4220,7 +4265,7 @@ namespace ValheimFloorPlan
                 if (fcR < 0.01f) return result;
                 float fcTau   = Mathf.PI * 2f;
                 float fcStart = Mathf.Atan2(fw.Y1 - fcCz, fw.X1 - fcCx);
-                int   fcN     = Mathf.Max(1, Mathf.RoundToInt(fcR * fcTau / segWidth));
+                int   fcN     = FlexiArcSegmentCount(fcR, fcTau, segWidth, densifyTightCurve);
                 for (int i = 0; i < fcN; i++)
                 {
                     float t     = (i + 0.5f) / fcN;
@@ -4276,8 +4321,7 @@ namespace ValheimFloorPlan
             bool  ccw    = midOff < endOff;
 
             float totalAngle = ccw ? endOff : -(tau - endOff);
-            float arcLen     = R * Mathf.Abs(totalAngle);
-            int   n2         = Mathf.Max(1, Mathf.RoundToInt(arcLen / segWidth));
+            int   n2         = FlexiArcSegmentCount(R, Mathf.Abs(totalAngle), segWidth, densifyTightCurve);
 
             for (int i = 0; i < n2; i++)
             {
@@ -4332,24 +4376,49 @@ namespace ValheimFloorPlan
                 if (ys[i] >= maxRowExclusive - EDGE_TOLERANCE) return true;
             }
 
-            // Floor-asymmetry test: find the actual tangent at the arc midpoint,
-            // then sample floor coverage 1 m perpendicular on each side.
+            // Full-circle extra check: X1==X2 so only 2 distinct control points are tested
+            // above. The circle's cardinal extremes (±R from centre) may touch the bounding
+            // box at positions not coinciding with the join point or its antipode.
+            float lineLen = Mathf.Sqrt((fw.X2 - fw.X1) * (fw.X2 - fw.X1) + (fw.Y2 - fw.Y1) * (fw.Y2 - fw.Y1));
+            if (lineLen < 0.02f)
+            {
+                float fcCx = (fw.X1 + fw.Mx) * 0.5f;
+                float fcCz = (fw.Y1 + fw.My) * 0.5f;
+                float fcR  = Mathf.Sqrt((fw.X1 - fcCx) * (fw.X1 - fcCx) + (fw.Y1 - fcCz) * (fw.Y1 - fcCz));
+                if (fcCx - fcR <= minCol          + EDGE_TOLERANCE) return true;
+                if (fcCx + fcR >= maxColExclusive - EDGE_TOLERANCE) return true;
+                if (fcCz - fcR <= minRow          + EDGE_TOLERANCE) return true;
+                if (fcCz + fcR >= maxRowExclusive - EDGE_TOLERANCE) return true;
+            }
+
+            // Floor-asymmetry test: sample floor coverage 1 m perpendicular on each side
+            // at multiple points along the arc (quarter, half, three-quarter).
+            // Returning true (perimeter) as soon as any sample is asymmetric is more robust
+            // than relying on a single midpoint which may happen to face the wrong direction.
             var segs = ComputeFlexiWallSegments(fw, 1f);
             if (segs.Count == 0) return true;
 
-            var mid = segs[segs.Count / 2];
-            float yawRad = mid.YawDeg * Mathf.Deg2Rad;
-            float tanX = Mathf.Cos(yawRad), tanZ = Mathf.Sin(yawRad);
-            // Perpendicular (90° CCW rotation of tangent in plan XZ).
-            float perpX = -tanZ, perpZ = tanX;
+            int[] sampleIndices = {
+                segs.Count / 4,
+                segs.Count / 2,
+                segs.Count * 3 / 4
+            };
+            foreach (int si in sampleIndices)
+            {
+                int idx = Mathf.Clamp(si, 0, segs.Count - 1);
+                var pt = segs[idx];
+                float yawRad = pt.YawDeg * Mathf.Deg2Rad;
+                float perpX = -Mathf.Sin(yawRad), perpZ = Mathf.Cos(yawRad);
 
-            bool sideA = IsPointOverFloor(mid.Lx + perpX * SAMPLE_DISTANCE,
-                                          mid.Lz + perpZ * SAMPLE_DISTANCE, plan);
-            bool sideB = IsPointOverFloor(mid.Lx - perpX * SAMPLE_DISTANCE,
-                                          mid.Lz - perpZ * SAMPLE_DISTANCE, plan);
+                bool sideA = IsPointOverFloor(pt.Lx + perpX * SAMPLE_DISTANCE,
+                                              pt.Lz + perpZ * SAMPLE_DISTANCE, plan);
+                bool sideB = IsPointOverFloor(pt.Lx - perpX * SAMPLE_DISTANCE,
+                                              pt.Lz - perpZ * SAMPLE_DISTANCE, plan);
+                if (!(sideA && sideB)) return true; // asymmetric → perimeter
+            }
 
-            // Interior divider: floor on both sides.  Everything else is perimeter.
-            return !(sideA && sideB);
+            // All samples had floor on both sides → interior divider.
+            return false;
         }
 
         private static bool IsPointOverFloor(float x, float z, FloorPlan plan)
@@ -4780,6 +4849,12 @@ namespace ValheimFloorPlan
                 float deckY = levelTopY + FLOOR_DECK_LIFT;
                 var deckOpenings = BuildScaffoldDeckOpenings(plan, deckY, chimneyStartY);
                 bool useFwScaffolding = fwArcChains.Count > 0;
+                bool isTopmostLevel = level == scaffoldLevels - 1;
+
+                // OpenTop: the topmost level stays open to the sky — no vertical
+                // poles on the external walls, no beams, and no roof/deck above it.
+                // Only the chimney shell still rises through the open level.
+                bool noRoofTopLevel = isTopmostLevel && ValheimFloorPlanPlugin.OpenTop;
 
                 // occupiedPoleLocals: used by transverse/longitudinal beam pairing.
                 var occupiedPoleLocals = new List<Vector2>(poleParams.Count + 32);
@@ -4796,7 +4871,7 @@ namespace ValheimFloorPlan
                 }
 
                 // ── Place vertical poles for this level ──────────────────────
-                if (!useFwScaffolding)
+                if (!noRoofTopLevel && !useFwScaffolding)
                 {
                     foreach (float t in poleParams)
                     {
@@ -4807,7 +4882,7 @@ namespace ValheimFloorPlan
                         if (placed % 10 == 0) yield return new WaitForSeconds(PLACE_DELAY);
                     }
                 }
-                else
+                else if (!noRoofTopLevel)
                 {
                     foreach (var fwLocal in fwPoleLocals)
                     {
@@ -4819,15 +4894,18 @@ namespace ValheimFloorPlan
                     }
                 }
 
-                // Center pole — always
+                // Center pole — always (except when OpenTop suppresses the topmost level)
+                if (!noRoofTopLevel)
+                {
                     Vector3 centerPolePos = PieceMap.TransformPlanPoint(origin, localCenterX, localCenterZ, currentLevelBaseY + scaffoldFloorHeight * 0.5f, rotationDeg);
-                placed += SpawnScaffoldColumn(
-                    vertPrefab, centerPolePos, Quaternion.Euler(0, rotationDeg, 0),
-                    player, scaffoldFloorHeight, POLE_SEGMENT_HEIGHT);
-                if (placed % 10 == 0) yield return new WaitForSeconds(PLACE_DELAY);
+                    placed += SpawnScaffoldColumn(
+                        vertPrefab, centerPolePos, Quaternion.Euler(0, rotationDeg, 0),
+                        player, scaffoldFloorHeight, POLE_SEGMENT_HEIGHT);
+                    if (placed % 10 == 0) yield return new WaitForSeconds(PLACE_DELAY);
+                }
 
                 // ── Perimeter ring beams ──────────────────────────────────────
-                if (!useFwScaffolding)
+                if (!noRoofTopLevel && !useFwScaffolding)
                 {
                     // Rectangular perimeter: corners clockwise SW→SE→NE→NW→SW
                     var cornerTops = new Vector3[4];
@@ -4877,7 +4955,7 @@ namespace ValheimFloorPlan
                         }
                     }
                 }
-                else
+                else if (!noRoofTopLevel)
                 {
                     // FlexiWall arcs: one 2m beam per 2-segment span, chord-direction oriented.
                     // Using the chord from chain[ci] to chain[ci+2] guarantees zero gap between
@@ -4893,7 +4971,9 @@ namespace ValheimFloorPlan
                             var sC = chain[nextJoint];
                             float localCX = (sA.Lx + sC.Lx) * 0.5f;
                             float localCZ = (sA.Lz + sC.Lz) * 0.5f;
-                            if (IsInsideAnyHearthOpening(localCX, localCZ, deckOpenings)) continue;
+                            // Arc ring beams run along the perimeter wall — they don't
+                            // pass through chimney shafts or staircase wells, so opening
+                            // checks are intentionally omitted here.
                             float chDX = sC.Lx - sA.Lx;
                             float chDZ = sC.Lz - sA.Lz;
                             float chLen = Mathf.Sqrt(chDX * chDX + chDZ * chDZ);
@@ -4915,7 +4995,7 @@ namespace ValheimFloorPlan
                 // Each FlexiWall arc ends where the next begins (doorway, junction).
                 // The ring beam loop above only covers arc interiors, so connect
                 // endpoint pairs from different arcs that are close but not coincident.
-                if (useFwScaffolding && fwArcChains.Count > 1)
+                if (!noRoofTopLevel && useFwScaffolding && fwArcChains.Count > 1)
                 {
                     var arcEndptLocals = new List<Vector2>(fwArcChains.Count * 2);
                     for (int fi = 0; fi < fwArcChains.Count; fi++)
@@ -4951,7 +5031,7 @@ namespace ValheimFloorPlan
                 }
 
                 // ── FlexiWall star spokes: each arc pole → center pole ────────
-                if (useFwScaffolding)
+                if (!noRoofTopLevel && useFwScaffolding)
                 {
                     var centerLocal  = new Vector2(localCenterX, localCenterZ);
                     Vector3 centerTopPos = PieceMap.TransformPlanPoint(
@@ -4969,7 +5049,7 @@ namespace ValheimFloorPlan
                 }
 
                 // ── Place transverse beams (West to East) for this level ─────
-                if (!useFwScaffolding && useTransverseScaffoldingBeams)
+                if (!noRoofTopLevel && !useFwScaffolding && useTransverseScaffoldingBeams)
                 {
                     placed += PlaceTransverseBeams(
                         poleParams, width, depth, lMinX, lMaxX, lMinZ, lMaxZ, perimeter,
@@ -4978,7 +5058,7 @@ namespace ValheimFloorPlan
                 }
 
                 // ── Place longitudinal beams (South to North) for this level ─
-                if (!useFwScaffolding && useLongitudinalScaffoldingBeams)
+                if (!noRoofTopLevel && !useFwScaffolding && useLongitudinalScaffoldingBeams)
                 {
                     placed += PlaceLongitudinalBeams(
                         poleParams, width, depth, lMinX, lMaxX, lMinZ, lMaxZ, perimeter,
@@ -4986,10 +5066,8 @@ namespace ValheimFloorPlan
                         levelTopY, horizPrefab, vertPrefab, player);
                 }
 
-                if (ValheimFloorPlanPlugin.ScaffoldingFloors)
+                if (ValheimFloorPlanPlugin.ScaffoldingFloors && !noRoofTopLevel)
                 {
-                    bool isTopmostLevel = level == scaffoldLevels - 1;
-
                     // For FlexiWall plans: find the actual arc extents along the
                     // gable ridge centreline (x ≈ localCenterX) so that ridge-tip
                     // apex support columns land on the ring beams, not on the
@@ -5039,6 +5117,19 @@ namespace ValheimFloorPlan
                         chimneyWall1Prefab,
                         chimneyRoofPrefab,
                         player);
+
+                    float cornerPoleCenter = currentLevelBaseY + scaffoldFloorHeight * 0.5f;
+                    foreach (var opening in hearthOpenings)
+                    {
+                        int[] cornerCols = { opening.MinCol, opening.MaxColExclusive };
+                        int[] cornerRows = { opening.MinRow, opening.MaxRowExclusive };
+                        foreach (int cc in cornerCols)
+                            foreach (int cr in cornerRows)
+                            {
+                                Vector3 cPos = PieceMap.TransformPlanPoint(origin, cc, cr, cornerPoleCenter, rotationDeg);
+                                placed += SpawnScaffoldColumn(vertPrefab, cPos, Quaternion.Euler(0f, rotationDeg, 0f), player, scaffoldFloorHeight, POLE_SEGMENT_HEIGHT);
+                            }
+                    }
                 }
 
                 currentLevelBaseY = levelTopY;
@@ -5050,7 +5141,7 @@ namespace ValheimFloorPlan
                 // make sure the chimney clears the ridge, not just its own levels.
                 float topDeckY = GetDeckYForScaffoldLevel(scaffoldLevels - 1);
                 float roofApexY = topDeckY;
-                if (ValheimFloorPlanPlugin.RoofScaffoldingType == ValheimFloorPlanPlugin.RoofScaffoldingTypeOption.Gable)
+                if (ValheimFloorPlanPlugin.RoofStyle == ValheimFloorPlanPlugin.RoofStyleOption.Gable)
                 {
                     float halfSpan = 0.5f * Mathf.Min(width, depth);
                     roofApexY = topDeckY + Mathf.Tan(26f * Mathf.Deg2Rad) * halfSpan;
@@ -5105,11 +5196,11 @@ namespace ValheimFloorPlan
         {
             bool useFlatRidgeTop =
                 useRoofTop &&
-                ValheimFloorPlanPlugin.RoofScaffoldingType == ValheimFloorPlanPlugin.RoofScaffoldingTypeOption.Flat &&
+                ValheimFloorPlanPlugin.RoofStyle == ValheimFloorPlanPlugin.RoofStyleOption.Flat &&
                 roofTopPrefab != null;
             bool useGableTop =
                 useRoofTop &&
-                ValheimFloorPlanPlugin.RoofScaffoldingType == ValheimFloorPlanPlugin.RoofScaffoldingTypeOption.Gable &&
+                ValheimFloorPlanPlugin.RoofStyle == ValheimFloorPlanPlugin.RoofStyleOption.Gable &&
                 topLowerRoofPrefab != null;
 
             if (useGableTop)
@@ -6349,9 +6440,6 @@ namespace ValheimFloorPlan
 
                 if (bestEi < 0 || bestDelta > 0.25f) continue;
 
-                if (IsBeamSpanBlockedByOpenings(westEdge[wi].Local, eastEdge[bestEi].Local, blockedOpenings))
-                    continue;
-
                 usedEast[bestEi] = true;
                 placed += PlaceScaffoldBeamSpan(
                     westEdge[wi].Local, eastEdge[bestEi].Local,
@@ -6425,9 +6513,6 @@ namespace ValheimFloorPlan
 
                 if (bestNi < 0 || bestDelta > 0.25f) continue;
 
-                if (IsBeamSpanBlockedByOpenings(southEdge[si].Local, northEdge[bestNi].Local, blockedOpenings))
-                    continue;
-
                 usedNorth[bestNi] = true;
                 placed += PlaceScaffoldBeamSpan(
                     southEdge[si].Local, northEdge[bestNi].Local,
@@ -6461,12 +6546,9 @@ namespace ValheimFloorPlan
             GameObject horizPrefab, GameObject vertPrefab, Player player, List<Vector2> doorCenters,
             List<ScaffoldFurnitureExclusion> supportFurnitureExclusions, List<Vector2> occupiedPoleLocals, List<HearthOpening> blockedOpenings)
         {
-            const float HORIZ_LEN  = 2f;
-            const float HORIZ_HALF = HORIZ_LEN * 0.5f;
+            const float HORIZ_LEN    = 2f;
+            const float HORIZ_HALF   = HORIZ_LEN * 0.5f;
             const float JOINT_OVERLAP = 0.08f;
-
-            if (IsBeamSpanBlockedByOpenings(localA, localB, blockedOpenings))
-                return 0;
 
             float dx = pB.x - pA.x;
             float dz = pB.z - pA.z;
@@ -6483,7 +6565,12 @@ namespace ValheimFloorPlan
 
             for (int b = 0; b < nFull; b++)
             {
-                Vector3 center = pA + dir * (b * HORIZ_LEN + HORIZ_HALF - JOINT_OVERLAP * 0.5f);
+                float centerDist = b * HORIZ_LEN + HORIZ_HALF - JOINT_OVERLAP * 0.5f;
+                float t = Mathf.Clamp01(centerDist / dist);
+                Vector2 localPieceCenter = Vector2.Lerp(localA, localB, t);
+                if (IsInsideAnyHearthOpening(localPieceCenter.x, localPieceCenter.y, blockedOpenings))
+                    continue;
+                Vector3 center = pA + dir * centerDist;
                 center.y = beamY;
                 SpawnScaffoldPole(horizPrefab, center, beamRot, player);
                 placed++;
@@ -6491,36 +6578,21 @@ namespace ValheimFloorPlan
 
             if (remainder > 0.05f)
             {
-                Vector3 center = pB - dir * (HORIZ_HALF - JOINT_OVERLAP * 0.5f);
-                center.y = beamY;
-                SpawnScaffoldPole(horizPrefab, center, beamRot, player);
-                placed++;
+                float centerDist = dist - (HORIZ_HALF - JOINT_OVERLAP * 0.5f);
+                float t = Mathf.Clamp01(centerDist / dist);
+                Vector2 localPieceCenter = Vector2.Lerp(localA, localB, t);
+                if (!IsInsideAnyHearthOpening(localPieceCenter.x, localPieceCenter.y, blockedOpenings))
+                {
+                    Vector3 center = pB - dir * (HORIZ_HALF - JOINT_OVERLAP * 0.5f);
+                    center.y = beamY;
+                    SpawnScaffoldPole(horizPrefab, center, beamRot, player);
+                    placed++;
+                }
             }
 
             return placed;
         }
 
-        private static bool IsBeamSpanBlockedByOpenings(Vector2 localA, Vector2 localB, List<HearthOpening> openings)
-        {
-            if (openings == null || openings.Count == 0)
-                return false;
-
-            float beamMinX = Mathf.Min(localA.x, localB.x);
-            float beamMaxX = Mathf.Max(localA.x, localB.x);
-            float beamMinZ = Mathf.Min(localA.y, localB.y);
-            float beamMaxZ = Mathf.Max(localA.y, localB.y);
-
-            for (int i = 0; i < openings.Count; i++)
-            {
-                var opening = openings[i];
-                bool overlapsX = beamMaxX > opening.MinCol && beamMinX < opening.MaxColExclusive;
-                bool overlapsZ = beamMaxZ > opening.MinRow && beamMinZ < opening.MaxRowExclusive;
-                if (overlapsX && overlapsZ)
-                    return true;
-            }
-
-            return false;
-        }
 
         private sealed class ScaffoldPolePoint
         {

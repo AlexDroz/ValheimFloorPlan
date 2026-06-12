@@ -92,6 +92,12 @@ z = origin.z + dx * sin(rotation) + dz * cos(rotation)
 
 FlexiWall segments are computed by `ComputeFlexiWallSegments` (straight or arc path) and placed in a stacked loop in `FloorPlanBuilder.cs`.
 
+### Tight-Curve Segment Densification
+
+- Default segment density is one piece per `segWidth` (1m) of arc length, i.e. a per-piece rotation of `segWidth/R` radians — which fans the flat panels apart on tight curves, opening wedge gaps on the convex face.
+- `FlexiArcSegmentCount` therefore shrinks the per-piece angle in proportion to the radius below `FLEXI_TIGHT_CURVE_RADIUS` (4m): `angle = segWidth * R / (T² * FLEXI_TIGHT_CURVE_DENSITY)`, clamped by `min()` so it is never sparser than the default `segWidth/R`, and floored at `FLEXI_MIN_SEGMENT_ANGLE_RAD` (12°) to bound piece counts on very small circles. With density 0.5 the densification effectively kicks in below R ≈ T/√2 ≈ 2.8m; raise the density toward 1 for tighter joints at the cost of more pieces.
+- Densification is **opt-in** via the `densifyTightCurve` parameter and only the two wall-placement call sites pass `true`. Scaffolding callers (`PlaceRoofScaffolding`, `IsFlexiWallOnPerimeter`) must keep the legacy 1m spacing — ring beams pair 2 segments per 2m beam and would multiply/shrink if the chain densified.
+
 ### Brick-Bond Row Offset
 
 Every other row is shifted -0.5m along the wall tangent to create a brick-bond pattern. **Rows are counted 1-indexed from the ground** (s=0 = row 1):
@@ -243,12 +249,18 @@ Vertical columns per level:
 - Post-pass cleanup:
 	- After scaffolding placement, `PruneGroundFloorScaffoldVerticals` removes ground-floor poles within door proximity radius (`DOOR_RADIUS = 4.25f`) to keep entry paths clear.
 
-### Roof Modes (Flat And Gable)
+### Roof Modes (Flat, Gable, NoRoof)
 - Top-level roof/deck choice is handled by `PlaceScaffoldLevelFloorDeck` and depends on:
-	- `RoofScaffoldingType` (`Flat` or `Gable`)
+	- `RoofScaffoldingType` (`Flat`, `Gable`, or `NoRoof`)
 	- `RoofScaffoldingGableFlooring` (`RoofWithFloorUnderlay` or `RoofOnly`)
 	- Topmost-level check (`isTopmostLevel`)
 - Non-top levels place flat scaffold floor decks only.
+
+#### NoRoof Mode
+- The topmost scaffold level is left open to the sky: the `PlaceRoofScaffolding` level loop sets `noRoofTopLevel` (topmost level + `RoofScaffoldingType=NoRoof`) and skips vertical poles (rect and FlexiWall), the center pole, ring beams, arc gap-fill beams, star spokes, transverse/longitudinal beams, and the floor deck/roof for that level.
+- Chimney behavior is unchanged: `PlaceHearthChimneyLevel` still walls the chimney shaft through the open top level, and `PlaceHearthChimneyTop` caps above it. Chimney apex math treats `NoRoof` like `Flat` (`roofApexY = topDeckY`), since both apex checks test `== Gable`.
+- Staircases must not climb into the open top level: `GetTopClimbableFloorIndex` returns `scaffoldLevels - 2` under `NoRoof` (else `scaffoldLevels - 1`), and both `GetStaircaseTargetRise` (ground stairs + deck-opening gating) and `GetUpperLevelStaircaseTargetTopY` (upper-level stairs) clamp to it. A stair whose target would not rise above its own deck is skipped by the existing reach-mode checks.
+- With `ScaffoldingLevels=1`, `NoRoof` skips the only level, so no scaffolding is placed at all (chimneys excepted).
 
 #### Flat Mode
 - Path: `PlaceTopScaffoldFlatRidgeRoof`.

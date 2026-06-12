@@ -19,7 +19,7 @@ namespace ValheimFloorPlan
             Wood
         }
 
-        internal enum RoofScaffoldingTypeOption
+        internal enum RoofStyleOption
         {
             Gable,
             Flat
@@ -39,7 +39,7 @@ namespace ValheimFloorPlan
 
         public const string PluginGUID = "com.alexdroz.valheimfloorplan";
         public const string PluginName = "ValheimFloorPlan";
-        public const string PluginVersion = "2.1.2";
+        public const string PluginVersion = "2.1.3";
 
         internal static ManualLogSource Log = null!;
         internal static ValheimFloorPlanPlugin Instance { get; private set; } = null!;
@@ -65,7 +65,8 @@ namespace ValheimFloorPlan
         internal static float StaircaseStepAngleDeg { get; private set; } = 15f;
         internal static float StaircaseStepRadius { get; private set; } = 0.75f;
         internal static bool RoofScaffolding { get; private set; } = false;
-        internal static RoofScaffoldingTypeOption RoofScaffoldingType { get; private set; } = RoofScaffoldingTypeOption.Gable;
+        internal static RoofStyleOption RoofStyle { get; private set; } = RoofStyleOption.Gable;
+        internal static bool OpenTop { get; private set; } = false;
         internal static RoofScaffoldingGableFlooringOption RoofScaffoldingGableFlooring { get; private set; } = RoofScaffoldingGableFlooringOption.RoofWithFloorUnderlay;
         internal static int ScaffoldingLevels { get; private set; } = 1;
         internal static int ScaffoldingFloorHeight { get; private set; } = 4;
@@ -130,7 +131,8 @@ namespace ValheimFloorPlan
         private ConfigEntry<float> _staircaseStepAngleDeg = null!;
         private ConfigEntry<float> _staircaseStepRadius = null!;
         private ConfigEntry<bool> _roofScaffolding = null!;
-        private ConfigEntry<string> _roofScaffoldingType = null!;
+        private ConfigEntry<string> _roofStyle = null!;
+        private ConfigEntry<bool> _openTop = null!;
         private ConfigEntry<string> _roofScaffoldingGableFlooring = null!;
         private ConfigEntry<int> _scaffoldingLevels = null!;
         private ConfigEntry<int> _scaffoldingFloorHeight = null!;
@@ -178,7 +180,8 @@ namespace ValheimFloorPlan
             public int ScaffoldingFloorHeight2 = 4;
             public int ScaffoldingFloorHeight3 = 4;
             public bool RoofScaffolding;
-            public string RoofScaffoldingType = "Gable";
+            public string RoofStyle = "Gable";
+            public bool OpenTop;
             public string RoofScaffoldingGableFlooring = "RoofWithFloorUnderlay";
             public bool ScaffoldingFloors;
             public bool TransverseScaffoldingBeams;
@@ -342,14 +345,48 @@ namespace ValheimFloorPlan
             _roofScaffolding.SettingChanged += (_, _) => ApplyScaffoldingRules();
             RoofScaffolding = _roofScaffolding.Value;
 
-            _roofScaffoldingType = Config.Bind(
-                "Scaffolding", "RoofScaffoldingType", "Gable",
+            // ── Migration: RoofScaffoldingType → RoofStyle + OpenTop ─────────────
+            // Read the legacy key before binding the replacements so we can migrate
+            // its value then remove it from the config file in one save pass.
+            var legacyRoofTypeEntry = Config.Bind(
+                "Scaffolding", "RoofScaffoldingType", "",
+                new ConfigDescription("Deprecated — use RoofStyle and OpenTop instead."));
+            string legacyRoofTypeValue = (legacyRoofTypeEntry.Value ?? "").Trim();
+            bool hasLegacyRoofType = !string.IsNullOrEmpty(legacyRoofTypeValue);
+            Config.Remove(new BepInEx.Configuration.ConfigDefinition("Scaffolding", "RoofScaffoldingType"));
+            // ─────────────────────────────────────────────────────────────────────
+
+            _roofStyle = Config.Bind(
+                "Scaffolding", "RoofStyle", "Gable",
                 new ConfigDescription(
-                    "Topmost scaffold deck shape when ScaffoldingFloors is enabled. Gable builds the current pitched roof. Flat tiles the topmost level with ridge roof pieces aligned edge-to-edge along their long edges.",
+                    "Topmost scaffold deck shape when ScaffoldingFloors is enabled. Gable builds a pitched roof. Flat tiles the topmost level with ridge roof pieces aligned edge-to-edge along their long edges. Ignored when OpenTop is true.",
                     new AcceptableValueList<string>("Gable", "Flat")));
-            _roofScaffoldingType.SettingChanged += (_, _) =>
-                RoofScaffoldingType = ParseRoofScaffoldingType(_roofScaffoldingType.Value);
-            RoofScaffoldingType = ParseRoofScaffoldingType(_roofScaffoldingType.Value);
+            _roofStyle.SettingChanged += (_, _) =>
+                RoofStyle = ParseRoofStyle(_roofStyle.Value);
+            RoofStyle = ParseRoofStyle(_roofStyle.Value);
+
+            _openTop = Config.Bind(
+                "Scaffolding", "OpenTop", false,
+                "When true, the topmost scaffold level is left open to the sky. No roof deck, no vertical poles, and no ring beams are placed on the topmost level regardless of ScaffoldingFloors or RoofStyle. Staircases are clamped to the highest real deck. Hearth chimneys still extend above the open level.");
+            _openTop.SettingChanged += (_, _) => OpenTop = _openTop.Value;
+            OpenTop = _openTop.Value;
+
+            if (hasLegacyRoofType)
+            {
+                if (string.Equals(legacyRoofTypeValue, "NoRoof", System.StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(legacyRoofTypeValue, "No Roof", System.StringComparison.OrdinalIgnoreCase))
+                {
+                    _openTop.Value = true;
+                    OpenTop = true;
+                }
+                else if (string.Equals(legacyRoofTypeValue, "Flat", System.StringComparison.OrdinalIgnoreCase))
+                {
+                    _roofStyle.Value = "Flat";
+                    RoofStyle = RoofStyleOption.Flat;
+                }
+                Config.Save();
+                Log.LogInfo($"[Migration] RoofScaffoldingType={legacyRoofTypeValue} migrated to RoofStyle={RoofStyle}, OpenTop={OpenTop}.");
+            }
 
             _roofScaffoldingGableFlooring = Config.Bind(
                 "Scaffolding", "RoofScaffoldingGableFlooring", "RoofWithFloorUnderlay",
@@ -660,7 +697,7 @@ namespace ValheimFloorPlan
             gameObject.AddComponent<FloorPlanBuilder>();
 
             Log.LogInfo($"{PluginName} v{PluginVersion} loaded! " +
-                $"Build: {_buildHotkey.Value}  Undo: {_undoHotkey.Value}  Undo(keep terrain): {_undoKeepTerrainHotkey.Value}  Progress HUD: {ProgressMessageType}  Terrain passes: {TerrainLevelPasses}  Spike cleanup passes: {TerrainSpikeCleanupPasses}  High-point delta: {TerrainHighPointDelta:F2}m  Staged raise: {TerrainUseStagedRaise} ({TerrainRaiseStepHeight:F2}m, max {TerrainMaxRaiseStages})  Skip satisfied center stamps: {TerrainSkipSatisfiedCenterStamps}  External wall heights: L1={ExternalWallHeightLevel1}, L2={ExternalWallHeightLevel2}, L3={ExternalWallHeightLevel3}  Wall/Pillar material: {WallPillarMaterial}  Staircase reach: {StaircaseReachMode}  Roof scaffolding: {RoofScaffolding} ({RoofScaffoldingType}/{RoofScaffoldingGableFlooring})  Scaffolding levels: {ScaffoldingLevels}  Scaffolding floor height: {ScaffoldingFloorHeight}m  Scaffolding floors: {ScaffoldingFloors}  Transverse beams: {TransverseScaffoldingBeams}  Longitudinal beams: {LongitudinalScaffoldingBeams}  Origin extra offset: {BuildOriginForwardOffset:F1}m  Preview move: {PreviewMoveStep:F2}/{PreviewFineMoveStep:F2}m  Preview rotate: {PreviewRotateStepDeg:F0}/{PreviewFineRotateStepDeg:F0}°  Build snap: {BuildRotationSnapDegrees:F1}°");
+                $"Build: {_buildHotkey.Value}  Undo: {_undoHotkey.Value}  Undo(keep terrain): {_undoKeepTerrainHotkey.Value}  Progress HUD: {ProgressMessageType}  Terrain passes: {TerrainLevelPasses}  Spike cleanup passes: {TerrainSpikeCleanupPasses}  High-point delta: {TerrainHighPointDelta:F2}m  Staged raise: {TerrainUseStagedRaise} ({TerrainRaiseStepHeight:F2}m, max {TerrainMaxRaiseStages})  Skip satisfied center stamps: {TerrainSkipSatisfiedCenterStamps}  External wall heights: L1={ExternalWallHeightLevel1}, L2={ExternalWallHeightLevel2}, L3={ExternalWallHeightLevel3}  Wall/Pillar material: {WallPillarMaterial}  Staircase reach: {StaircaseReachMode}  Roof scaffolding: {RoofScaffolding} (style={RoofStyle}, openTop={OpenTop}, flooring={RoofScaffoldingGableFlooring})  Scaffolding levels: {ScaffoldingLevels}  Scaffolding floor height: {ScaffoldingFloorHeight}m  Scaffolding floors: {ScaffoldingFloors}  Transverse beams: {TransverseScaffoldingBeams}  Longitudinal beams: {LongitudinalScaffoldingBeams}  Origin extra offset: {BuildOriginForwardOffset:F1}m  Preview move: {PreviewMoveStep:F2}/{PreviewFineMoveStep:F2}m  Preview rotate: {PreviewRotateStepDeg:F0}/{PreviewFineRotateStepDeg:F0}°  Build snap: {BuildRotationSnapDegrees:F1}°");
         }
 
         private void Update()
@@ -842,7 +879,8 @@ namespace ValheimFloorPlan
                     ScaffoldingFloorHeight2 = _scaffoldingFloorHeight2.Value,
                     ScaffoldingFloorHeight3 = _scaffoldingFloorHeight3.Value,
                     RoofScaffolding = _roofScaffolding.Value,
-                    RoofScaffoldingType = (_roofScaffoldingType.Value ?? "Gable").Trim(),
+                    RoofStyle = (_roofStyle.Value ?? "Gable").Trim(),
+                    OpenTop = _openTop.Value,
                     RoofScaffoldingGableFlooring = (_roofScaffoldingGableFlooring.Value ?? "RoofWithFloorUnderlay").Trim(),
                     ScaffoldingFloors = _scaffoldingFloors.Value,
                     TransverseScaffoldingBeams = _transverseScaffoldingBeams.Value,
@@ -988,7 +1026,8 @@ namespace ValheimFloorPlan
                     _scaffoldingFloorHeight2.Value = settings.ScaffoldingFloorHeight2;
                     _scaffoldingFloorHeight3.Value = settings.ScaffoldingFloorHeight3;
                     _roofScaffolding.Value = settings.RoofScaffolding;
-                    _roofScaffoldingType.Value = string.IsNullOrWhiteSpace(settings.RoofScaffoldingType) ? "Gable" : settings.RoofScaffoldingType;
+                    _roofStyle.Value = string.IsNullOrWhiteSpace(settings.RoofStyle) ? "Gable" : settings.RoofStyle;
+                    _openTop.Value = settings.OpenTop;
                     _roofScaffoldingGableFlooring.Value = string.IsNullOrWhiteSpace(settings.RoofScaffoldingGableFlooring) ? "RoofWithFloorUnderlay" : settings.RoofScaffoldingGableFlooring;
                     _scaffoldingFloors.Value = settings.ScaffoldingFloors;
                     _transverseScaffoldingBeams.Value = settings.TransverseScaffoldingBeams;
@@ -1066,7 +1105,8 @@ namespace ValheimFloorPlan
                 "ScaffoldingFloorHeight2=" + s.ScaffoldingFloorHeight2.ToString(CultureInfo.InvariantCulture),
                 "ScaffoldingFloorHeight3=" + s.ScaffoldingFloorHeight3.ToString(CultureInfo.InvariantCulture),
                 "RoofScaffolding=" + s.RoofScaffolding.ToString(),
-                "RoofScaffoldingType=" + (s.RoofScaffoldingType ?? string.Empty),
+                "RoofStyle=" + (s.RoofStyle ?? string.Empty),
+                "OpenTop=" + s.OpenTop.ToString(),
                 "RoofScaffoldingGableFlooring=" + (s.RoofScaffoldingGableFlooring ?? string.Empty),
                 "ScaffoldingFloors=" + s.ScaffoldingFloors.ToString(),
                 "TransverseScaffoldingBeams=" + s.TransverseScaffoldingBeams.ToString(),
@@ -1132,7 +1172,19 @@ namespace ValheimFloorPlan
             settings.ScaffoldingFloorHeight2 = ReadInt(map, "ScaffoldingFloorHeight2", settings.ScaffoldingFloorHeight2);
             settings.ScaffoldingFloorHeight3 = ReadInt(map, "ScaffoldingFloorHeight3", settings.ScaffoldingFloorHeight3);
             settings.RoofScaffolding = ReadBool(map, "RoofScaffolding", settings.RoofScaffolding);
-            settings.RoofScaffoldingType = ReadString(map, "RoofScaffoldingType", settings.RoofScaffoldingType);
+            settings.RoofStyle = ReadString(map, "RoofStyle", settings.RoofStyle);
+            settings.OpenTop = ReadBool(map, "OpenTop", settings.OpenTop);
+            // Migration: legacy .vpfset files may have RoofScaffoldingType instead of RoofStyle/OpenTop
+            if (!map.ContainsKey("RoofStyle") && map.TryGetValue("RoofScaffoldingType", out string legacyRST))
+            {
+                if (string.Equals(legacyRST, "NoRoof", System.StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(legacyRST, "No Roof", System.StringComparison.OrdinalIgnoreCase))
+                    settings.OpenTop = true;
+                else if (string.Equals(legacyRST, "Flat", System.StringComparison.OrdinalIgnoreCase))
+                    settings.RoofStyle = "Flat";
+                else
+                    settings.RoofStyle = "Gable";
+            }
             settings.RoofScaffoldingGableFlooring = ReadString(map, "RoofScaffoldingGableFlooring", settings.RoofScaffoldingGableFlooring);
             settings.ScaffoldingFloors = ReadBool(map, "ScaffoldingFloors", settings.ScaffoldingFloors);
             settings.TransverseScaffoldingBeams = ReadBool(map, "TransverseScaffoldingBeams", settings.TransverseScaffoldingBeams);
@@ -1537,7 +1589,7 @@ namespace ValheimFloorPlan
 
         internal static bool UseGableFloorUnderlay()
         {
-            return RoofScaffoldingType == RoofScaffoldingTypeOption.Gable &&
+            return RoofStyle == RoofStyleOption.Gable &&
                    RoofScaffoldingGableFlooring == RoofScaffoldingGableFlooringOption.RoofWithFloorUnderlay;
         }
 
@@ -1554,12 +1606,12 @@ namespace ValheimFloorPlan
             return StructuralMaterial.Stone;
         }
 
-        private static RoofScaffoldingTypeOption ParseRoofScaffoldingType(string value)
+        private static RoofStyleOption ParseRoofStyle(string value)
         {
             if (string.Equals(value?.Trim(), "Flat", System.StringComparison.OrdinalIgnoreCase))
-                return RoofScaffoldingTypeOption.Flat;
+                return RoofStyleOption.Flat;
 
-            return RoofScaffoldingTypeOption.Gable;
+            return RoofStyleOption.Gable;
         }
 
         private static RoofScaffoldingGableFlooringOption ParseRoofScaffoldingGableFlooring(string value)

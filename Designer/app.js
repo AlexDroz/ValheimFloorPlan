@@ -1,4 +1,4 @@
-const DESIGNER_VERSION = "2.1.2";
+const DESIGNER_VERSION = "2.1.3";
 
 const MAX_LAYOUT_LEVELS = 3;
 const WHEEL_ROTATION_STEP = 22.5;
