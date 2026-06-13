@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 2.1.3
 
 - **New `OpenTop` config option:** when `true`, leaves the topmost scaffold level open to the sky — no roof deck, no beams, and no vertical scaffolding on the external walls of the topmost level, regardless of `ScaffoldingFloors` or `RoofStyle`. Hearth chimneys still rise through the open level. Staircases are clamped to the highest real floor deck. Works consistently for 2-level and 3-level builds.
 - **`RoofScaffoldingType` replaced by `RoofStyle` + `OpenTop`:** `RoofStyle` controls the deck shape (`Gable` / `Flat`); `OpenTop` is a separate boolean that overrides all topmost-level placement. **Automatic migration:** on first load the mod reads any existing `RoofScaffoldingType` value, writes the equivalent `RoofStyle` / `OpenTop` values, removes the old key, and saves the config. No manual config editing required. Legacy `.vpfset` preset files are also migrated in memory when loaded.
@@ -8,7 +8,7 @@
 - **Beam spans no longer skip entirely when a chimney or staircase is nearby.** Previously, a transverse or longitudinal beam was omitted entirely if any part of its span overlapped a Hearth or Staircase footprint. Each 2m beam piece is now checked individually, so only the pieces whose centres fall inside the opening are skipped and the rest of the beam is placed normally.
 - **Tight-radius FlexiWalls now place proportionally more wall pieces.** On curves tighter than ~3m radius, the rotation angle between adjacent wall pieces now scales down in proportion to the radius instead of growing as the curve tightens, closing the wedge gaps that used to open up on the outer face of small arcs and circles. Gentler curves are unchanged.
 
-## 2.1.3
+## 2.1.2
 
 - **New FlexiWall tool in the Designer:** draw curved or straight walls of any shape — arcs, circles, sweeping curves — that are not constrained to the rectangular grid. Select the tool, click a start cell, click an end cell, then drag the midpoint handle to bend the arc into shape. Endpoints snap automatically to the correct cell-edge boundary so adjacent FlexiWalls meet without gaps.
 - **Full circle support:** placing start and end in adjacent cells and dragging the midpoint to the opposite side of the circle produces a closed ring wall — both in the Designer preview and the in-game build.

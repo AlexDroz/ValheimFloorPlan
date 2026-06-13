@@ -2246,6 +2246,7 @@ namespace ValheimFloorPlan
             var wall2Prefab = ZNetScene.instance?.GetPrefab("wood_wall_half");
             var wall1Prefab = ZNetScene.instance?.GetPrefab("wood_wall_1x1");
             var roofPrefab = ZNetScene.instance?.GetPrefab("wood_roof");
+            var vertPrefab = ZNetScene.instance?.GetPrefab("woodiron_pole");
             if (wall2Prefab == null)
             {
                 ValheimFloorPlanPlugin.Log.LogWarning(
@@ -2275,6 +2276,23 @@ namespace ValheimFloorPlan
                     wall1Prefab,
                     roofPrefab,
                     player);
+
+                if (vertPrefab != null)
+                {
+                    float columnHeight = nextLevelBaseY - currentLevelBaseY;
+                    float poleCenter = currentLevelBaseY + columnHeight * 0.5f;
+                    foreach (var opening in upperHearthOpenings)
+                    {
+                        int[] cornerCols = { opening.MinCol, opening.MaxColExclusive };
+                        int[] cornerRows = { opening.MinRow, opening.MaxRowExclusive };
+                        foreach (int cc in cornerCols)
+                            foreach (int cr in cornerRows)
+                            {
+                                Vector3 cPos = PieceMap.TransformPlanPoint(origin, cc, cr, poleCenter, rotationDeg);
+                                placed += SpawnScaffoldColumn(vertPrefab, cPos, Quaternion.Euler(0f, rotationDeg, 0f), player, columnHeight, 2f);
+                            }
+                    }
+                }
 
                 currentLevelBaseY = nextLevelBaseY;
             }

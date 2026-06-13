@@ -291,6 +291,8 @@ The `samples/` folder contains ready-to-use examples.
 - `samples/ExampleCosyHouse.vpfset` — cosy home with beds, hearth, and workbenches; level files: `CosyHome_Level_1_20x20.vfp`
 - `samples/ExampleHeart.vpfset` — three-level heart-shaped FlexiWall build (20×20); level files: `Heart_Level_1/2/3_20x20.vfp`
 - `samples/ExampleTurrets.vpfset` — three-level build with FlexiWall turret towers (20×20); level files: `Turrets_level_1/2/3_20x20.vfp`
+- `samples/ExampleCastle_2_Levels.vpfset` — two-level castle keep with FlexiWall circular corner towers and battlements (20×20); level files: `Castle_Level_1/2_20x20.vfp`
+- `samples/ExampleCastle_3_Levels.vpfset` — three-level version of the castle keep; level files: `Castle_Level_1/2/3_20x20.vfp`
 - `samples/ExampleThreeFloorBuild.vpfset` — three-level rectangular build (16×20); level files: `ThreeFloorBuild_Level_1/2/3_16x20.vfp`
 
 **Standalone single-level plans:**
@@ -376,6 +378,8 @@ Round houses, multi-arc layouts, and multi-level curved stone builds using the F
 ![In-game: clash signpost showing undo/clash detail signs](https://raw.githubusercontent.com/AlexDroz/ValheimFloorPlan/master/images/Ex7_9c.png)
 ![Designer: rounded-corner square layout with FlexiWall arcs at each corner](https://raw.githubusercontent.com/AlexDroz/ValheimFloorPlan/master/images/Ex7_10a.png)
 ![In-game: completed two-level curved stone building](https://raw.githubusercontent.com/AlexDroz/ValheimFloorPlan/master/images/Ex7_10b.png)
+![In-game: three-level castle keep with FlexiWall circular corner towers, front view](https://raw.githubusercontent.com/AlexDroz/ValheimFloorPlan/master/images/Ex8_1.png)
+![In-game: aerial view of the castle keep with FlexiWall circular towers at each corner](https://raw.githubusercontent.com/AlexDroz/ValheimFloorPlan/master/images/Ex8_2.png)
 
 ## Package contents include:
 
