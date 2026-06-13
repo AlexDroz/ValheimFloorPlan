@@ -378,6 +378,10 @@ Round houses, multi-arc layouts, and multi-level curved stone builds using the F
 ![In-game: clash signpost showing undo/clash detail signs](https://raw.githubusercontent.com/AlexDroz/ValheimFloorPlan/master/images/Ex7_9c.png)
 ![Designer: rounded-corner square layout with FlexiWall arcs at each corner](https://raw.githubusercontent.com/AlexDroz/ValheimFloorPlan/master/images/Ex7_10a.png)
 ![In-game: completed two-level curved stone building](https://raw.githubusercontent.com/AlexDroz/ValheimFloorPlan/master/images/Ex7_10b.png)
+
+
+## OpenTop Showcase
+
 ![In-game: three-level castle keep with FlexiWall circular corner towers, front view](https://raw.githubusercontent.com/AlexDroz/ValheimFloorPlan/master/images/Ex8_1.png)
 ![In-game: aerial view of the castle keep with FlexiWall circular towers at each corner](https://raw.githubusercontent.com/AlexDroz/ValheimFloorPlan/master/images/Ex8_2.png)
 
