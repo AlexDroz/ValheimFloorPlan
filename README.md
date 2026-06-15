@@ -17,6 +17,8 @@ This package includes two components:
 
 **Demo video:** https://youtu.be/jz39KSSfhJ0
 
+**Showcase your build on Discord:** https://discord.gg/baKg2ksP
+
 **Included in this package:**
 - The mod DLL (installed automatically under `BepInEx/plugins`)
 - The Designer web app (`BepInEx/plugins/ValheimFloorPlan/Designer/`)
