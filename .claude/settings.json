@@ -8,7 +8,8 @@
       "PowerShell(if \\($?\\) { \"BUILD OK\" })",
       "Skill(claude-api)",
       "Skill(claude-api:*)",
-      "WebSearch"
+      "WebSearch",
+      "PowerShell(cd \"d:\\\\DEV\\\\ValheimMods\\\\ValheimFloorPlan\"; dotnet build ValheimFloorPlan.csproj -c Debug 2>&1 | Where-Object { $_ -match \"error|warning CS|Build succeeded|FAILED\" })"
     ]
   }
 }

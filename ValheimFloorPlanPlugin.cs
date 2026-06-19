@@ -1,6 +1,7 @@
 using BepInEx;
 using BepInEx.Configuration;
 using BepInEx.Logging;
+using HarmonyLib;
 using System;
 using System.Collections.Generic;
 using System.Globalization;
@@ -11,6 +12,7 @@ using UnityEngine;
 namespace ValheimFloorPlan
 {
     [BepInPlugin(PluginGUID, PluginName, PluginVersion)]
+    [DefaultExecutionOrder(-10000)]
     public class ValheimFloorPlanPlugin : BaseUnityPlugin
     {
         internal enum StructuralMaterial
@@ -39,7 +41,7 @@ namespace ValheimFloorPlan
 
         public const string PluginGUID = "com.alexdroz.valheimfloorplan";
         public const string PluginName = "ValheimFloorPlan";
-        public const string PluginVersion = "2.1.3";
+        public const string PluginVersion = "2.1.4";
 
         internal static ManualLogSource Log = null!;
         internal static ValheimFloorPlanPlugin Instance { get; private set; } = null!;
@@ -164,6 +166,34 @@ namespace ValheimFloorPlan
         private string[] _bundleImportSelectionNames = Array.Empty<string>();
         private int _bundleImportLastShownSecond = -1;
         private const float BundleImportSelectionTimeoutSeconds = 5f;
+
+        // ── In-game config panel ────────────────────────────────────────────
+        private ConfigEntry<KeyboardShortcut> _configPanelHotkey = null!;
+        private bool _showConfigPanel;
+        private int _configPanelTab;
+        private Rect _configPanelRect;
+        private bool _configPanelRectInit;
+        private Vector2 _tabScrollGeneral;
+        private Vector2 _tabScrollBuilding;
+        private Vector2 _tabScrollScaffolding;
+        private Vector2 _tabScrollPreview;
+        private Vector2 _tabScrollTerrain;
+        private string _cfgBufDirectory = string.Empty;
+        private string _cfgBufFile = string.Empty;
+        private string _cfgBufFile2 = string.Empty;
+        private string _cfgBufFile3 = string.Empty;
+        private string _cfgBufBundleName = string.Empty;
+        private static readonly string[] _panelTabNames = new string[] { "General", "Building", "Scaffolding", "Preview", "Terrain" };
+        private static readonly string[] _msgPosOptions = new string[] { "Center", "CenterLeft", "TopLeft", "TopRight" };
+        private static readonly string[] _wallMatOptions = new string[] { "Stone", "Wood" };
+        private static readonly string[] _roofStyleOpts = new string[] { "Gable", "Flat" };
+        private static readonly string[] _roofFlooringOpts = new string[] { "RoofWithFloorUnderlay", "RoofOnly" };
+        private static readonly string[] _stairReachOpts = new string[] { "ToTheNextLevelOnly", "AllTheWay" };
+        private static readonly int[] _scaffoldHeightOpts = new int[] { 2, 4, 6 };
+        private static readonly float[] _rotStepOpts = new float[] { 22.5f, 45f, 90f };
+        private static GUIStyle? _cfgSectionStyle;
+        private GUIStyle? _cfgWindowStyle;
+        private Texture2D? _cfgWindowBgTex;
         private const string BundleExtension = ".vpfset";
         private const string LegacyBundleExtension = ".vfpset";
 
@@ -626,6 +656,10 @@ namespace ValheimFloorPlan
             PreviewCancelKey = _previewCancelKey.Value;
             PreviewFineAdjustKey = _previewFineAdjustKey.Value;
 
+            _configPanelHotkey = Config.Bind(
+                "General", "ConfigPanelHotkey", new KeyboardShortcut(KeyCode.F8, KeyCode.LeftShift),
+                "Hotkey to toggle the in-game configuration panel. Default: Shift+F8.");
+
             _terrainLevelPasses = Config.Bind(
                 "Terrain", "TerrainLevelPasses", 2,
                 new ConfigDescription(
@@ -695,6 +729,7 @@ namespace ValheimFloorPlan
             TerrainSkipSatisfiedCenterStamps = _terrainSkipSatisfiedCenterStamps.Value;
 
             gameObject.AddComponent<FloorPlanBuilder>();
+            ApplyInputGuardPatches();
 
             Log.LogInfo($"{PluginName} v{PluginVersion} loaded! " +
                 $"Build: {_buildHotkey.Value}  Undo: {_undoHotkey.Value}  Undo(keep terrain): {_undoKeepTerrainHotkey.Value}  Progress HUD: {ProgressMessageType}  Terrain passes: {TerrainLevelPasses}  Spike cleanup passes: {TerrainSpikeCleanupPasses}  High-point delta: {TerrainHighPointDelta:F2}m  Staged raise: {TerrainUseStagedRaise} ({TerrainRaiseStepHeight:F2}m, max {TerrainMaxRaiseStages})  Skip satisfied center stamps: {TerrainSkipSatisfiedCenterStamps}  External wall heights: L1={ExternalWallHeightLevel1}, L2={ExternalWallHeightLevel2}, L3={ExternalWallHeightLevel3}  Wall/Pillar material: {WallPillarMaterial}  Staircase reach: {StaircaseReachMode}  Roof scaffolding: {RoofScaffolding} (style={RoofStyle}, openTop={OpenTop}, flooring={RoofScaffoldingGableFlooring})  Scaffolding levels: {ScaffoldingLevels}  Scaffolding floor height: {ScaffoldingFloorHeight}m  Scaffolding floors: {ScaffoldingFloors}  Transverse beams: {TransverseScaffoldingBeams}  Longitudinal beams: {LongitudinalScaffoldingBeams}  Origin extra offset: {BuildOriginForwardOffset:F1}m  Preview move: {PreviewMoveStep:F2}/{PreviewFineMoveStep:F2}m  Preview rotate: {PreviewRotateStepDeg:F0}/{PreviewFineRotateStepDeg:F0}°  Build snap: {BuildRotationSnapDegrees:F1}°");
@@ -702,6 +737,18 @@ namespace ValheimFloorPlan
 
         private void Update()
         {
+            if (_configPanelHotkey.Value.IsDown())
+            {
+                ToggleConfigPanel();
+                return;
+            }
+
+            if (_showConfigPanel)
+            {
+                Input.ResetInputAxes();
+                return;
+            }
+
             if (_bundleImportSelectionActive)
             {
                 UpdateBundleImportSelection();
@@ -1628,6 +1675,446 @@ namespace ValheimFloorPlan
                 return StaircaseReachModeOption.AllTheWay;
 
             return StaircaseReachModeOption.ToTheNextLevelOnly;
+        }
+
+        // ── Input guard: block all ZInput events while config panel is open ───
+
+        private void ApplyInputGuardPatches()
+        {
+            try
+            {
+                var zinput = AccessTools.TypeByName("ZInput");
+                if (zinput == null)
+                {
+                    Log.LogDebug("[ConfigPanel] ZInput type not found — input guard skipped.");
+                    return;
+                }
+                var harmony     = new Harmony(PluginGUID + ".inputguard");
+                var boolPrefix  = new HarmonyMethod(typeof(ValheimFloorPlanPlugin), nameof(PrefixBlockBool));
+                var floatPrefix = new HarmonyMethod(typeof(ValheimFloorPlanPlugin), nameof(PrefixBlockFloat));
+                TryHarmonyPatch(harmony, zinput, "GetButton",          new[] { typeof(string) }, boolPrefix);
+                TryHarmonyPatch(harmony, zinput, "GetButtonDown",      new[] { typeof(string) }, boolPrefix);
+                TryHarmonyPatch(harmony, zinput, "GetButtonUp",        new[] { typeof(string) }, boolPrefix);
+                TryHarmonyPatch(harmony, zinput, "GetAxis",            new[] { typeof(string) }, floatPrefix);
+                TryHarmonyPatch(harmony, zinput, "GetJoyAxis",         new[] { typeof(string) }, floatPrefix);
+                TryHarmonyPatch(harmony, zinput, "GetMouseButton",     new[] { typeof(int) },    boolPrefix);
+                TryHarmonyPatch(harmony, zinput, "GetMouseButtonDown", new[] { typeof(int) },    boolPrefix);
+                TryHarmonyPatch(harmony, zinput, "GetMouseButtonUp",   new[] { typeof(int) },    boolPrefix);
+
+                // Primary gate: Player.TakeInput blocks movement, attacks, interactions.
+                var player = AccessTools.TypeByName("Player");
+                if (player != null)
+                    TryHarmonyPatch(harmony, player, "TakeInput", null, boolPrefix);
+
+                // Camera gate: GameCamera.UpdateCamera reads mouse delta for rotation.
+                // Must be patched separately — TakeInput does not cover the camera.
+                var skipPrefix = new HarmonyMethod(typeof(ValheimFloorPlanPlugin), nameof(PrefixSkip));
+                var gameCamera = AccessTools.TypeByName("GameCamera");
+                if (gameCamera != null)
+                    TryHarmonyPatch(harmony, gameCamera, "UpdateCamera", null, skipPrefix);
+
+                // UI click gate: Valheim's HUD and world-interaction elements check
+                // Menu.IsVisible() before consuming clicks. Returning true here makes
+                // the game treat all UI clicks as "menu is open — ignore".
+                var menuPostfix = new HarmonyMethod(typeof(ValheimFloorPlanPlugin), nameof(PostfixMenuIsVisible));
+                var menu = AccessTools.TypeByName("Menu");
+                if (menu != null)
+                    TryHarmonyPatchPostfix(harmony, menu, "IsVisible", null, menuPostfix);
+            }
+            catch (Exception ex)
+            {
+                Log.LogWarning("[ConfigPanel] Input guard patch failed: " + ex.Message);
+            }
+        }
+
+        private static void TryHarmonyPatch(Harmony harmony, Type type, string method, Type[]? args, HarmonyMethod prefix)
+        {
+            var mi = AccessTools.Method(type, method, args);
+            if (mi != null)
+                harmony.Patch(mi, prefix: prefix);
+        }
+
+        private static void TryHarmonyPatchPostfix(Harmony harmony, Type type, string method, Type[]? args, HarmonyMethod postfix)
+        {
+            var mi = AccessTools.Method(type, method, args);
+            if (mi != null)
+                harmony.Patch(mi, postfix: postfix);
+        }
+
+        private static void PostfixMenuIsVisible(ref bool __result)
+        {
+            if (Instance != null && Instance._showConfigPanel)
+                __result = true;
+        }
+
+        private static bool PrefixSkip()
+        {
+            return Instance == null || !Instance._showConfigPanel;
+        }
+
+        private static bool PrefixBlockBool(ref bool __result)
+        {
+            if (Instance == null || !Instance._showConfigPanel) return true;
+            __result = false;
+            return false;
+        }
+
+        private static bool PrefixBlockFloat(ref float __result)
+        {
+            if (Instance == null || !Instance._showConfigPanel) return true;
+            __result = 0f;
+            return false;
+        }
+
+        // ── In-game config panel ────────────────────────────────────────────
+
+        private void ToggleConfigPanel()
+        {
+            _showConfigPanel = !_showConfigPanel;
+            if (_showConfigPanel)
+            {
+                _cfgBufDirectory = _vfpDirectory.Value ?? string.Empty;
+                _cfgBufFile = _vfpFilePath.Value ?? string.Empty;
+                _cfgBufFile2 = _vfpFilePathLevel2.Value ?? string.Empty;
+                _cfgBufFile3 = _vfpFilePathLevel3.Value ?? string.Empty;
+                _cfgBufBundleName = _bundleName.Value ?? string.Empty;
+            }
+        }
+
+        private void LateUpdate()
+        {
+            if (_showConfigPanel)
+            {
+                Cursor.lockState = CursorLockMode.None;
+                Cursor.visible = true;
+            }
+        }
+
+        private void OnGUI()
+        {
+            if (!_showConfigPanel) return;
+            Cursor.lockState = CursorLockMode.None;
+            Cursor.visible = true;
+            if (!_configPanelRectInit)
+            {
+                _configPanelRect = new Rect(
+                    (Screen.width - 700f) * 0.5f,
+                    (Screen.height - 590f) * 0.5f,
+                    700f, 590f);
+                _configPanelRectInit = true;
+            }
+            if (_cfgWindowStyle == null)
+            {
+                _cfgWindowBgTex = new Texture2D(1, 1);
+                _cfgWindowBgTex.SetPixel(0, 0, new Color(0.12f, 0.12f, 0.12f, 0.97f));
+                _cfgWindowBgTex.Apply();
+                _cfgWindowStyle = new GUIStyle(GUI.skin.window);
+                _cfgWindowStyle.normal.background = _cfgWindowBgTex;
+                _cfgWindowStyle.onNormal.background = _cfgWindowBgTex;
+            }
+            _configPanelRect = GUILayout.Window(56780, _configPanelRect, DrawConfigPanel, "ValheimFloorPlan  —  Settings", _cfgWindowStyle);
+        }
+
+        private void DrawConfigPanel(int windowId)
+        {
+            if (_cfgSectionStyle == null)
+            {
+                _cfgSectionStyle = new GUIStyle(GUI.skin.label);
+                _cfgSectionStyle.fontStyle = FontStyle.Bold;
+            }
+
+            _configPanelTab = GUILayout.Toolbar(_configPanelTab, _panelTabNames);
+
+            switch (_configPanelTab)
+            {
+                case 0:
+                    _tabScrollGeneral = GUILayout.BeginScrollView(_tabScrollGeneral, GUILayout.Height(500f));
+                    DrawTabGeneral();
+                    GUILayout.EndScrollView();
+                    break;
+                case 1:
+                    _tabScrollBuilding = GUILayout.BeginScrollView(_tabScrollBuilding, GUILayout.Height(500f));
+                    DrawTabBuilding();
+                    GUILayout.EndScrollView();
+                    break;
+                case 2:
+                    _tabScrollScaffolding = GUILayout.BeginScrollView(_tabScrollScaffolding, GUILayout.Height(500f));
+                    DrawTabScaffolding();
+                    GUILayout.EndScrollView();
+                    break;
+                case 3:
+                    _tabScrollPreview = GUILayout.BeginScrollView(_tabScrollPreview, GUILayout.Height(500f));
+                    DrawTabPreview();
+                    GUILayout.EndScrollView();
+                    break;
+                default:
+                    _tabScrollTerrain = GUILayout.BeginScrollView(_tabScrollTerrain, GUILayout.Height(500f));
+                    DrawTabTerrain();
+                    GUILayout.EndScrollView();
+                    break;
+            }
+
+            GUILayout.BeginHorizontal();
+            GUILayout.FlexibleSpace();
+            if (GUILayout.Button("Apply", GUILayout.Width(90f)))
+            {
+                CommitCfgTextBuffers();
+                Config.Save();
+            }
+            if (GUILayout.Button("Close", GUILayout.Width(80f)))
+            {
+                CommitCfgTextBuffers();
+                Config.Save();
+                _showConfigPanel = false;
+            }
+            GUILayout.EndHorizontal();
+
+            GUI.DragWindow();
+        }
+
+        private void CommitCfgTextBuffers()
+        {
+            _vfpDirectory.Value = _cfgBufDirectory;
+            _vfpFilePath.Value = _cfgBufFile;
+            _vfpFilePathLevel2.Value = _cfgBufFile2;
+            _vfpFilePathLevel3.Value = _cfgBufFile3;
+            _bundleName.Value = _cfgBufBundleName;
+        }
+
+        private void DrawTabGeneral()
+        {
+            CfgSection("Floor Plan Files");
+            CfgTextField("Directory", ref _cfgBufDirectory);
+            CfgTextField("Level 1 File (.vfp)", ref _cfgBufFile);
+            CfgTextField("Level 2 File (.vfp)", ref _cfgBufFile2);
+            CfgTextField("Level 3 File (.vfp)", ref _cfgBufFile3);
+            CfgIntPicker("Floor Plan Levels", _floorPlanLevels, 1, 3);
+
+            CfgSection("Build & Undo");
+            CfgFloatSlider("Undo Radius (m)", _undoRadius, 5f, 150f, 1f);
+
+            CfgSection("HUD Messages");
+            CfgPickStr("Progress Message Position", _progressMessagePosition, _msgPosOptions);
+            CfgPickStr("Warning Message Position", _warningMessagePosition, _msgPosOptions);
+
+            CfgSection("Preset Bundles");
+            CfgTextField("Bundle Name", ref _cfgBufBundleName);
+
+            CfgSection("Misc");
+            CfgToggle("Disable Welcome Post", _disableWelcomePost);
+
+            CfgSection("Hotkeys  (edit in .cfg file to rebind)");
+            CfgHotkeyDisplay("Build", _buildHotkey.Value.ToString());
+            CfgHotkeyDisplay("Undo", _undoHotkey.Value.ToString());
+            CfgHotkeyDisplay("Undo (keep terrain)", _undoKeepTerrainHotkey.Value.ToString());
+            CfgHotkeyDisplay("Export Bundle", _exportBundleHotkey.Value.ToString());
+            CfgHotkeyDisplay("Import Bundle", _importBundleHotkey.Value.ToString());
+            CfgHotkeyDisplay("Config Panel", _configPanelHotkey.Value.ToString());
+        }
+
+        private void DrawTabBuilding()
+        {
+            CfgSection("Material");
+            CfgPickStr("Wall / Pillar Material", _wallPillarMaterial, _wallMatOptions);
+
+            CfgSection("Wall Heights — Level 1");
+            CfgIntPicker("External Wall Height L1", _externalWallHeightLevel1, 1, GetMaxExternalWallHeightForLevel(0));
+            CfgIntPicker("Internal Wall Height L1", _internalWallHeightLevel1, 1, 6);
+
+            CfgSection("Wall Heights — Level 2");
+            CfgIntPicker("External Wall Height L2", _externalWallHeightLevel2, 1, GetMaxExternalWallHeightForLevel(1));
+            CfgIntPicker("Internal Wall Height L2", _internalWallHeightLevel2, 1, 6);
+
+            CfgSection("Wall Heights — Level 3");
+            CfgIntPicker("External Wall Height L3", _externalWallHeightLevel3, 1, GetMaxExternalWallHeightForLevel(2));
+            CfgIntPicker("Internal Wall Height L3", _internalWallHeightLevel3, 1, 6);
+
+            CfgSection("Staircase");
+            CfgPickStr("Reach Mode", _staircaseReachMode, _stairReachOpts);
+            CfgFloatSlider("Step Rise (m)", _staircaseStepRise, 0.10f, 0.40f, 0.01f);
+            CfgFloatSlider("Step Angle (deg)", _staircaseStepAngleDeg, 10f, 30f, 0.5f);
+            CfgFloatSlider("Step Radius (m)", _staircaseStepRadius, 0.50f, 1.00f, 0.01f);
+        }
+
+        private void DrawTabScaffolding()
+        {
+            CfgToggle("Roof Scaffolding", _roofScaffolding);
+            CfgIntPicker("Scaffolding Levels", _scaffoldingLevels, 1, 3);
+            CfgToggle("Open Top", _openTop);
+
+            CfgSection("Roof");
+            CfgPickStr("Roof Style", _roofStyle, _roofStyleOpts);
+            CfgPickStr("Gable Flooring", _roofScaffoldingGableFlooring, _roofFlooringOpts);
+
+            CfgSection("Floors & Beams");
+            CfgToggle("Scaffolding Floors", _scaffoldingFloors);
+            CfgToggle("Transverse Beams", _transverseScaffoldingBeams);
+            CfgToggle("Longitudinal Beams", _longitudinalScaffoldingBeams);
+
+            CfgSection("Floor Heights (m)");
+            CfgPickInt("Floor Height Level 1", _scaffoldingFloorHeight, _scaffoldHeightOpts);
+            CfgPickInt("Floor Height Level 2", _scaffoldingFloorHeight2, _scaffoldHeightOpts);
+            CfgPickInt("Floor Height Level 3", _scaffoldingFloorHeight3, _scaffoldHeightOpts);
+        }
+
+        private void DrawTabPreview()
+        {
+            CfgSection("Positioning");
+            CfgFloatSlider("Forward Offset (m)", _buildOriginForwardOffset, 0f, 20f, 0.5f);
+            CfgFloatSlider("Move Step (m)", _previewMoveStep, 0.25f, 10f, 0.25f);
+            CfgFloatSlider("Fine Move Step (m)", _previewFineMoveStep, 0.05f, 5f, 0.05f);
+
+            CfgSection("Rotation");
+            CfgPickFloat("Build Snap (deg)", _buildRotationSnapDeg, _rotStepOpts);
+            CfgPickFloat("Rotate Step (deg)", _previewRotateStepDeg, _rotStepOpts);
+            CfgPickFloat("Fine Rotate Step (deg)", _previewFineRotateStepDeg, _rotStepOpts);
+
+            CfgSection("Key Bindings  (edit in .cfg file to rebind)");
+            CfgKeyDisplay("Move Forward", _previewMoveForwardKey.Value);
+            CfgKeyDisplay("Move Backward", _previewMoveBackwardKey.Value);
+            CfgKeyDisplay("Move Left", _previewMoveLeftKey.Value);
+            CfgKeyDisplay("Move Right", _previewMoveRightKey.Value);
+            CfgKeyDisplay("Rotate Left (CCW)", _previewRotateLeftKey.Value);
+            CfgKeyDisplay("Rotate Right (CW)", _previewRotateRightKey.Value);
+            CfgKeyDisplay("Confirm Placement", _previewConfirmKey.Value);
+            CfgKeyDisplay("Cancel Preview", _previewCancelKey.Value);
+            CfgKeyDisplay("Fine Adjust (hold)", _previewFineAdjustKey.Value);
+        }
+
+        private void DrawTabTerrain()
+        {
+            CfgSection("Leveling");
+            CfgIntPicker("Level Passes", _terrainLevelPasses, 1, 5);
+            CfgIntPicker("Spike Cleanup Passes", _terrainSpikeCleanupPasses, 1, 5);
+            CfgFloatSlider("Stamp Radius (m)", _terrainStampRadius, 3.0f, 6.0f, 0.1f);
+            CfgFloatSlider("High Point Delta (m)", _terrainHighPointDelta, 0.0f, 4.0f, 0.1f);
+
+            CfgSection("Staged Raise");
+            CfgToggle("Use Staged Raise", _terrainUseStagedRaise);
+            CfgFloatSlider("Raise Step Height (m)", _terrainRaiseStepHeight, 0.15f, 1.5f, 0.05f);
+            CfgIntPicker("Max Raise Stages", _terrainMaxRaiseStages, 1, 16);
+
+            CfgSection("Optimizations");
+            CfgToggle("Skip Satisfied Center Stamps", _terrainSkipSatisfiedCenterStamps);
+        }
+
+        // ── Config panel widget helpers ─────────────────────────────────────
+
+        private void CfgSection(string title)
+        {
+            GUILayout.Space(4f);
+            GUILayout.Label("  " + title, _cfgSectionStyle);
+            GUILayout.Space(2f);
+        }
+
+        private static void CfgToggle(string label, ConfigEntry<bool> entry)
+        {
+            bool next = GUILayout.Toggle(entry.Value, "  " + label);
+            if (next != entry.Value) entry.Value = next;
+        }
+
+        private static void CfgIntPicker(string label, ConfigEntry<int> entry, int min, int max)
+        {
+            GUILayout.BeginHorizontal();
+            GUILayout.Label(label, GUILayout.Width(260f));
+            GUI.enabled = entry.Value > min;
+            if (GUILayout.Button("-", GUILayout.Width(26f))) entry.Value = entry.Value - 1;
+            GUI.enabled = true;
+            GUILayout.Label(entry.Value.ToString(), GUILayout.Width(36f));
+            GUI.enabled = entry.Value < max;
+            if (GUILayout.Button("+", GUILayout.Width(26f))) entry.Value = entry.Value + 1;
+            GUI.enabled = true;
+            GUILayout.EndHorizontal();
+        }
+
+        private static void CfgPickInt(string label, ConfigEntry<int> entry, int[] options)
+        {
+            GUILayout.BeginHorizontal();
+            GUILayout.Label(label, GUILayout.Width(260f));
+            int idx = System.Array.IndexOf(options, entry.Value);
+            if (idx < 0) idx = 0;
+            GUI.enabled = idx > 0;
+            if (GUILayout.Button("<", GUILayout.Width(26f))) entry.Value = options[idx - 1];
+            GUI.enabled = true;
+            GUILayout.Label(entry.Value.ToString(), GUILayout.Width(36f));
+            GUI.enabled = idx < options.Length - 1;
+            if (GUILayout.Button(">", GUILayout.Width(26f))) entry.Value = options[idx + 1];
+            GUI.enabled = true;
+            GUILayout.EndHorizontal();
+        }
+
+        private static void CfgPickStr(string label, ConfigEntry<string> entry, string[] options)
+        {
+            GUILayout.BeginHorizontal();
+            GUILayout.Label(label, GUILayout.Width(260f));
+            int idx = System.Array.IndexOf(options, entry.Value);
+            if (idx < 0) idx = 0;
+            GUI.enabled = idx > 0;
+            if (GUILayout.Button("<", GUILayout.Width(26f))) entry.Value = options[idx - 1];
+            GUI.enabled = true;
+            GUILayout.Label(options[Mathf.Clamp(idx, 0, options.Length - 1)], GUILayout.Width(200f));
+            GUI.enabled = idx < options.Length - 1;
+            if (GUILayout.Button(">", GUILayout.Width(26f))) entry.Value = options[idx + 1];
+            GUI.enabled = true;
+            GUILayout.EndHorizontal();
+        }
+
+        private static void CfgPickFloat(string label, ConfigEntry<float> entry, float[] options)
+        {
+            GUILayout.BeginHorizontal();
+            GUILayout.Label(label, GUILayout.Width(260f));
+            int idx = -1;
+            for (int i = 0; i < options.Length; i++)
+                if (Mathf.Abs(options[i] - entry.Value) < 0.01f) { idx = i; break; }
+            if (idx < 0) idx = 0;
+            GUI.enabled = idx > 0;
+            if (GUILayout.Button("<", GUILayout.Width(26f))) entry.Value = options[idx - 1];
+            GUI.enabled = true;
+            GUILayout.Label(entry.Value.ToString("F1") + "°", GUILayout.Width(50f));
+            GUI.enabled = idx < options.Length - 1;
+            if (GUILayout.Button(">", GUILayout.Width(26f))) entry.Value = options[idx + 1];
+            GUI.enabled = true;
+            GUILayout.EndHorizontal();
+        }
+
+        private static void CfgFloatSlider(string label, ConfigEntry<float> entry, float min, float max, float snap)
+        {
+            GUILayout.BeginHorizontal();
+            GUILayout.Label(label, GUILayout.Width(260f));
+            float raw = GUILayout.HorizontalSlider(entry.Value, min, max, GUILayout.Width(220f));
+            float val = snap > 0f ? Mathf.Round(raw / snap) * snap : raw;
+            val = Mathf.Clamp(val, min, max);
+            if (Mathf.Abs(val - entry.Value) > 0.0001f) entry.Value = val;
+            GUILayout.Label(entry.Value.ToString("F2"), GUILayout.Width(50f));
+            GUILayout.EndHorizontal();
+        }
+
+        private static void CfgTextField(string label, ref string buffer)
+        {
+            GUILayout.BeginHorizontal();
+            GUILayout.Label(label, GUILayout.Width(180f));
+            buffer = GUILayout.TextField(buffer, GUILayout.ExpandWidth(true));
+            GUILayout.EndHorizontal();
+        }
+
+        private static void CfgHotkeyDisplay(string label, string value)
+        {
+            GUILayout.BeginHorizontal();
+            GUILayout.Label(label, GUILayout.Width(200f));
+            GUI.enabled = false;
+            GUILayout.Button(value, GUILayout.Width(200f));
+            GUI.enabled = true;
+            GUILayout.EndHorizontal();
+        }
+
+        private static void CfgKeyDisplay(string label, KeyCode key)
+        {
+            GUILayout.BeginHorizontal();
+            GUILayout.Label(label, GUILayout.Width(200f));
+            GUI.enabled = false;
+            GUILayout.Button(key.ToString(), GUILayout.Width(120f));
+            GUI.enabled = true;
+            GUILayout.EndHorizontal();
         }
     }
 }

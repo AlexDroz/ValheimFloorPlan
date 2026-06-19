@@ -153,6 +153,24 @@ If the timer expires, import selection is cancelled automatically.
 
 After a successful import, `BundleName` is automatically normalized to the imported preset prefix (timestamp suffix removed).
 
+## In-Game Configuration Panel
+
+Press **Shift+F8** at any time during a game session to open the ValheimFloorPlan settings panel. The panel groups all mod options into five tabs:
+
+| Tab | What it covers |
+|---|---|
+| **General** | File paths (`FloorPlanFile`, `FloorPlanDirectory`, Level 2/3 files), number of levels, undo radius, HUD message positions, bundle name, welcome post toggle |
+| **Building** | Wall material (Stone/Wood), external and internal wall heights per level, staircase reach mode, step rise, step angle, step radius |
+| **Scaffolding** | Roof scaffolding toggle, open-top toggle, roof style, gable flooring mode, number of scaffold levels, floor heights per level, floors/beams toggles |
+| **Preview** | Forward offset, move step, fine move step, rotation snaps (coarse, fine, build snap) |
+| **Terrain** | Levelling passes, spike cleanup passes, stamp radius, high-point delta, staged raise toggle, raise step height, max raise stages, skip-satisfied-stamps toggle |
+
+Changes take effect when you click **Apply** or **Close** — values are written directly to the BepInEx config file, so there is no need to edit the `.cfg` file manually for any of these settings.
+
+While the panel is open, mouse, keyboard, and camera input are all blocked from passing through to the game, so you can click and type freely without triggering movement or game actions.
+
+Hotkeys are not configurable from within the panel — they are shown read-only for reference. To rebind any hotkey, edit the BepInEx `.cfg` file directly.
+
 ## How Multi-Level Builds Work (Plain Language)
 
 When `FloorPlanLevels` is set to `2` or `3`, the mod builds one level at a time.
@@ -195,6 +213,7 @@ All values below are configurable in the BepInEx config file.
 | `BundleName` | `MyBuild` | Any valid file-name text | Preset name prefix used when exporting bundles. Export file name format is `<BundleName>-YYYYMMDD-HHMMSS.vpfset`. After import, this is reset to the imported prefix (timestamp removed). |
 | `ExportBundleHotkey` | `LeftControl + F8` | Any valid `KeyboardShortcut` | Exports a preset bundle to `PresetBundles` as `<BundleName>-YYYYMMDD-HHMMSS.vpfset` (layout files + non-key settings). |
 | `ImportBundleHotkey` | `LeftAlt + F8` | Any valid `KeyboardShortcut` | Starts timed bundle import selection mode (`Right/Left` choose, `Enter` import, `Escape` cancel, auto-timeout cancel). |
+| `ConfigPanelHotkey` | `LeftShift + F8` | Any valid `KeyboardShortcut` | Toggles the in-game configuration panel. See [In-Game Configuration Panel](#in-game-configuration-panel). |
 | `UndoRadius` | `15` | `5` to `150` | Search radius in metres around the undo circle centre when scanning for VFP pieces to remove on Undo. Adjustable live during the confirmation window with `+`/`-`, and circle centre is adjustable with arrow keys. |
 | `ProgressMessagePosition` | `CenterLeft` | Valheim `MessageHud` positions (`Center`, `TopLeft`, `TopRight`, etc.) | HUD slot for build-progress messages. `CenterLeft` is accepted as an alias and maps to `Center`. |
 | `WarningMessagePosition` | `TopLeft` | Valheim `MessageHud` positions (`Center`, `TopLeft`, `TopRight`, etc.) | HUD slot for warnings/risk messages. `CenterLeft` is accepted as an alias and maps to `Center`. |

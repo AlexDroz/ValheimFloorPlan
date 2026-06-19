@@ -1,5 +1,9 @@
 # Changelog
 
+## Pending Update
+
+- **New in-game configuration panel (`Shift+F8`):** Press `Shift+F8` at any time during a game session to open a full settings panel covering all mod options. The panel is tabbed — **General** (file paths, levels, undo radius, HUD message positions, bundle name, welcome post toggle), **Building** (wall material, external/internal wall heights per level, staircase settings), **Scaffolding** (roof scaffolding, open top, roof style, gable flooring, floors, beams, floor heights per level), **Preview** (forward offset, move steps, rotation snaps), and **Terrain** (levelling passes, stamp radius, high-point delta, staged raise, and related options). All controls write directly to the BepInEx config file when you click **Apply** or **Close** — no manual file editing required. Mouse, keyboard, and camera input are blocked from the game while the panel is open so nothing bleeds through. Hotkeys are shown read-only in the panel; to rebind any hotkey, edit the BepInEx `.cfg` file directly.
+
 ## 2.1.3
 
 - **New `OpenTop` config option:** when `true`, leaves the topmost scaffold level open to the sky — no roof deck, no beams, and no vertical scaffolding on the external walls of the topmost level, regardless of `ScaffoldingFloors` or `RoofStyle`. Hearth chimneys still rise through the open level. Staircases are clamped to the highest real floor deck. Works consistently for 2-level and 3-level builds.
