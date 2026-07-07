@@ -7,6 +7,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.IO.Compression;
+using System.Reflection;
 using UnityEngine;
 
 namespace ValheimFloorPlan
@@ -178,12 +179,13 @@ namespace ValheimFloorPlan
         private Vector2 _tabScrollScaffolding;
         private Vector2 _tabScrollPreview;
         private Vector2 _tabScrollTerrain;
+        private Vector2 _tabScrollKeys;
         private string _cfgBufDirectory = string.Empty;
         private string _cfgBufFile = string.Empty;
         private string _cfgBufFile2 = string.Empty;
         private string _cfgBufFile3 = string.Empty;
         private string _cfgBufBundleName = string.Empty;
-        private static readonly string[] _panelTabNames = new string[] { "General", "Building", "Scaffolding", "Preview", "Terrain" };
+        private static readonly string[] _panelTabNames = new string[] { "General", "Building", "Scaffolding", "Preview", "Terrain", "Keys" };
         private static readonly string[] _msgPosOptions = new string[] { "Center", "CenterLeft", "TopLeft", "TopRight" };
         private static readonly string[] _wallMatOptions = new string[] { "Stone", "Wood" };
         private static readonly string[] _roofStyleOpts = new string[] { "Gable", "Flat" };
@@ -194,6 +196,17 @@ namespace ValheimFloorPlan
         private static GUIStyle? _cfgSectionStyle;
         private GUIStyle? _cfgWindowStyle;
         private Texture2D? _cfgWindowBgTex;
+
+        // ── File picker ─────────────────────────────────────────────────────
+        private bool _showFilePicker;
+        private int _filePickerTarget;
+        private string _filePickerPattern = "*.vfp";
+        private string _filePickerDir = string.Empty;
+        private string[] _filePickerDirs = new string[0];
+        private string[] _filePickerVfpFiles = new string[0];
+        private int _filePickerSelIdx = -1;
+        private Vector2 _filePickerScroll;
+        private Rect _filePickerRect;
         private const string BundleExtension = ".vpfset";
         private const string LegacyBundleExtension = ".vfpset";
 
@@ -1004,8 +1017,28 @@ namespace ValheimFloorPlan
                     ShowProgressMessage($"Import failed: {bundleName}{BundleExtension} not found.");
                     return;
                 }
+                DoImportBundleFromPath(bundlePath);
+            }
+            catch (Exception ex)
+            {
+                Log.LogError($"[Bundles] Import failed: {ex}");
+                ShowProgressMessage("Import failed. Check BepInEx log for details.");
+            }
+        }
 
-                string extractedDir = Path.Combine(bundlesDir, bundleName);
+        private void DoImportBundleFromPath(string bundlePath)
+        {
+            try
+            {
+                if (!File.Exists(bundlePath))
+                {
+                    ShowProgressMessage("Import failed: bundle file not found.");
+                    return;
+                }
+
+                string bundleDisplayName = Path.GetFileNameWithoutExtension(bundlePath);
+                string bundlePrefix = StripTimestampSuffix(bundleDisplayName);
+                string extractedDir = Path.Combine(GetBundlesDirectory(), bundlePrefix);
                 Directory.CreateDirectory(extractedDir);
 
                 string level1Out = Path.Combine(extractedDir, "level1.vfp");
@@ -1117,8 +1150,7 @@ namespace ValheimFloorPlan
                     Config.Save();
                 }
 
-                string importedBundleDisplayName = Path.GetFileNameWithoutExtension(bundlePath);
-                _bundleName.Value = StripTimestampSuffix(importedBundleDisplayName);
+                _bundleName.Value = bundlePrefix;
                 Config.Save();
 
                 ShowProgressMessage($"Preset bundle imported: {Path.GetFileName(bundlePath)}");
@@ -1129,6 +1161,15 @@ namespace ValheimFloorPlan
                 Log.LogError($"[Bundles] Import failed: {ex}");
                 ShowProgressMessage("Import failed. Check BepInEx log for details.");
             }
+        }
+
+        private void RefreshCfgTextBuffers()
+        {
+            _cfgBufDirectory = _vfpDirectory.Value ?? string.Empty;
+            _cfgBufFile = _vfpFilePath.Value ?? string.Empty;
+            _cfgBufFile2 = _vfpFilePathLevel2.Value ?? string.Empty;
+            _cfgBufFile3 = _vfpFilePathLevel3.Value ?? string.Empty;
+            _cfgBufBundleName = _bundleName.Value ?? string.Empty;
         }
 
         private static void WriteZipEntryFromFile(ZipArchive archive, string entryName, string sourceFile)
@@ -1727,16 +1768,26 @@ namespace ValheimFloorPlan
             }
         }
 
+        private static MethodInfo? FindMethodSilent(Type type, string name, Type[]? args)
+        {
+            const BindingFlags flags = BindingFlags.Static | BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
+            if (args != null)
+                return type.GetMethod(name, flags, null, args, null);
+            foreach (var m in type.GetMethods(flags))
+                if (m.Name == name) return m;
+            return null;
+        }
+
         private static void TryHarmonyPatch(Harmony harmony, Type type, string method, Type[]? args, HarmonyMethod prefix)
         {
-            var mi = AccessTools.Method(type, method, args);
+            var mi = FindMethodSilent(type, method, args);
             if (mi != null)
                 harmony.Patch(mi, prefix: prefix);
         }
 
         private static void TryHarmonyPatchPostfix(Harmony harmony, Type type, string method, Type[]? args, HarmonyMethod postfix)
         {
-            var mi = AccessTools.Method(type, method, args);
+            var mi = FindMethodSilent(type, method, args);
             if (mi != null)
                 harmony.Patch(mi, postfix: postfix);
         }
@@ -1779,6 +1830,10 @@ namespace ValheimFloorPlan
                 _cfgBufFile3 = _vfpFilePathLevel3.Value ?? string.Empty;
                 _cfgBufBundleName = _bundleName.Value ?? string.Empty;
             }
+            else
+            {
+                _showFilePicker = false;
+            }
         }
 
         private void LateUpdate()
@@ -1813,6 +1868,11 @@ namespace ValheimFloorPlan
                 _cfgWindowStyle.onNormal.background = _cfgWindowBgTex;
             }
             _configPanelRect = GUILayout.Window(56780, _configPanelRect, DrawConfigPanel, "ValheimFloorPlan  —  Settings", _cfgWindowStyle);
+            if (_showFilePicker)
+            {
+                string pickerTitle = _filePickerTarget == 3 ? "Browse Bundle Files (.vpfset)" : "Browse .vfp Files";
+                _filePickerRect = GUILayout.Window(56781, _filePickerRect, DrawFilePicker, pickerTitle, _cfgWindowStyle);
+            }
         }
 
         private void DrawConfigPanel(int windowId)
@@ -1847,9 +1907,14 @@ namespace ValheimFloorPlan
                     DrawTabPreview();
                     GUILayout.EndScrollView();
                     break;
-                default:
+                case 4:
                     _tabScrollTerrain = GUILayout.BeginScrollView(_tabScrollTerrain, GUILayout.Height(500f));
                     DrawTabTerrain();
+                    GUILayout.EndScrollView();
+                    break;
+                default:
+                    _tabScrollKeys = GUILayout.BeginScrollView(_tabScrollKeys, GUILayout.Height(500f));
+                    DrawTabKeys();
                     GUILayout.EndScrollView();
                     break;
             }
@@ -1865,6 +1930,7 @@ namespace ValheimFloorPlan
             {
                 CommitCfgTextBuffers();
                 Config.Save();
+                _showFilePicker = false;
                 _showConfigPanel = false;
             }
             GUILayout.EndHorizontal();
@@ -1883,11 +1949,14 @@ namespace ValheimFloorPlan
 
         private void DrawTabGeneral()
         {
+            CfgSection("Preset Bundles");
+            CfgFileField("Bundle Name", ref _cfgBufBundleName, 3);
+
             CfgSection("Floor Plan Files");
             CfgTextField("Directory", ref _cfgBufDirectory);
-            CfgTextField("Level 1 File (.vfp)", ref _cfgBufFile);
-            CfgTextField("Level 2 File (.vfp)", ref _cfgBufFile2);
-            CfgTextField("Level 3 File (.vfp)", ref _cfgBufFile3);
+            CfgFileField("Level 1 File (.vfp)", ref _cfgBufFile, 0);
+            CfgFileField("Level 2 File (.vfp)", ref _cfgBufFile2, 1);
+            CfgFileField("Level 3 File (.vfp)", ref _cfgBufFile3, 2);
             CfgIntPicker("Floor Plan Levels", _floorPlanLevels, 1, 3);
 
             CfgSection("Build & Undo");
@@ -1897,19 +1966,8 @@ namespace ValheimFloorPlan
             CfgPickStr("Progress Message Position", _progressMessagePosition, _msgPosOptions);
             CfgPickStr("Warning Message Position", _warningMessagePosition, _msgPosOptions);
 
-            CfgSection("Preset Bundles");
-            CfgTextField("Bundle Name", ref _cfgBufBundleName);
-
             CfgSection("Misc");
             CfgToggle("Disable Welcome Post", _disableWelcomePost);
-
-            CfgSection("Hotkeys  (edit in .cfg file to rebind)");
-            CfgHotkeyDisplay("Build", _buildHotkey.Value.ToString());
-            CfgHotkeyDisplay("Undo", _undoHotkey.Value.ToString());
-            CfgHotkeyDisplay("Undo (keep terrain)", _undoKeepTerrainHotkey.Value.ToString());
-            CfgHotkeyDisplay("Export Bundle", _exportBundleHotkey.Value.ToString());
-            CfgHotkeyDisplay("Import Bundle", _importBundleHotkey.Value.ToString());
-            CfgHotkeyDisplay("Config Panel", _configPanelHotkey.Value.ToString());
         }
 
         private void DrawTabBuilding()
@@ -1969,20 +2027,15 @@ namespace ValheimFloorPlan
             CfgPickFloat("Rotate Step (deg)", _previewRotateStepDeg, _rotStepOpts);
             CfgPickFloat("Fine Rotate Step (deg)", _previewFineRotateStepDeg, _rotStepOpts);
 
-            CfgSection("Key Bindings  (edit in .cfg file to rebind)");
-            CfgKeyDisplay("Move Forward", _previewMoveForwardKey.Value);
-            CfgKeyDisplay("Move Backward", _previewMoveBackwardKey.Value);
-            CfgKeyDisplay("Move Left", _previewMoveLeftKey.Value);
-            CfgKeyDisplay("Move Right", _previewMoveRightKey.Value);
-            CfgKeyDisplay("Rotate Left (CCW)", _previewRotateLeftKey.Value);
-            CfgKeyDisplay("Rotate Right (CW)", _previewRotateRightKey.Value);
-            CfgKeyDisplay("Confirm Placement", _previewConfirmKey.Value);
-            CfgKeyDisplay("Cancel Preview", _previewCancelKey.Value);
-            CfgKeyDisplay("Fine Adjust (hold)", _previewFineAdjustKey.Value);
         }
 
         private void DrawTabTerrain()
         {
+            GUI.contentColor = Color.yellow;
+            GUILayout.Label("  Caution: only modify these settings if you fully understand the terrain mechanics.", _cfgSectionStyle);
+            GUI.contentColor = Color.white;
+            GUILayout.Space(4f);
+
             CfgSection("Leveling");
             CfgIntPicker("Level Passes", _terrainLevelPasses, 1, 5);
             CfgIntPicker("Spike Cleanup Passes", _terrainSpikeCleanupPasses, 1, 5);
@@ -1996,6 +2049,200 @@ namespace ValheimFloorPlan
 
             CfgSection("Optimizations");
             CfgToggle("Skip Satisfied Center Stamps", _terrainSkipSatisfiedCenterStamps);
+        }
+
+        private void DrawTabKeys()
+        {
+            GUI.contentColor = Color.yellow;
+            GUILayout.Label("  All key bindings are read-only here — edit the BepInEx .cfg file to rebind.", _cfgSectionStyle);
+            GUI.contentColor = Color.white;
+            GUILayout.Space(4f);
+
+            CfgSection("Build & Undo");
+            CfgHotkeyDisplay("Build", _buildHotkey.Value.ToString());
+            CfgHotkeyDisplay("Undo", _undoHotkey.Value.ToString());
+            CfgHotkeyDisplay("Undo (keep terrain)", _undoKeepTerrainHotkey.Value.ToString());
+
+            CfgSection("Preset Bundles");
+            CfgHotkeyDisplay("Export Bundle", _exportBundleHotkey.Value.ToString());
+            CfgHotkeyDisplay("Import Bundle", _importBundleHotkey.Value.ToString());
+
+            CfgSection("Config Panel");
+            CfgHotkeyDisplay("Open / Close Panel", _configPanelHotkey.Value.ToString());
+
+            CfgSection("Preview — Movement");
+            CfgKeyDisplay("Move Forward", _previewMoveForwardKey.Value);
+            CfgKeyDisplay("Move Backward", _previewMoveBackwardKey.Value);
+            CfgKeyDisplay("Move Left", _previewMoveLeftKey.Value);
+            CfgKeyDisplay("Move Right", _previewMoveRightKey.Value);
+            CfgKeyDisplay("Fine Adjust (hold)", _previewFineAdjustKey.Value);
+
+            CfgSection("Preview — Rotation & Confirm");
+            CfgKeyDisplay("Rotate Left (CCW)", _previewRotateLeftKey.Value);
+            CfgKeyDisplay("Rotate Right (CW)", _previewRotateRightKey.Value);
+            CfgKeyDisplay("Confirm Placement", _previewConfirmKey.Value);
+            CfgKeyDisplay("Cancel Preview", _previewCancelKey.Value);
+        }
+
+        // ── File picker ─────────────────────────────────────────────────────
+
+        private void CfgFileField(string label, ref string buffer, int target)
+        {
+            GUILayout.BeginHorizontal();
+            GUILayout.Label(label, GUILayout.Width(180f));
+            if (GUILayout.Button("...", GUILayout.Width(34f)))
+                OpenFilePicker(target);
+            buffer = GUILayout.TextField(buffer, GUILayout.ExpandWidth(true));
+            GUILayout.EndHorizontal();
+        }
+
+        private void OpenFilePicker(int target)
+        {
+            _filePickerTarget = target;
+            _filePickerPattern = (target == 3) ? "*.vpfset" : "*.vfp";
+            _filePickerSelIdx = -1;
+            _filePickerScroll = Vector2.zero;
+
+            string startDir = string.Empty;
+
+            // Bundle picker: start in the bundles directory
+            if (target == 3)
+            {
+                string bundlesDir = GetBundlesDirectory();
+                if (Directory.Exists(bundlesDir))
+                    startDir = bundlesDir;
+            }
+
+            // .vfp pickers: try FloorPlanDirectory, then the current file's directory
+            if (string.IsNullOrEmpty(startDir))
+            {
+                string cfgDir = _cfgBufDirectory.Trim();
+                if (!string.IsNullOrEmpty(cfgDir) && Directory.Exists(cfgDir))
+                    startDir = cfgDir;
+            }
+
+            if (string.IsNullOrEmpty(startDir) && target < 3)
+            {
+                string curFile = target == 0 ? _cfgBufFile : (target == 1 ? _cfgBufFile2 : _cfgBufFile3);
+                if (!string.IsNullOrEmpty(curFile))
+                {
+                    string d = Path.GetDirectoryName(curFile) ?? string.Empty;
+                    if (!string.IsNullOrEmpty(d) && Directory.Exists(d))
+                        startDir = d;
+                }
+            }
+
+            if (string.IsNullOrEmpty(startDir))
+            {
+                string asmDir = Path.GetDirectoryName(typeof(ValheimFloorPlanPlugin).Assembly.Location) ?? string.Empty;
+                if (!string.IsNullOrEmpty(asmDir) && Directory.Exists(asmDir))
+                    startDir = asmDir;
+            }
+
+            if (string.IsNullOrEmpty(startDir))
+                startDir = ".";
+
+            _filePickerDir = startDir;
+            _filePickerRect = new Rect(
+                _configPanelRect.x + (_configPanelRect.width - 500f) * 0.5f,
+                _configPanelRect.y + 40f,
+                500f, 450f);
+
+            RefreshFilePickerListing();
+            _showFilePicker = true;
+        }
+
+        private void RefreshFilePickerListing()
+        {
+            try
+            {
+                string[] dirs = Directory.GetDirectories(_filePickerDir);
+                string[] files = Directory.GetFiles(_filePickerDir, _filePickerPattern);
+                Array.Sort(dirs);
+                Array.Sort(files);
+                _filePickerDirs = dirs;
+                _filePickerVfpFiles = files;
+            }
+            catch
+            {
+                _filePickerDirs = new string[0];
+                _filePickerVfpFiles = new string[0];
+            }
+            _filePickerSelIdx = -1;
+        }
+
+        private void DrawFilePicker(int windowId)
+        {
+            GUILayout.Label(_filePickerDir);
+            GUILayout.Space(4f);
+
+            _filePickerScroll = GUILayout.BeginScrollView(_filePickerScroll, GUILayout.Height(330f));
+
+            DirectoryInfo? parent = Directory.GetParent(_filePickerDir);
+            if (parent != null)
+            {
+                if (GUILayout.Button("[ .. ]"))
+                {
+                    _filePickerDir = parent.FullName;
+                    RefreshFilePickerListing();
+                }
+            }
+
+            foreach (string d in _filePickerDirs)
+            {
+                if (GUILayout.Button("[ " + Path.GetFileName(d) + " ]"))
+                {
+                    _filePickerDir = d;
+                    RefreshFilePickerListing();
+                }
+            }
+
+            for (int i = 0; i < _filePickerVfpFiles.Length; i++)
+            {
+                bool isSel = (i == _filePickerSelIdx);
+                if (isSel) GUI.backgroundColor = new Color(0.25f, 0.55f, 0.25f, 1f);
+                bool clicked = GUILayout.Button(Path.GetFileName(_filePickerVfpFiles[i]));
+                if (isSel) GUI.backgroundColor = Color.white;
+                if (clicked) _filePickerSelIdx = i;
+            }
+            GUI.backgroundColor = Color.white;
+
+            GUILayout.EndScrollView();
+
+            if (_filePickerVfpFiles.Length == 0 && _filePickerDirs.Length == 0)
+                GUILayout.Label("  (no " + (_filePickerTarget == 3 ? ".vpfset" : ".vfp") + " files found)");
+
+            GUILayout.Space(4f);
+            GUILayout.BeginHorizontal();
+            GUILayout.FlexibleSpace();
+            GUI.enabled = _filePickerSelIdx >= 0 && _filePickerSelIdx < _filePickerVfpFiles.Length;
+            if (GUILayout.Button("Select", GUILayout.Width(90f)))
+            {
+                string chosen = _filePickerVfpFiles[_filePickerSelIdx];
+                if (_filePickerTarget == 3)
+                {
+                    DoImportBundleFromPath(chosen);
+                    RefreshCfgTextBuffers();
+                }
+                else
+                {
+                    string dir = _cfgBufDirectory.Trim().TrimEnd('\\', '/');
+                    string fileDir = (Path.GetDirectoryName(chosen) ?? string.Empty).TrimEnd('\\', '/');
+                    if (!string.IsNullOrEmpty(dir) &&
+                        string.Equals(fileDir, dir, StringComparison.OrdinalIgnoreCase))
+                        chosen = Path.GetFileName(chosen);
+                    if (_filePickerTarget == 0) _cfgBufFile = chosen;
+                    else if (_filePickerTarget == 1) _cfgBufFile2 = chosen;
+                    else _cfgBufFile3 = chosen;
+                }
+                _showFilePicker = false;
+            }
+            GUI.enabled = true;
+            if (GUILayout.Button("Cancel", GUILayout.Width(80f)))
+                _showFilePicker = false;
+            GUILayout.EndHorizontal();
+
+            GUI.DragWindow();
         }
 
         // ── Config panel widget helpers ─────────────────────────────────────

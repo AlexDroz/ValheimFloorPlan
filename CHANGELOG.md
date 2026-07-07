@@ -2,7 +2,17 @@
 
 ## Pending Update
 
-- **New in-game configuration panel (`Shift+F8`):** Press `Shift+F8` at any time during a game session to open a full settings panel covering all mod options. The panel is tabbed — **General** (file paths, levels, undo radius, HUD message positions, bundle name, welcome post toggle), **Building** (wall material, external/internal wall heights per level, staircase settings), **Scaffolding** (roof scaffolding, open top, roof style, gable flooring, floors, beams, floor heights per level), **Preview** (forward offset, move steps, rotation snaps), and **Terrain** (levelling passes, stamp radius, high-point delta, staged raise, and related options). All controls write directly to the BepInEx config file when you click **Apply** or **Close** — no manual file editing required. Mouse, keyboard, and camera input are blocked from the game while the panel is open so nothing bleeds through. Hotkeys are shown read-only in the panel; to rebind any hotkey, edit the BepInEx `.cfg` file directly.
+- **New in-game configuration panel (`Shift+F8`):** Press `Shift+F8` at any time during a game session to open a full settings panel covering all mod options. The panel has six tabs:
+  - **General** — load a preset bundle via the file browser, set floor plan file paths (Levels 1/2/3) via the file browser, number of levels, undo radius, HUD message positions, welcome post toggle
+  - **Building** — wall/pillar material, external and internal wall heights per level, staircase reach mode and step settings
+  - **Scaffolding** — roof scaffolding toggle, open top, roof style, gable flooring mode, scaffold levels, floor heights, floors and beam toggles
+  - **Preview** — forward offset, move step, fine move step, rotation snap (coarse, fine, build snap)
+  - **Terrain** — levelling passes, spike cleanup passes, stamp radius, high-point delta, staged raise settings *(yellow caution note shown)*
+  - **Keys** — read-only reference for all hotkeys and preview key bindings *(yellow read-only note shown)*
+
+  All controls write directly to the BepInEx config file when you click **Apply** or **Close** — no manual file editing required. Mouse, keyboard, and camera input are fully blocked from the game while the panel is open. Hotkeys are shown read-only in the **Keys** tab; to rebind any hotkey edit the BepInEx `.cfg` file directly.
+
+- **In-panel file browser:** each floor plan file field and the bundle name field have a `[...]` browse button. The file browser opens as a draggable overlay window, supports directory navigation, and filters to `.vfp` or `.vpfset` files as appropriate. Selecting a bundle file performs a full import — all settings and the three floor plan file paths are updated immediately and reflected in the panel.
 
 ## 2.1.3
 

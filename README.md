@@ -24,6 +24,29 @@ This package includes two components:
 - The Designer web app (`BepInEx/plugins/ValheimFloorPlan/Designer/`)
 - Sample `.vfp` plans to get started immediately
 
+## In-Game Configuration Panel
+
+![ValheimFloorPlan Config Panel](https://raw.githubusercontent.com/AlexDroz/ValheimFloorPlan/master/images/ValheimFloorPlan_ConfigPanel.png)
+
+Press **Shift+F8** at any time during a game session to open the settings panel. All mod options are available from here — no need to edit the `.cfg` file manually for most settings.
+
+The panel has six tabs:
+
+| Tab | What it covers |
+|---|---|
+| **General** | Load a preset bundle via the file browser; set Level 1/2/3 floor plan file paths via the file browser; number of levels, undo radius, HUD message positions, welcome post toggle |
+| **Building** | Wall/pillar material, external and internal wall heights per level, staircase reach mode and step settings |
+| **Scaffolding** | Roof scaffolding, open top, roof style, gable flooring, scaffold levels, floor heights per level, floors and beam toggles |
+| **Preview** | Forward offset, move step, fine move step, coarse/fine/build rotation snaps |
+| **Terrain** | Levelling passes, spike cleanup passes, stamp radius, high-point delta, staged raise settings |
+| **Keys** | Read-only reference for all hotkeys and preview key bindings |
+
+Each floor plan file field and the **Bundle Name** field include a `[...]` browse button that opens a draggable file picker. The picker supports directory navigation and filters to `.vfp` or `.vpfset` files as appropriate. Selecting a bundle file performs a full import — all settings and the three floor plan file paths are updated immediately and reflected in the panel.
+
+Changes take effect when you click **Apply** or **Close** — values are written directly to the BepInEx config file. Mouse, keyboard, and camera input are fully blocked from the game while the panel is open so nothing bleeds through.
+
+Hotkeys are shown read-only in the **Keys** tab and cannot be rebound from within the panel. To rebind a hotkey, edit the BepInEx `.cfg` file directly. The panel hotkey itself defaults to `Shift+F8` and is configurable via `ConfigPanelHotkey` in the `.cfg` file.
+
 ## Creating Floor Plans
 
 1. Open the **Designer** to create or edit a plan. It is a local web page installed by Thunderstore Mod Manager. Copy the path below and paste it into your browser address bar to open it:
@@ -152,24 +175,6 @@ While import selection is active, the HUD shows:
 If the timer expires, import selection is cancelled automatically.
 
 After a successful import, `BundleName` is automatically normalized to the imported preset prefix (timestamp suffix removed).
-
-## In-Game Configuration Panel
-
-Press **Shift+F8** at any time during a game session to open the ValheimFloorPlan settings panel. The panel groups all mod options into five tabs:
-
-| Tab | What it covers |
-|---|---|
-| **General** | File paths (`FloorPlanFile`, `FloorPlanDirectory`, Level 2/3 files), number of levels, undo radius, HUD message positions, bundle name, welcome post toggle |
-| **Building** | Wall material (Stone/Wood), external and internal wall heights per level, staircase reach mode, step rise, step angle, step radius |
-| **Scaffolding** | Roof scaffolding toggle, open-top toggle, roof style, gable flooring mode, number of scaffold levels, floor heights per level, floors/beams toggles |
-| **Preview** | Forward offset, move step, fine move step, rotation snaps (coarse, fine, build snap) |
-| **Terrain** | Levelling passes, spike cleanup passes, stamp radius, high-point delta, staged raise toggle, raise step height, max raise stages, skip-satisfied-stamps toggle |
-
-Changes take effect when you click **Apply** or **Close** — values are written directly to the BepInEx config file, so there is no need to edit the `.cfg` file manually for any of these settings.
-
-While the panel is open, mouse, keyboard, and camera input are all blocked from passing through to the game, so you can click and type freely without triggering movement or game actions.
-
-Hotkeys are not configurable from within the panel — they are shown read-only for reference. To rebind any hotkey, edit the BepInEx `.cfg` file directly.
 
 ## How Multi-Level Builds Work (Plain Language)
 
