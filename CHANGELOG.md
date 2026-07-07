@@ -1,6 +1,6 @@
 # Changelog
 
-## Pending Update
+## 2.1.4
 
 - **New in-game configuration panel (`Shift+F8`):** Press `Shift+F8` at any time during a game session to open a full settings panel covering all mod options. The panel has six tabs:
   - **General** — load a preset bundle via the file browser, set floor plan file paths (Levels 1/2/3) via the file browser, number of levels, undo radius, HUD message positions, welcome post toggle

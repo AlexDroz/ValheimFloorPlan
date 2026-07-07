@@ -17,7 +17,7 @@ This package includes two components:
 
 **Demo video:** https://youtu.be/jz39KSSfhJ0
 
-**Showcase your build on Discord:** https://discord.gg/baKg2ksP
+**Join the community on Discord:** https://discord.gg/ex2HNJAc — share screenshots of your builds, ask questions, and see what others have created with Valheim Floor Plan.
 
 **Included in this package:**
 - The mod DLL (installed automatically under `BepInEx/plugins`)
