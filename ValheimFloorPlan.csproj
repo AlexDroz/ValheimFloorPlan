@@ -5,11 +5,15 @@
     <AssemblyName>ValheimFloorPlan</AssemblyName>
     <RootNamespace>ValheimFloorPlan</RootNamespace>
     <Description>A floor plan building tool mod for Valheim</Description>
-    <Version>2.1.5</Version>
+    <Version>2.1.6</Version>
     <Nullable>enable</Nullable>
     <LangVersion>latest</LangVersion>
     <ValheimDir>D:\Program Files (x86)\Steam\steamapps\common\Valheim</ValheimDir>
-    <ThunderstorePluginsDir>C:\Users\AlexD\AppData\Roaming\Thunderstore Mod Manager\DataFolder\Valheim\profiles\Default\BepInEx\plugins\RetiredCoders-ValheimFloorPlan\ValheimFloorPlan</ThunderstorePluginsDir>
+    <ThunderstoreProfileDir>C:\Users\AlexD\AppData\Roaming\Thunderstore Mod Manager\DataFolder\Valheim\profiles\Default</ThunderstoreProfileDir>
+    <ThunderstorePluginsDir>$(ThunderstoreProfileDir)\BepInEx\plugins\RetiredCoders-ValheimFloorPlan\ValheimFloorPlan</ThunderstorePluginsDir>
+    <!-- Compile against the BepInEx the game actually runs (Thunderstore's BepInExPack_Valheim),
+         not the stale copy that may sit in the Steam folder. -->
+    <BepInExCoreDir>$(ThunderstoreProfileDir)\BepInEx\core</BepInExCoreDir>
   </PropertyGroup>
 
   <ItemGroup>
@@ -19,14 +23,14 @@
     </PackageReference>
   </ItemGroup>
 
-  <!-- BepInEx core DLLs from local Valheim install -->
+  <!-- BepInEx core DLLs from the Thunderstore profile (BepInExPack_Valheim) -->
   <ItemGroup>
     <Reference Include="BepInEx">
-      <HintPath>$(ValheimDir)\BepInEx\core\BepInEx.dll</HintPath>
+      <HintPath>$(BepInExCoreDir)\BepInEx.dll</HintPath>
       <Private>False</Private>
     </Reference>
     <Reference Include="0Harmony">
-      <HintPath>$(ValheimDir)\BepInEx\core\0Harmony.dll</HintPath>
+      <HintPath>$(BepInExCoreDir)\0Harmony.dll</HintPath>
       <Private>False</Private>
     </Reference>
   </ItemGroup>

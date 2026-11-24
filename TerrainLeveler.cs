@@ -936,7 +936,7 @@ namespace ValheimFloorPlan
         /// radius overlaps — the same lookup vanilla <c>TerrainOp.Awake</c> uses.
         /// <c>GetAndCreateTerrainCompiler</c> creates the chunk's TerrainComp when the
         /// ground has never been modified; <c>TerrainComp.FindTerrainCompiler</c> alone
-        /// returns null there and the op would silently do nothing (pre-2.1.5 the
+        /// returns null there and the op would silently do nothing (pre-2.1.6 the
         /// TerrainOp component's own Awake created them as a side effect).
         /// </summary>
         private static void ApplyToOverlappingChunks(Vector3 opPos, TerrainOp.Settings settings,

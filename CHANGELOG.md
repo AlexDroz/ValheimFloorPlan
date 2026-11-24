@@ -1,6 +1,6 @@
 # Changelog
 
-## 2.1.5
+## 2.1.6
 
 - **Compatibility update for the latest Valheim release.** The game update changed several internal APIs, which stopped the mod from working. This release restores full functionality on the current game version:
   - Built pieces are again registered to the player who placed them. The game now also records your platform user ID, and the mod passes it the same way vanilla building does.
@@ -8,6 +8,7 @@
   - Terrain levelling and Undo now refresh terrain correctly with the updated terrain API.
   - **Undo terrain restore fixed:** restoring the levelled ground on Undo no longer fails on the new game version.
   - The in-game Config panel (`Shift+F8`) once again blocks mouse-wheel scrolling from reaching the game while it is open.
+- Updated Thunderstore dependency to `denikson-BepInExPack_Valheim-5.4.2360`.
 
 ## 2.1.4
 
