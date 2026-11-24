@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.1.5
+
+- **Compatibility update for the latest Valheim release.** The game update changed several internal APIs, which stopped the mod from working. This release restores full functionality on the current game version:
+  - Built pieces are again registered to the player who placed them. The game now also records your platform user ID, and the mod passes it the same way vanilla building does.
+  - **Terrain levelling fixed:** the game no longer accepts custom terrain operations sent the old way, so every levelling and smoothing step was being cancelled (`Failed to deserialize TerrainOp settings…` errors in the console) and the ground was never flattened. The mod now applies its levelling directly to the terrain, and the errors are gone. Levelling also covers every terrain chunk under the footprint again, including ground that has never been modified before. Fixed spikes and holes in the levelled pad caused by the game now deferring terrain height updates to the end of each frame.
+  - Terrain levelling and Undo now refresh terrain correctly with the updated terrain API.
+  - **Undo terrain restore fixed:** restoring the levelled ground on Undo no longer fails on the new game version.
+  - The in-game Config panel (`Shift+F8`) once again blocks mouse-wheel scrolling from reaching the game while it is open.
+
 ## 2.1.4
 
 - **New in-game configuration panel (`Shift+F8`):** Press `Shift+F8` at any time during a game session to open a full settings panel covering all mod options. The panel has six tabs:

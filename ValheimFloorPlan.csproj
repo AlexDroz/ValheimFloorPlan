@@ -5,7 +5,7 @@
     <AssemblyName>ValheimFloorPlan</AssemblyName>
     <RootNamespace>ValheimFloorPlan</RootNamespace>
     <Description>A floor plan building tool mod for Valheim</Description>
-    <Version>2.1.4</Version>
+    <Version>2.1.5</Version>
     <Nullable>enable</Nullable>
     <LangVersion>latest</LangVersion>
     <ValheimDir>D:\Program Files (x86)\Steam\steamapps\common\Valheim</ValheimDir>
@@ -35,6 +35,10 @@
   <ItemGroup>
     <Reference Include="assembly_valheim">
       <HintPath>$(ValheimDir)\Valheim_Data\Managed\assembly_valheim.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="Splatform">
+      <HintPath>$(ValheimDir)\Valheim_Data\Managed\Splatform.dll</HintPath>
       <Private>False</Private>
     </Reference>
     <Reference Include="UnityEngine">

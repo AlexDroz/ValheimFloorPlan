@@ -42,7 +42,7 @@ namespace ValheimFloorPlan
 
         public const string PluginGUID = "com.alexdroz.valheimfloorplan";
         public const string PluginName = "ValheimFloorPlan";
-        public const string PluginVersion = "2.1.4";
+        public const string PluginVersion = "2.1.5";
 
         internal static ManualLogSource Log = null!;
         internal static ValheimFloorPlanPlugin Instance { get; private set; } = null!;
@@ -1738,6 +1738,8 @@ namespace ValheimFloorPlan
                 TryHarmonyPatch(harmony, zinput, "GetButtonUp",        new[] { typeof(string) }, boolPrefix);
                 TryHarmonyPatch(harmony, zinput, "GetAxis",            new[] { typeof(string) }, floatPrefix);
                 TryHarmonyPatch(harmony, zinput, "GetJoyAxis",         new[] { typeof(string) }, floatPrefix);
+                // Newer game builds removed GetAxis(string); the scroll wheel is read here instead.
+                TryHarmonyPatch(harmony, zinput, "GetMouseScrollWheel", Type.EmptyTypes,          floatPrefix);
                 TryHarmonyPatch(harmony, zinput, "GetMouseButton",     new[] { typeof(int) },    boolPrefix);
                 TryHarmonyPatch(harmony, zinput, "GetMouseButtonDown", new[] { typeof(int) },    boolPrefix);
                 TryHarmonyPatch(harmony, zinput, "GetMouseButtonUp",   new[] { typeof(int) },    boolPrefix);

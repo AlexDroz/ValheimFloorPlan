@@ -908,85 +908,129 @@ namespace ValheimFloorPlan
         private static void ApplyLevel(float x, float y, float z, float radius,
                                         HashSet<TerrainComp> modified, bool smooth = false)
         {
-            var go = new GameObject("VFP_LevelOp");
-            go.transform.position = new Vector3(x, y, z);
-            var op = go.AddComponent<TerrainOp>();
-            op.m_settings.m_level       = true;
-            op.m_settings.m_levelRadius = radius;
-            op.m_settings.m_smooth      = smooth;
+            var opPos = new Vector3(x, y, z);
+            var settings = new TerrainOp.Settings();
+            settings.m_level       = true;
+            settings.m_levelRadius = radius;
+            settings.m_smooth      = smooth;
 
-            // FindTerrainCompiler returns only the chunk containing a single point.
-            // A disc of radius r can straddle up to 4 terrain chunks simultaneously
-            // when its centre is near a chunk-boundary corner.  Probing only the 4
-            // cardinal axis-aligned extremes (N/S/E/W) misses the diagonal chunk that
-            // sits in the NE/NW/SE/SW quadrant beyond both boundaries at once.
-            // Probing all 8 bounding-box corners + the centre guarantees every chunk
-            // the disc physically overlaps is found and receives the operation.
-            var probes = new Vector3[]
-            {
-                new Vector3(x,          y, z         ),   // centre
-                new Vector3(x - radius, y, z - radius),   // SW corner
-                new Vector3(x + radius, y, z - radius),   // SE corner
-                new Vector3(x - radius, y, z + radius),   // NW corner
-                new Vector3(x + radius, y, z + radius),   // NE corner
-                new Vector3(x - radius, y, z         ),   // W  edge mid
-                new Vector3(x + radius, y, z         ),   // E  edge mid
-                new Vector3(x,          y, z - radius),   // S  edge mid
-                new Vector3(x,          y, z + radius),   // N  edge mid
-            };
-            var chunks = new HashSet<TerrainComp>();
-            foreach (var p in probes)
-            {
-                var tc = TerrainComp.FindTerrainCompiler(p);
-                if (tc != null) chunks.Add(tc);
-            }
-            foreach (var tc in chunks)
-            {
-                TerrainSnapshot.EnsureCaptured(tc);
-                tc.ApplyOperation(op);
-                modified.Add(tc);
-            }
-            UnityEngine.Object.Destroy(go);
+            ApplyToOverlappingChunks(opPos, settings, modified);
         }
 
         private static void ApplySmooth(float x, float y, float z, float radius,
                                         HashSet<TerrainComp> modified)
         {
-            var go = new GameObject("VFP_SmoothOp");
-            go.transform.position = new Vector3(x, y, z);
-            var op = go.AddComponent<TerrainOp>();
-            op.m_settings.m_level = false;
-            op.m_settings.m_smooth = true;
-            op.m_settings.m_smoothRadius = radius;
+            var opPos = new Vector3(x, y, z);
+            var settings = new TerrainOp.Settings();
+            settings.m_level        = false;
+            settings.m_smooth       = true;
+            settings.m_smoothRadius = radius;
 
-            var probes = new Vector3[]
-            {
-                new Vector3(x,          y, z         ),
-                new Vector3(x - radius, y, z - radius),
-                new Vector3(x + radius, y, z - radius),
-                new Vector3(x - radius, y, z + radius),
-                new Vector3(x + radius, y, z + radius),
-                new Vector3(x - radius, y, z         ),
-                new Vector3(x + radius, y, z         ),
-                new Vector3(x,          y, z - radius),
-                new Vector3(x,          y, z + radius),
-            };
+            ApplyToOverlappingChunks(opPos, settings, modified);
+        }
+
+        private static readonly List<Heightmap> _hmapScratch = new List<Heightmap>();
+
+        /// <summary>
+        /// Applies <paramref name="settings"/> to every terrain chunk the operation's
+        /// radius overlaps — the same lookup vanilla <c>TerrainOp.Awake</c> uses.
+        /// <c>GetAndCreateTerrainCompiler</c> creates the chunk's TerrainComp when the
+        /// ground has never been modified; <c>TerrainComp.FindTerrainCompiler</c> alone
+        /// returns null there and the op would silently do nothing (pre-2.1.5 the
+        /// TerrainOp component's own Awake created them as a side effect).
+        /// </summary>
+        private static void ApplyToOverlappingChunks(Vector3 opPos, TerrainOp.Settings settings,
+                                                     HashSet<TerrainComp> modified)
+        {
+            _hmapScratch.Clear();
+            Heightmap.FindHeightmap(opPos, settings.GetRadius(), _hmapScratch);
 
             var chunks = new HashSet<TerrainComp>();
-            foreach (var p in probes)
+            foreach (var hmap in _hmapScratch)
             {
-                var tc = TerrainComp.FindTerrainCompiler(p);
+                if (hmap == null) continue;
+                var tc = hmap.GetAndCreateTerrainCompiler();
                 if (tc != null) chunks.Add(tc);
             }
 
             foreach (var tc in chunks)
             {
                 TerrainSnapshot.EnsureCaptured(tc);
-                tc.ApplyOperation(op);
-                modified.Add(tc);
+                if (ApplyTerrainSettings(tc, opPos, settings))
+                    modified.Add(tc);
+            }
+        }
+
+        // ── Terrain operation dispatch ───────────────────────────────────────
+        //
+        // Since the Nov 2026 game update, TerrainComp.ApplyOperation no longer sends
+        // the operation's settings over RPC — it sends only a prefab-name hash, and the
+        // receiver looks the settings up in ObjectDB.m_terrainOpsByHash (vanilla tools
+        // only). Custom ops therefore fail with "Failed to deserialize TerrainOp
+        // settings…" and do nothing.
+        //
+        // We call the private TerrainComp.DoOperation(pos, rot, settings) directly —
+        // the same method RPC_ApplyOperation runs on the owner — after making sure we
+        // own the chunk. DoOperation also does the Save + Heightmap.Poke + grass reset.
+        // Do NOT create a TerrainOp component: its Awake() immediately fires its own
+        // ApplyOperation with default settings.
+
+        private static readonly System.Reflection.MethodInfo? _doOperation =
+            typeof(TerrainComp).GetMethod("DoOperation",
+                System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic,
+                null, new[] { typeof(Vector3), typeof(Vector3), typeof(TerrainOp.Settings) }, null);
+
+        private static bool _loggedMissingDoOperation;
+
+        private static bool ApplyTerrainSettings(TerrainComp tc, Vector3 pos, TerrainOp.Settings settings)
+        {
+            if (_doOperation == null)
+            {
+                if (!_loggedMissingDoOperation)
+                {
+                    _loggedMissingDoOperation = true;
+                    Debug.LogError("[ValheimFloorPlan] TerrainComp.DoOperation(Vector3, Vector3, Settings) not found — " +
+                                   "terrain levelling is unavailable on this game version.");
+                }
+                return false;
             }
 
-            UnityEngine.Object.Destroy(go);
+            var nview = tc.GetComponent<ZNetView>();
+            if (nview == null || !nview.IsValid()) return false;
+            if (!nview.IsOwner()) nview.ClaimOwnership();
+
+            _doOperation.Invoke(tc, new object[] { pos, Vector3.zero, settings });
+            RefreshHeights(tc);
+            return true;
+        }
+
+        // Since the Nov 2026 update DoOperation only schedules a heightmap rebuild for
+        // LateUpdate (Poke(1)); previously it regenerated immediately. LevelTerrain /
+        // SmoothTerrain compute their delta from Heightmap.m_heights, so with several
+        // overlapping ops per frame every op after the first read stale heights and
+        // re-added the same correction — overshooting into spikes and holes.
+        // Heightmap.Generate() rebuilds m_heights (base + TerrainComp deltas) without
+        // touching the collision/render meshes, so it is cheap enough to run per op;
+        // the scheduled LateUpdate still does the full mesh/collider rebuild once.
+
+        private static readonly System.Reflection.FieldInfo? _tcHmapField =
+            typeof(TerrainComp).GetField("m_hmap",
+                System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+
+        private static readonly System.Reflection.MethodInfo? _hmapGenerate =
+            typeof(Heightmap).GetMethod("Generate",
+                System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic,
+                null, System.Type.EmptyTypes, null);
+
+        private static void RefreshHeights(TerrainComp tc)
+        {
+            var hmap = _tcHmapField?.GetValue(tc) as Heightmap;
+            if (hmap == null) return;
+
+            if (_hmapGenerate != null)
+                _hmapGenerate.Invoke(hmap, null);
+            else
+                hmap.Poke(0); // fallback: full immediate rebuild (slower, but correct)
         }
 
         private static void ApplySpikeCollapse(

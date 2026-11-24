@@ -23,6 +23,21 @@ namespace ValheimFloorPlan
             typeof(TerrainComp).GetField("m_nview", BindingFlags.Instance | BindingFlags.NonPublic);
         private static readonly MethodInfo _saveMethod =
             typeof(TerrainComp).GetMethod("Save", BindingFlags.Instance | BindingFlags.NonPublic);
+        // Works for both the old Save() and the newer Save(bool paintOnly = false).
+        private static readonly object[]? SaveArgs = BuildDefaultArgs(_saveMethod);
+
+        private static object[]? BuildDefaultArgs(MethodInfo? method)
+        {
+            if (method == null) return null;
+            var ps = method.GetParameters();
+            if (ps.Length == 0) return null;
+            var args = new object[ps.Length];
+            for (int i = 0; i < ps.Length; i++)
+                args[i] = ps[i].HasDefaultValue ? ps[i].DefaultValue
+                        : (ps[i].ParameterType.IsValueType ? System.Activator.CreateInstance(ps[i].ParameterType) : null!);
+            return args;
+        }
+
         private const float TERRAIN_CHUNK_SIZE = 64f;
         private const float TERRAIN_CHUNK_HALF = TERRAIN_CHUNK_SIZE * 0.5f;
 
@@ -197,12 +212,14 @@ namespace ValheimFloorPlan
 
                     // Call the private Save() via reflection — this writes the restored
                     // arrays back to the ZDO so the change persists on next world save.
-                    _saveMethod.Invoke(state.Comp, null);
+                    // Since the 2026 game update Save takes (bool paintOnly = false).
+                    // Reflection does not apply default values, so pass them explicitly.
+                    _saveMethod.Invoke(state.Comp, SaveArgs);
 
                     // Force local visuals/physics to rebuild immediately where possible.
                     var hmap = state.Comp.GetComponent<Heightmap>() ?? state.Comp.GetComponentInParent<Heightmap>();
                     if (hmap != null)
-                        hmap.Poke(false);
+                        hmap.Poke(0);
 
                     restored++;
                 }

@@ -1133,7 +1133,7 @@ namespace ValheimFloorPlan
                 {
                     if (hmap == null) continue;
                     if (Vector3.Distance(hmap.transform.position, center) > UNDO_REFRESH_RADIUS) continue;
-                    hmap.Poke(false);
+                    hmap.Poke(0);
                     passTouched++;
                 }
 
@@ -2664,7 +2664,7 @@ namespace ValheimFloorPlan
                         zdo.Set("text", signTexts[i]);
                     }
                 }
-                signGo.GetComponent<Piece>()?.SetCreator(player.GetPlayerID());
+                signGo.GetComponent<Piece>()?.SetCreator(player.GetPlayerID(), Splatform.PlatformManager.DistributionPlatform.LocalUser.PlatformUserID);
                 yield return new WaitForSeconds(PLACE_DELAY);
             }
 
@@ -6941,7 +6941,7 @@ namespace ValheimFloorPlan
             }
 
             _lastPlaced.Add(go);
-            go.GetComponent<Piece>()?.SetCreator(player.GetPlayerID());
+            go.GetComponent<Piece>()?.SetCreator(player.GetPlayerID(), Splatform.PlatformManager.DistributionPlatform.LocalUser.PlatformUserID);
             return go;
         }
 
