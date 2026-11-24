@@ -56,7 +56,11 @@ if (Test-Path $imagesSource) {
 
 $samplesSource = Join-Path $repoRoot "samples"
 if (Test-Path $samplesSource) {
-    Copy-Item $samplesSource (Join-Path $stageRoot "samples") -Recurse -Force
+    # Copy only the loose sample files. Subfolders (samples/<BundleName>/) are created
+    # by the mod when a .vpfset bundle is loaded and must not ship in the package.
+    $samplesTarget = Join-Path $stageRoot "samples"
+    New-Item -ItemType Directory -Path $samplesTarget -Force | Out-Null
+    Get-ChildItem -Path $samplesSource -File | Copy-Item -Destination $samplesTarget -Force
 }
 
 $zipDir = Split-Path -Parent $zipPath

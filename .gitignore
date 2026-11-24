@@ -5,6 +5,10 @@ artifacts/
 Designer/node_modules/*
 *_test.*
 
+# Folders the mod creates when a .vpfset bundle is loaded (samples/<BundleName>/level1-3.vfp).
+# Real samples are loose files directly in samples/, so ignore every subfolder.
+samples/*/
+
 # VS Code local settings (optional — remove this block if you want to share launch configs)
 .vscode/
 
